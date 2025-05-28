@@ -1,0 +1,25 @@
+[build]
+target = "xtensa-esp32-espidf"
+
+[target.xtensa-esp32-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+rustflags = [ "--cfg",  "espidf_time64"] # Extending time_t for ESP IDF 5: https://github.com/esp-rs/rust/issues/110
+
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[env]
+# MCU="esp32s3"
+MCU="esp32"
+# Note: this variable is not used by the pio builder (`cargo build --features pio`)
+ESP_IDF_VERSION = "v5.1.3"
+
+# Workaround for https://github.com/esp-rs/esp-idf-template/issues/174 until
+# https://github.com/esp-rs/esp-idf-hal/pull/387 gets released and the template
+# updated.
+CRATE_CC_NO_DEFAULTS = "1"
+
+[patch.crates-io]
+# esp-idf-hal = { path = "../../../../rust_embedded_projects/esp-idf-hal" }
+esp-idf-hal = { git = "https://github.com/junkei-okinawa/esp-idf-hal.git", branch = "custom-gpio-for-M5UnitCam" }

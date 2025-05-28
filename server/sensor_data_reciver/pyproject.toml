@@ -1,0 +1,27 @@
+[project]
+name = "sensor-data-reciver"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "influxdb-client>=1.48.0",
+    "pillow>=11.2.1",
+    "pyserial>=3.5",
+    "pyserial-asyncio>=0.6",
+    "python-dotenv>=1.1.0",
+]
+
+[tool.uv.workspace]
+exclude = [
+    "tests",
+    "docs",
+    "systemd",
+    "images",
+    "examples",
+]
+
+[dependency-groups]
+dev = [
+    "just-bin>=1.40.0",
+]

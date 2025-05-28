@@ -1,0 +1,6 @@
+[submodule "sensors/esp-temp-sensor"]
+	path = sensors/esp-temp-sensor
+	url = git@github.com:junkei-okinawa/esp-temp-sensor.git
+[submodule "sensors/esp-camera-rs"]
+	path = sensors/esp-camera-rs
+	url = git@github.com:junkei-okinawa/esp-camera-rs.git

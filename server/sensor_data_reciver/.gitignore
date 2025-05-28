@@ -1,0 +1,6 @@
+.ruff_cache
+__pycache__
+
+.venv
+.vscode
+images

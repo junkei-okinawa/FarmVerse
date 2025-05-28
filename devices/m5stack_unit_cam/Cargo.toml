@@ -1,0 +1,42 @@
+[package]
+name = "sensor-data-sender"
+version = "0.2.0"
+authors = ["junkei-okinawa"]
+edition = "2021"
+resolver = "2"
+rust-version = "1.85"
+
+[[bin]]
+name = "sensor_data_sender"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+# opt-level = "z"      # "s" から "z" に変更 (サイズをさらに積極的に最適化)
+# lto = true             # Link Time Optimization を有効化
+# codegen-units = 1      # 並列コンパイルユニット数を1に (より積極的な最適化の可能性)
+# panic = "abort"        # パニック時にスタックトレースを生成しない
+# strip = true           # デバッグシンボルを削除
+
+[profile.dev]
+debug = true    # Symbols are nice and they don't increase the size on Flash
+opt-level = "z"
+
+[dependencies]
+anyhow = "1.0"
+log = "0.4"
+toml-cfg = "=0.2"
+esp-idf-svc = "0.51.0"
+esp-idf-sys = "0.36"
+embedded-svc = "0.28"
+sha2 = "0.10"
+thiserror = "2.0.12"
+chrono = "0.4.41"
+chrono-tz = "0.10.3"
+
+esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git" }
+simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor.git", version = "0.1.1" }
+
+[build-dependencies]
+embuild = "0.33"
+toml-cfg = "=0.2"
