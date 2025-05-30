@@ -81,6 +81,21 @@ uv run python app.py -p /dev/cu.usbmodem12341 -b 115200
 
 サーバーは起動すると、指定されたシリアルポートからのデータ受信を開始します。受信した画像は `images_usb_async` ディレクトリに保存されます。Ctrl+Cでサーバーを停止できます。
 
+### テスト実行
+
+ユニットテスト・結合テストは以下のコマンドで実行できます（uvが必要です）：
+
+```bash
+uv run pytest tests/unit
+uv run pytest tests/integration
+```
+
+すべてのテストを一括で実行する場合：
+
+```bash
+uv run pytest
+```
+
 ## データプロトコル
 
 このサーバーは `usb_cdc_receiver` から送信される以下のカスタムフレーム形式を期待します。
