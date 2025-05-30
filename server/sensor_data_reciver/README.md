@@ -81,6 +81,21 @@ uv run python app.py -p /dev/cu.usbmodem12341 -b 115200
 
 Once started, the server begins receiving data from the specified serial port. Received images are saved to the `images_usb_async` directory. You can stop the server with Ctrl+C.
 
+### Testing
+
+To run unit tests and integration tests, use the following commands (requires uv):
+
+```bash
+uv run pytest tests/unit
+uv run pytest tests/integration
+```
+
+You can also run all tests at once:
+
+```bash
+uv run pytest
+```
+
 ## Data Protocol
 
 This server expects the following custom frame format transmitted from `usb_cdc_receiver`.
