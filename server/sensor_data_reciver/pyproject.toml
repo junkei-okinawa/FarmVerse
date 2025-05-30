@@ -24,4 +24,12 @@ exclude = [
 [dependency-groups]
 dev = [
     "just-bin>=1.40.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=6.1.1",
+    "pytest-asyncio>=0.23.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-v"
