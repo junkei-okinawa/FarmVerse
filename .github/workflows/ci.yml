@@ -1,0 +1,43 @@
+name: Sensor Data Receiver CI
+
+on:
+  push:
+    paths:
+      - 'server/sensor_data_reciver/**'
+  pull_request:
+    paths:
+      - 'server/sensor_data_reciver/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server/sensor_data_reciver
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Cache Python/uv dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          uv sync --locked --all-extras --dev
+
+      - name: Run unit and integration tests
+        run: |
+          uv run pytest tests/unit
+          uv run pytest tests/integration
