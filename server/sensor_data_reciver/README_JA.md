@@ -26,6 +26,18 @@
 -   Python 3.11以上
 -   `pyserial-asyncio` ライブラリ (`pyserial` も自動的にインストールされます)
 
+### uvのインストール
+
+依存関係をインストールする前に、uvをインストールしてください：
+
+```bash
+# MacおよびLinux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
 ### セットアップ
 
 1.  **依存関係のインストール**:
