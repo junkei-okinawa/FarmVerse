@@ -9,14 +9,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 
+import influxdb_client
 import serial
 import serial_asyncio
 from dotenv import load_dotenv
-from PIL import Image
-
-import influxdb_client
 from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+from PIL import Image
 
 load_dotenv()
 
