@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>家庭菜園記録 ワイヤーフレーム</title>
+    <!-- Tailwind CSS CDNを読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Interフォントを適用 */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* 薄いグレーの背景 */
+        }
+        /* スクロールバーのスタイル（任意） */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 sm:p-6 lg:p-8">
+
+    <!-- 全体コンテナ -->
+    <div class="w-full max-w-6xl flex flex-col min-h-[calc(100vh-32px)]">
+
+        <!-- ヘッダー -->
+        <header class="bg-green-800 text-white p-4 sm:p-6 rounded-t-lg flex items-center justify-between flex-wrap shadow-md">
+            <h1 id="app-title" class="text-xl sm:text-2xl font-bold rounded-md px-2 py-1 bg-green-700 cursor-pointer">家庭菜園記録</h1>
+            <nav class="mt-2 sm:mt-0">
+                <ul class="flex space-x-4 sm:space-x-6 text-sm sm:text-base">
+                    <li><a href="#" class="hover:text-green-300 rounded-md px-3 py-1 bg-green-700" onclick="setView('dashboard'); return false;">ダッシュボード</a></li>
+                    <li><a href="#" class="hover:text-green-300 rounded-md px-3 py-1 bg-green-700" onclick="setView('timeline'); return false;">栽培記録</a></li>
+                    <li><a href="#" class="hover:text-green-300 rounded-md px-3 py-1 bg-green-700" onclick="setView('cropManagement'); return false;">作物管理</a></li>
+                    <li><a href="#" class="hover:text-green-300 rounded-md px-3 py-1 bg-green-700" onclick="alert('マイページ（プロフィール編集など）'); return false;">マイページ</a></li>
+                    <li><a href="#" class="hover:text-green-300 rounded-md px-3 py-1 bg-green-700" onclick="alert('設定画面へ遷移します。'); return false;">設定</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <!-- メインコンテンツエリア -->
+        <div id="main-content" class="flex-grow p-4 sm:p-6 bg-white rounded-b-lg shadow-md">
+            <!-- コンテンツはJavaScriptで動的に挿入されます -->
+        </div>
+
+    </div>
+
+    <script>
+        // グローバル変数
+        let records = [
+            { id: '1', date: '2024-05-20', crop: 'トマト', eventType: '播種 (Sowing)', comment: 'ミニトマトの種をプランターに播きました。', imageUrl: 'https://placehold.co/100x100/e0e0e0/ffffff?text=Image' },
+            { id: '2', date: '2024-06-01', crop: 'キュウリ', eventType: '定植 (Planting)', comment: '苗を庭に定植。支柱を立てました。', imageUrl: 'https://placehold.co/100x100/e0e0e0/ffffff?text=Image' },
+            { id: '3', date: '2024-06-15', crop: 'トマト', eventType: '施肥 (Fertilizing)', comment: '化成肥料を少量追肥しました。', quantity: '20g', imageUrl: 'https://placehold.co/100x100/e0e0e0/ffffff?text=Image' },
+            { id: '4', date: '2024-06-25', crop: 'レタス', eventType: '収穫 (Harvesting)', comment: 'ベビーリーフとして収穫。サラダにぴったりです。', quantity: '100g', imageUrl: 'https://placehold.co/100x100/e0e0e0/ffffff?text=Image' },
+        ];
+
+        let crops = [
+            { id: 'c1', name: 'トマト', type: '夏野菜', memo: '家庭菜園の定番。支柱必須。' },
+            { id: 'c2', name: 'キュウリ', type: '夏野菜', memo: 'つるが伸びるので広い場所が必要。' },
+            { id: 'c3', name: 'レタス', type: '葉物野菜', memo: '育てやすいが、虫に注意。' },
+        ];
+
+        let currentView = 'dashboard'; // 'dashboard', 'timeline', 'recordForm', 'cropManagement', 'cropForm'
+        let editingRecordId = null;
+        let editingCropId = null;
+
+        const mainContentDiv = document.getElementById('main-content');
+        const appTitle = document.getElementById('app-title');
+
+        // イベント種別オプション
+        const eventTypesOptions = [
+            '播種 (Sowing)',
+            '定植 (Planting)',
+            '施肥 (Fertilizing)',
+            '追肥 (Additional Fertilizing)',
+            '収穫 (Harvesting)',
+            '防除 (Pest Control)',
+            'その他 (Other)',
+        ];
+
+        // ビューを切り替える関数
+        function setView(viewName, recordId = null, cropId = null) {
+            currentView = viewName;
+            editingRecordId = recordId;
+            editingCropId = cropId;
+            render(); // UIを再描画
+        }
+
+        // --- 各ビューのレンダリング関数 ---
+
+        function renderDashboard() {
+            const latestRecords = [...records].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 3);
+            mainContentDiv.innerHTML = `
+                <div class="flex flex-col h-full bg-white rounded-lg shadow-md p-4 sm:p-6 space-y-6">
+                    <h2 class="text-xl sm:text-2xl font-semibold text-green-700">こんにちは、ユーザー名さん！</h2>
+
+                    <!-- 今日の作業リマインダー (仮) -->
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                        <h3 class="text-lg font-semibold text-blue-700 mb-2">本日の作業リマインダー</h3>
+                        <ul class="list-disc list-inside text-blue-800">
+                            <li>トマトに水やりをしましょう。</li>
+                            <li>レタスの間引きを検討しましょう。</li>
+                        </ul>
+                    </div>
+
+                    <!-- 最近の栽培記録 -->
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-3">最近の栽培記録</h3>
+                        ${latestRecords.length > 0 ? `
+                            <div class="space-y-3">
+                                ${latestRecords.map(record => `
+                                    <div class="flex items-center gap-3 bg-gray-50 p-3 rounded-md border border-gray-200">
+                                        <div class="text-sm text-gray-600 w-20 flex-shrink-0">${record.date}</div>
+                                        <div class="font-medium text-green-700 w-24 flex-shrink-0">${record.crop}</div>
+                                        <div class="text-gray-800 flex-grow truncate">${record.eventType} - ${record.comment}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : `
+                            <p class="text-gray-500">まだ記録がありません。新しい記録を追加しましょう！</p>
+                        `}
+                        <button
+                            class="mt-4 px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors"
+                            onclick="setView('recordForm');"
+                        >
+                            <span class="mr-2">+</span> 新しい記録を追加
+                        </button>
+                    </div>
+
+                    <!-- 登録済み作物サマリー -->
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-3">登録済みの作物 (${crops.length}種類)</h3>
+                        ${crops.length > 0 ? `
+                            <ul class="list-disc list-inside text-gray-700 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                ${crops.map(crop => `
+                                    <li>${crop.name} (${crop.type})</li>
+                                `).join('')}
+                            </ul>
+                        ` : `
+                            <p class="text-gray-500">まだ作物が登録されていません。</p>
+                        `}
+                        <button
+                            class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+                            onclick="setView('cropForm');"
+                        >
+                            <span class="mr-2">+</span> 新しい作物を登録
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRecordTimeline() {
+            mainContentDiv.innerHTML = `
+                <div class="flex flex-col h-full bg-white rounded-lg shadow-md p-4 sm:p-6">
+                    <!-- 検索・フィルターエリア -->
+                    <div class="mb-4 flex flex-col sm:flex-row gap-3">
+                        <input
+                            type="text"
+                            id="timeline-search"
+                            placeholder="記録を検索..."
+                            class="p-2 border border-gray-300 rounded-md flex-grow focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                        <select
+                            id="timeline-filter"
+                            class="p-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                        >
+                            <option value="すべて">すべて</option>
+                            ${eventTypesOptions.map(type => `<option value="${type}">${type}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <!-- タイムライン表示 -->
+                    <div id="timeline-list" class="flex-grow overflow-y-auto space-y-4">
+                        <!-- 記録はJavaScriptで動的に挿入されます -->
+                    </div>
+
+                    <!-- 記録追加ボタン (Floating Action Button) -->
+                    <button
+                        class="fixed bottom-8 right-8 bg-green-600 text-white p-4 rounded-full shadow-lg hover:bg-green-700 transition-colors z-10"
+                        onclick="setView('recordForm');"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class="h-6 w-6"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M12 4v16m8-8H4"
+                            />
+                        </svg>
+                    </button>
+                </div>
+            `;
+            updateTimelineList(); // タイムラインリストを初期表示
+
+            // 検索・フィルターイベントリスナー
+            document.getElementById('timeline-search').addEventListener('input', updateTimelineList);
+            document.getElementById('timeline-filter').addEventListener('change', updateTimelineList);
+        }
+
+        function updateTimelineList() {
+            const searchTerm = document.getElementById('timeline-search').value.toLowerCase();
+            const filterType = document.getElementById('timeline-filter').value;
+            const timelineListDiv = document.getElementById('timeline-list');
+
+            let filteredRecords = records
+                .filter(record =>
+                    record.comment.toLowerCase().includes(searchTerm) ||
+                    record.crop.toLowerCase().includes(searchTerm) ||
+                    record.eventType.toLowerCase().includes(searchTerm)
+                )
+                .filter(record => filterType === 'すべて' || record.eventType === filterType)
+                .sort((a, b) => new Date(b.date) - new Date(a.date)); // 日付で降順ソート
+
+            if (filteredRecords.length > 0) {
+                timelineListDiv.innerHTML = filteredRecords.map(record => `
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                        <div class="flex-shrink-0 w-24 h-24 sm:w-28 sm:h-28 bg-gray-300 rounded-md overflow-hidden">
+                            ${record.imageUrl ? `
+                                <img src="${record.imageUrl}" alt="栽培記録" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='https://placehold.co/100x100/cccccc/ffffff?text=No+Image';" />
+                            ` : ''}
+                        </div>
+                        <div class="flex-grow">
+                            <div class="text-sm text-gray-500">${record.date}</div>
+                            <div class="text-lg font-semibold text-green-700">${record.crop}</div>
+                            <div class="text-md text-gray-800">${record.eventType}</div>
+                            ${record.quantity ? `<div class="text-sm text-gray-600">量: ${record.quantity}</div>` : ''}
+                            <p class="text-gray-700 mt-1 line-clamp-2">${record.comment}</p>
+                        </div>
+                        <div class="flex-shrink-0 flex gap-2 mt-2 sm:mt-0">
+                            <button
+                                class="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 transition-colors"
+                                onclick="setView('recordForm', '${record.id}');"
+                            >
+                                編集
+                            </button>
+                            <button
+                                class="px-3 py-1 bg-red-500 text-white rounded-md text-sm hover:bg-red-600 transition-colors"
+                                onclick="handleDeleteRecord('${record.id}');"
+                            >
+                                削除
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                timelineListDiv.innerHTML = `<p class="text-center text-gray-500 mt-8">記録がありません。</p>`;
+            }
+        }
+
+        function renderRecordForm() {
+            const currentRecord = editingRecordId ? records.find(r => r.id === editingRecordId) : {
+                id: '',
+                date: new Date().toISOString().split('T')[0],
+                crop: '',
+                eventType: '',
+                comment: '',
+                quantity: '',
+                imageUrl: '',
+            };
+
+            const cropOptionsHtml = crops.map(crop => `<option value="${crop.name}">${crop.name}</option>`).join('');
+            const eventTypeOptionsHtml = eventTypesOptions.map(type => `<option value="${type}">${type}</option>`).join('');
+
+            mainContentDiv.innerHTML = `
+                <div class="flex flex-col h-full bg-white rounded-lg shadow-md p-4 sm:p-6 overflow-y-auto">
+                    <h2 class="text-xl sm:text-2xl font-semibold mb-6 text-green-700">
+                        ${editingRecordId ? '記録を編集' : '新しい記録を追加'}
+                    </h2>
+                    <form id="record-form" class="space-y-4 flex-grow">
+                        <div>
+                            <label for="record-date" class="block text-gray-700 text-sm font-bold mb-2">日付:</label>
+                            <input type="date" id="record-date" name="date" value="${currentRecord.date}"
+                                class="shadow appearance-none border rounded-md w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                        <div>
+                            <label for="record-crop" class="block text-gray-700 text-sm font-bold mb-2">作物:</label>
+                            <select id="record-crop" name="crop"
+                                class="shadow border rounded-md w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500 bg-white" required>
+                                <option value="">作物を選択してください</option>
+                                ${cropOptionsHtml}
+                            </select>
+                        </div>
+                        <div>
+                            <label for="record-eventType" class="block text-gray-700 text-sm font-bold mb-2">イベント種別:</label>
+                            <select id="record-eventType" name="eventType"
+                                class="shadow border rounded-md w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500 bg-white" required>
+                                <option value="">種別を選択してください</option>
+                                ${eventTypeOptionsHtml}
+                            </select>
+                        </div>
+                        <div id="record-quantity-field" style="display:none;">
+                            <label for="record-quantity" class="block text-gray-700 text-sm font-bold mb-2">量 (例: 20g, 1個, 100g):</label>
+                            <input type="text" id="record-quantity" name="quantity" value="${currentRecord.quantity || ''}"
+                                class="shadow appearance-none border rounded-md w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500"
+                                placeholder="例: 20g, 1個, 100g" />
+                        </div>
+                        <div>
+                            <label for="record-comment" class="block text-gray-700 text-sm font-bold mb-2">コメント (Markdown対応):</label>
+                            <textarea id="record-comment" name="comment" rows="5"
+                                class="shadow appearance-none border rounded-md w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500"
+                                placeholder="栽培の様子を記録しましょう。Markdown形式で記述できます。" required>${currentRecord.comment}</textarea>
+                        </div>
+                        <div>
+                            <label for="record-image" class="block text-gray-700 text-sm font-bold mb-2">写真:</label>
+                            <div id="image-preview" class="mb-2 w-32 h-32 bg-gray-200 rounded-md overflow-hidden ${currentRecord.imageUrl ? '' : 'hidden'}">
+                                <img src="${currentRecord.imageUrl || ''}" alt="アップロード画像プレビュー" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='https://placehold.co/128x128/cccccc/ffffff?text=Image+Error';" />
+                            </div>
+                            <input type="file" id="record-image" name="image" accept="image/*"
+                                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100" />
+                        </div>
+                        <div class="flex justify-end gap-3 pt-4">
+                            <button type="button" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors" onclick="handleCancelForm();">キャンセル</button>
+                            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">保存</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+
+            // イベントリスナーと初期値の設定
+            const recordForm = document.getElementById('record-form');
+            const recordCropSelect = document.getElementById('record-crop');
+            const recordEventTypeSelect = document.getElementById('record-eventType');
+            const recordImageInput = document.getElementById('record-image');
+            const imagePreviewDiv = document.getElementById('image-preview');
+            const imagePreviewImg = imagePreviewDiv.querySelector('img');
+            const recordQuantityField = document.getElementById('record-quantity-field');
+
+            // 作物選択の初期値設定
+            if (currentRecord.crop) {
+                recordCropSelect.value = currentRecord.crop;
+            }
+            // イベント種別選択の初期値設定と「量」フィールドの表示制御
+            if (currentRecord.eventType) {
+                recordEventTypeSelect.value = currentRecord.eventType;
+                toggleQuantityField(recordEventTypeSelect.value);
+            }
+            recordEventTypeSelect.addEventListener('change', (e) => toggleQuantityField(e.target.value));
+
+            function toggleQuantityField(eventType) {
+                if (['施肥 (Fertilizing)', '追肥 (Additional Fertilizing)', '収穫 (Harvesting)'].includes(eventType)) {
+                    recordQuantityField.style.display = 'block';
+                } else {
+                    recordQuantityField.style.display = 'none';
+                }
+            }
+
+            // 画像プレビュー
+            recordImageInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        imagePreviewImg.src = reader.result;
+                        imagePreviewDiv.classList.remove('hidden');
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    imagePreviewImg.src = '';
+                    imagePreviewDiv.classList.add('hidden');
+                }
+            });
+
+            // フォーム送信
+            recordForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = new FormData(recordForm);
+                const newRecord = {
+                    id: currentRecord.id || Date.now().toString(),
+                    date: formData.get('date'),
+                    crop: formData.get('crop'),
+                    eventType: formData.get('eventType'),
+                    comment: formData.get('comment'),
+                    quantity: formData.get('quantity') || '',
+                    imageUrl: imagePreviewImg.src, // 現在のプレビュー画像を使用
+                };
+
+                if (!newRecord.date || !newRecord.crop || !newRecord.eventType || !newRecord.comment) {
+                    alert('日付、作物、イベント種別、コメントは必須項目です。');
+                    return;
+                }
+
+                if (currentRecord.id) {
+                    // 更新
+                    records = records.map(r => (r.id === newRecord.id ? newRecord : r));
+                } else {
+                    // 追加
+                    records.push(newRecord);
+                }
+                setView('timeline');
+            });
+        }
+
+        function renderCropManagement() {
+            mainContentDiv.innerHTML = `
+                <div class="flex flex-col h-full bg-white rounded-lg shadow-md p-4 sm:p-6">
+                    <h2 class="text-xl sm:text-2xl font-semibold mb-6 text-green-700">作物マスタ管理</h2>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full bg-white rounded-lg overflow-hidden">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">作物名</th>
+                                    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">種類</th>
+                                    <th class="px-4 py-2 text-left text-sm font-medium text-gray-600 uppercase tracking-wider">メモ</th>
+                                    <th class="px-4 py-2 text-center text-sm font-medium text-gray-600 uppercase tracking-wider">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="crop-table-body" class="divide-y divide-gray-200">
+                                <!-- 作物データはJavaScriptで挿入されます -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <button
+                        class="mt-6 px-4 py-2 bg-green-600 text-white rounded-md shadow-md hover:bg-green-700 transition-colors self-start"
+                        onclick="setView('cropForm');"
+                    >
+                        <span class="mr-2">+</span> 新規作物登録
+                    </button>
+                </div>
+            `;
+            updateCropTable();
+        }
+
+        function updateCropTable() {
+            const cropTableBody = document.getElementById('crop-table-body');
+            if (crops.length > 0) {
+                cropTableBody.innerHTML = crops.map(crop => `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 whitespace-nowrap text-gray-800">${crop.name}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-gray-800">${crop.type}</td>
+                        <td class="px-4 py-3 text-gray-800">${crop.memo}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-center">
+                            <button
+                                class="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 transition-colors mr-2"
+                                onclick="setView('cropForm', null, '${crop.id}');"
+                            >
+                                編集
+                            </button>
+                            <button
+                                class="px-3 py-1 bg-red-500 text-white rounded-md text-sm hover:bg-red-600 transition-colors"
+                                onclick="handleDeleteCrop('${crop.id}');"
+                            >
+                                削除
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } else {
+                cropTableBody.innerHTML = `
+                    <tr>
+                        <td colSpan="4" class="px-4 py-3 text-center text-gray-500">作物が見つかりません。</td>
+                    </tr>
+                `;
+            }
+        }
+
+        function renderCropForm() {
+            const currentCrop = editingCropId ? crops.find(c => c.id === editingCropId) : {
+                id: '',
+                name: '',
+                type: '',
+                memo: '',
+            };
+
+            mainContentDiv.innerHTML = `
+                <div class="flex flex-col h-full bg-white rounded-lg shadow-md p-4 sm:p-6 overflow-y-auto">
+                    <h2 class="text-xl sm:text-2xl font-semibold mb-6 text-green-700">
+                        ${editingCropId ? '作物を編集' : '新しい作物を追加'}
+                    </h2>
+                    <form id="crop-form" class="space-y-4 flex-grow">
+                        <div>
+                            <label for="crop-name" class="block text-gray-700 text-sm font-bold mb-2">作物名:</label>
+                            <input type="text" id="crop-name" name="name" value="${currentCrop.name}"
+                                class="shadow appearance-none border rounded-md w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500" required />
+                        </div>
+                        <div>
+                            <label for="crop-type" class="block text-gray-700 text-sm font-bold mb-2">種類:</label>
+                            <input type="text" id="crop-type" name="type" value="${currentCrop.type}"
+                                class="shadow appearance-none border rounded-md w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500"
+                                placeholder="例: 夏野菜、葉物野菜" required />
+                        </div>
+                        <div>
+                            <label for="crop-memo" class="block text-gray-700 text-sm font-bold mb-2">メモ:</label>
+                            <textarea id="crop-memo" name="memo" rows="3"
+                                class="shadow appearance-none border rounded-md w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500"
+                                placeholder="栽培に関するメモやヒント">${currentCrop.memo}</textarea>
+                        </div>
+                        <div class="flex justify-end gap-3 pt-4">
+                            <button type="button" class="px-4 py-2 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors" onclick="handleCancelForm();">キャンセル</button>
+                            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">保存</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+
+            // フォーム送信
+            const cropForm = document.getElementById('crop-form');
+            cropForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = new FormData(cropForm);
+                const newCrop = {
+                    id: currentCrop.id || Date.now().toString(),
+                    name: formData.get('name'),
+                    type: formData.get('type'),
+                    memo: formData.get('memo'),
+                };
+
+                if (!newCrop.name || !newCrop.type) {
+                    alert('作物名と種類は必須項目です。');
+                    return;
+                }
+
+                if (currentCrop.id) {
+                    // 更新
+                    crops = crops.map(c => (c.id === newCrop.id ? newCrop : c));
+                } else {
+                    // 追加
+                    crops.push(newCrop);
+                }
+                setView('cropManagement');
+            });
+        }
+
+        // --- データ操作関数 ---
+
+        function handleDeleteRecord(id) {
+            if (confirm('この記録を削除しますか？')) { // confirmを一時的に使用
+                records = records.filter(record => record.id !== id);
+                updateTimelineList(); // タイムラインを更新
+            }
+        }
+
+        function handleDeleteCrop(id) {
+            if (confirm('この作物を削除しますか？')) { // confirmを一時的に使用
+                crops = crops.filter(crop => crop.id !== id);
+                updateCropTable(); // 作物テーブルを更新
+            }
+        }
+
+        function handleCancelForm() {
+            // フォームのキャンセル時は、直前のビューに戻るか、デフォルトビューに設定
+            if (currentView === 'recordForm') {
+                setView('timeline');
+            } else if (currentView === 'cropForm') {
+                setView('cropManagement');
+            } else {
+                setView('dashboard'); // fallback
+            }
+        }
+
+        // 全体のレンダリングロジック
+        function render() {
+            switch (currentView) {
+                case 'dashboard':
+                    renderDashboard();
+                    break;
+                case 'timeline':
+                    renderRecordTimeline();
+                    break;
+                case 'recordForm':
+                    renderRecordForm();
+                    break;
+                case 'cropManagement':
+                    renderCropManagement();
+                    break;
+                case 'cropForm':
+                    renderCropForm();
+                    break;
+                default:
+                    renderDashboard();
+            }
+        }
+
+        // アプリケーション起動時に最初のビューをレンダリング
+        window.onload = render;
+
+        // タイトルクリックでダッシュボードに戻る
+        appTitle.addEventListener('click', () => setView('dashboard'));
+
+    </script>
+</body>
+</html>
