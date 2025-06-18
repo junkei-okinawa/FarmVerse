@@ -1,12 +1,19 @@
 use crate::mac_address::MacAddress;
 use esp_idf_svc::hal::delay::FreeRtos;
-use esp_idf_sys::{
-    esp_now_add_peer, esp_now_init, esp_now_peer_info_t, esp_now_register_send_cb, esp_now_send,
+use esp_idf_svc::hal::mutex::{Mutex, RawMutex};
+use esp_idf_svc::sys::{
+    esp_now_add_peer, esp_now_deinit, esp_now_init, esp_now_peer_info_t, esp_now_register_recv_cb,
+    esp_now_register_send_cb, esp_now_recv_info_t, esp_now_send, esp_err_t,
     esp_now_send_status_t, esp_now_send_status_t_ESP_NOW_SEND_SUCCESS,
-    wifi_interface_t_WIFI_IF_STA,
+    wifi_interface_t_WIFI_IF_STA, ESP_IF_WIFI_STA, ESP_OK,
 };
-use log::error;
+use esp_idf_svc::sys::EspError;
+use log::{error, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
+use core::slice;
+
+static LAST_RECEIVED_SLEEP_DURATION_SECONDS: Mutex<Option<u32>> = Mutex::new(None);
+static RECEIVE_FLAG: AtomicBool = AtomicBool::new(false);
 
 /// ESP-NOW送信結果
 #[derive(Debug, Clone)]
@@ -35,22 +42,17 @@ pub enum EspNowError {
 
     #[error("送信失敗（コールバックで報告）")]
     SendFailedCallback,
+
+    #[error("ESP-NOW receive error: {0}")]
+    RecvError(String),
+
+    #[error("ESP-NOW receive timeout")]
+    RecvTimeout,
 }
 
 /// 送信状態を共有するためのグローバルチャネル
 static SEND_COMPLETE: AtomicBool = AtomicBool::new(true);
 static SEND_FAILED: AtomicBool = AtomicBool::new(false);
-
-/// ESP-NOW送信コールバック
-extern "C" fn esp_now_send_cb(_mac_addr: *const u8, status: esp_now_send_status_t) {
-    if status == esp_now_send_status_t_ESP_NOW_SEND_SUCCESS {
-        // 送信成功時の冗長ログは省略
-    } else {
-        error!("ESP-NOW: Send failed");
-        SEND_FAILED.store(true, Ordering::SeqCst);
-    }
-    SEND_COMPLETE.store(true, Ordering::SeqCst);
-}
 
 /// ESP-NOW送信機
 #[derive(Debug)]
@@ -60,19 +62,73 @@ pub struct EspNowSender {
 }
 
 impl EspNowSender {
+    /// ESP-NOW受信コールバック
+    unsafe extern "C" fn esp_now_recv_cb(recv_info: *const esp_now_recv_info_t, data: *const u8, len: i32) {
+        if data.is_null() || len < 4 { // Expecting at least 4 bytes for duration
+            warn!("Received invalid ESP-NOW data: data is null or length is too short");
+            return;
+        }
+
+        if len < 4 {
+            warn!("Received ESP-NOW data is too short for sleep duration: len = {}", len);
+            return;
+        }
+
+        let duration_slice = slice::from_raw_parts(data.add(len as usize - 4), 4);
+        let duration = u32::from_le_bytes(duration_slice.try_into().unwrap_or_else(|_| {
+            warn!("Failed to parse sleep duration from received data");
+            0 // Default to 0 on parse error, or handle error differently
+        }));
+
+        if duration > 0 { // Assuming 0 is not a valid sleep duration to be acted upon here
+            let mut locked_duration = LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock();
+            *locked_duration = Some(duration);
+            RECEIVE_FLAG.store(true, Ordering::SeqCst);
+            info!("ESP-NOW: Received sleep duration: {} seconds from MAC: {:02x?}", duration, MacAddress((*recv_info).src_addr));
+        } else if len >= 10 { // Attempt to log MAC if we likely have it
+            info!("ESP-NOW: Received data (len {}) from MAC: {:02x?}, but no valid sleep duration parsed.", len, MacAddress((*recv_info).src_addr));
+        } else {
+            info!("ESP-NOW: Received data (len {}), but no valid sleep duration parsed.", len);
+        }
+    }
+
+    /// ESP-NOW送信コールバック
+    extern "C" fn esp_now_send_cb(_mac_addr: *const u8, status: esp_now_send_status_t) {
+        if status == esp_now_send_status_t_ESP_NOW_SEND_SUCCESS {
+            // 送信成功時の冗長ログは省略
+        } else {
+            error!("ESP-NOW: Send failed");
+            SEND_FAILED.store(true, Ordering::SeqCst);
+        }
+        SEND_COMPLETE.store(true, Ordering::SeqCst);
+    }
+
     /// 新しいESP-NOW送信機を初期化します
     ///
     /// # エラー
     ///
     /// ESP-NOWの初期化に失敗した場合にエラーを返します
     pub fn new() -> Result<Self, EspNowError> {
-        let result = unsafe { esp_now_init() };
-        if result != 0 {
-            return Err(EspNowError::InitFailed(result));
+        let result_init = unsafe { esp_now_init() };
+        if result_init != ESP_OK {
+            error!("Failed to initialize ESP-NOW: {}", result_init);
+            return Err(EspNowError::InitFailed(result_init));
         }
 
-        unsafe {
-            esp_now_register_send_cb(Some(esp_now_send_cb));
+        let result_send_cb = unsafe { esp_now_register_send_cb(Some(Self::esp_now_send_cb)) };
+        if result_send_cb != ESP_OK {
+            error!("Failed to register ESP-NOW send callback: {}", result_send_cb);
+            // Consider de-initializing ESP-NOW here if send CB registration fails
+            unsafe { esp_now_deinit(); }
+            return Err(EspNowError::InitFailed(result_send_cb)); // Or a more specific error
+        }
+
+        let result_recv_cb = unsafe { esp_now_register_recv_cb(Some(Self::esp_now_recv_cb)) };
+        if result_recv_cb != ESP_OK {
+            error!("Failed to register ESP-NOW receive callback: {}", result_recv_cb);
+            // Consider de-initializing ESP-NOW here
+            unsafe { esp_now_deinit(); }
+            return Err(EspNowError::InitFailed(result_recv_cb)); // Or a new error type for recv_cb registration
         }
 
         Ok(Self { initialized: true })
@@ -137,7 +193,7 @@ impl EspNowSender {
 
         // データを送信
         let result = unsafe { esp_now_send(peer_mac.0.as_ptr(), data.as_ptr(), data.len()) };
-        if result != 0 {
+        if result != ESP_OK { // Changed from result != 0
             SEND_COMPLETE.store(true, Ordering::SeqCst);
             return Err(EspNowError::SendFailed(result));
         }
@@ -158,6 +214,36 @@ impl EspNowSender {
         }
 
         Ok(())
+    }
+
+    /// ESP-NOW経由でスリープコマンドを受信します
+    ///
+    /// # 引数
+    ///
+    /// * `timeout_ms` - 受信タイムアウト（ミリ秒）
+    ///
+    /// # 戻り値
+    ///
+    /// 受信したスリープ時間（秒）。タイムアウトした場合は`EspNowError::RecvTimeout`。
+    /// データを受信したが解析できなかった場合は`None`を返す代わりにエラーを返すことも検討。
+    /// 現在の実装では、解析成功時のみ`Ok(Some(duration))`を返す。
+    pub fn receive_sleep_command(&self, timeout_ms: u32) -> Result<Option<u32>, EspNowError> {
+        RECEIVE_FLAG.store(false, Ordering::SeqCst); // Reset flag before waiting
+        *LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock() = None; // Clear previous duration
+
+        let start_time = esp_idf_svc::hal::delay::TickType::now();
+        while (esp_idf_svc::hal::delay::TickType::now() - start_time).to_millis() < timeout_ms as u64 {
+            if RECEIVE_FLAG.load(Ordering::SeqCst) {
+                let duration_opt = *LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock();
+                if duration_opt.is_some() {
+                    // info!("Received sleep command: {:?} seconds", duration_opt); // Logged in callback
+                    return Ok(duration_opt);
+                }
+            }
+            FreeRtos::delay_ms(50); // Poll every 50ms
+        }
+        warn!("Timeout waiting for sleep command");
+        Err(EspNowError::RecvTimeout)
     }
 
     /// 画像データをチャンクに分割して送信する

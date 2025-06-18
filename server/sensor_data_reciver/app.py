@@ -33,6 +33,7 @@ class Config:
     INFLUXDB_ORG: str = "agri"
     INFLUXDB_BUCKET: str = "balcony"
     DEBUG_FRAME_PARSING: bool = False
+    DEFAULT_SLEEP_DURATION_S: int = 60 # Default sleep duration for ESP32-CAM in seconds
 
 # グローバル設定インスタンス
 config = Config()
@@ -460,6 +461,27 @@ class SerialProtocol(asyncio.Protocol):
                             logger.error(f"Error writing to influxDB: {e}")
                     else:
                         logger.warning(f"No valid data to write for {sender_mac} in HASH frame.")
+
+                    # --- Send sleep command back to gateway ---
+                    # Assuming 'config' is the global instance of the Config dataclass.
+                    sleep_duration_s = config.DEFAULT_SLEEP_DURATION_S
+
+                    # Format the command to send back to the gateway
+                    # CMD_SEND_ESP_NOW:<target_mac_address>:<sleep_duration_seconds>\n
+                    # Note: The gateway itself does not have a MAC in this context for the command,
+                    # the command tells the gateway to send an ESP-NOW message to sender_mac.
+                    command_to_gateway = f"CMD_SEND_ESP_NOW:{sender_mac}:{sleep_duration_s}\n"
+                    command_bytes = command_to_gateway.encode('utf-8')
+
+                    if self.transport:
+                        try:
+                            self.transport.write(command_bytes)
+                            logger.info(f"Sent sleep command to gateway for {sender_mac}: {command_to_gateway.strip()}")
+                        except Exception as e:
+                            logger.error(f"Error writing sleep command to serial for {sender_mac}: {e}")
+                    else:
+                        logger.warning(f"No transport available to send sleep command for {sender_mac}")
+                    # --- End of sending sleep command ---
 
                 elif frame_type == FRAME_TYPE_EOF:
                     frame_type_str = "EOF"
