@@ -65,14 +65,11 @@ impl EspNowSender {
     /// ESP-NOW受信コールバック
     unsafe extern "C" fn esp_now_recv_cb(recv_info: *const esp_now_recv_info_t, data: *const u8, len: i32) {
         if data.is_null() || len < 4 { // Expecting at least 4 bytes for duration
-            warn!("Received invalid ESP-NOW data: data is null or length is too short");
+            warn!("Received invalid ESP-NOW data: data is null or length is too short (len = {})", len);
             return;
         }
 
-        if len < 4 {
-            warn!("Received ESP-NOW data is too short for sleep duration: len = {}", len);
-            return;
-        }
+        // The redundant 'if len < 4' block that was here is now removed.
 
         let duration_slice = slice::from_raw_parts(data.add(len as usize - 4), 4);
         let duration = u32::from_le_bytes(duration_slice.try_into().unwrap_or_else(|_| {
