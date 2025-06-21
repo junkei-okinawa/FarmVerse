@@ -72,10 +72,13 @@ impl EspNowSender {
         // The redundant 'if len < 4' block that was here is now removed.
 
         let duration_slice = slice::from_raw_parts(data.add(len as usize - 4), 4);
-        let duration = u32::from_le_bytes(duration_slice.try_into().unwrap_or_else(|_| {
-            warn!("Failed to parse sleep duration from received data");
-            0 // Default to 0 on parse error, or handle error differently
-        }));
+        let duration = match duration_slice.try_into() {
+            Ok(bytes) => u32::from_le_bytes(bytes),
+            Err(_) => {
+                warn!("Failed to parse sleep duration from received data slice. Data len: {}, MAC: {:02x?}", len, MacAddress((*recv_info).src_addr));
+                return; // Return early on parse error
+            }
+        };
 
         if duration > 0 { // Assuming 0 is not a valid sleep duration to be acted upon here
             let mut locked_duration = LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock();
