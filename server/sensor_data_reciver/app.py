@@ -34,6 +34,12 @@ class Config:
     INFLUXDB_BUCKET: str = "balcony"
     DEBUG_FRAME_PARSING: bool = False
     DEFAULT_SLEEP_DURATION_S: int = 60 # Default sleep duration for ESP32-CAM in seconds
+    
+    # Battery-based sleep duration configuration
+    LOW_VOLTAGE_THRESHOLD_PERCENT: int = 8  # Same as device-side threshold
+    LONG_SLEEP_DURATION_S: int = 3600 * 9  # 9 hours for low battery (12:00以降)
+    MEDIUM_SLEEP_DURATION_S: int = 3600  # 1 hour for low battery (12:00未満)
+    NORMAL_SLEEP_DURATION_S: int = 600  # 10 minutes for normal battery
 
 # グローバル設定インスタンス
 config = Config()
@@ -42,6 +48,40 @@ config = Config()
 def format_sleep_command_to_gateway(sender_mac: str, sleep_duration_s: int) -> str:
     """Formats the sleep command string to be sent to the gateway."""
     return f"CMD_SEND_ESP_NOW:{sender_mac}:{sleep_duration_s}\n"
+
+def determine_sleep_duration(voltage_percent: Optional[float]) -> int:
+    """
+    Determine sleep duration based on battery voltage percentage and current time.
+    
+    Args:
+        voltage_percent: Battery voltage as percentage (0-100), or None if unknown
+        
+    Returns:
+        Sleep duration in seconds
+    """
+    if voltage_percent is None:
+        # Unknown voltage, use default
+        return config.DEFAULT_SLEEP_DURATION_S
+    
+    if voltage_percent < config.LOW_VOLTAGE_THRESHOLD_PERCENT:
+        # Low battery: use time-based long sleep to conserve power
+        current_time = datetime.now()
+        current_hour = current_time.hour
+        
+        if current_hour >= 12:
+            # 12:00以降（午後・夜間）: 9時間スリープ
+            # 夜間は暗くなるためカメラ画像撮影は行わない想定
+            logger.info(f"Low battery ({voltage_percent}% < {config.LOW_VOLTAGE_THRESHOLD_PERCENT}%) + afternoon/night ({current_hour}:xx >= 12:00), using 9-hour sleep: {config.LONG_SLEEP_DURATION_S}s")
+            return config.LONG_SLEEP_DURATION_S
+        else:
+            # 12:00未満（午前中）: 1時間スリープ
+            # 夜明け前にロングスリープから覚めてしまった場合を想定
+            logger.info(f"Low battery ({voltage_percent}% < {config.LOW_VOLTAGE_THRESHOLD_PERCENT}%) + morning ({current_hour}:xx < 12:00), using 1-hour sleep: {config.MEDIUM_SLEEP_DURATION_S}s")
+            return config.MEDIUM_SLEEP_DURATION_S
+    else:
+        # Normal battery: use normal sleep interval (10 minutes)
+        logger.info(f"Normal battery ({voltage_percent}% >= {config.LOW_VOLTAGE_THRESHOLD_PERCENT}%), using normal sleep: {config.NORMAL_SLEEP_DURATION_S}s")
+        return config.NORMAL_SLEEP_DURATION_S
 
 # --- Logging Setup ---
 logging.basicConfig(
@@ -468,8 +508,8 @@ class SerialProtocol(asyncio.Protocol):
                         logger.warning(f"No valid data to write for {sender_mac} in HASH frame.")
 
                     # --- Send sleep command back to gateway ---
-                    # Assuming 'config' is the global instance of the Config dataclass.
-                    sleep_duration_s = config.DEFAULT_SLEEP_DURATION_S
+                    # Determine sleep duration based on battery voltage
+                    sleep_duration_s = determine_sleep_duration(voltage)
 
                     # Format the command to send back to the gateway
                     # CMD_SEND_ESP_NOW:<target_mac_address>:<sleep_duration_seconds>\n

@@ -25,6 +25,10 @@ class MockTransport:
     def get_written_commands(self):
         """書き込まれたコマンドを文字列として返す"""
         return [data.decode('utf-8') for data in self.written_data]
+    
+    def reset(self):
+        """記録されたデータをクリア"""
+        self.written_data.clear()
 
 
 @pytest_asyncio.fixture
@@ -91,7 +95,8 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
     written_commands = mock_transport.get_written_commands()
     assert len(written_commands) == 1
     
-    expected_command = f"CMD_SEND_ESP_NOW:{test_mac}:{config.DEFAULT_SLEEP_DURATION_S}\n"
+    # 電圧85%は8%以上なので、NORMAL_SLEEP_DURATION_S（600秒）が適用される
+    expected_command = f"CMD_SEND_ESP_NOW:{test_mac}:{config.NORMAL_SLEEP_DURATION_S}\n"
     assert written_commands[0] == expected_command
 
 
@@ -122,8 +127,9 @@ async def test_multiple_devices_sleep_commands(mock_transport):
     written_commands = mock_transport.get_written_commands()
     assert len(written_commands) == len(devices)
     
-    for i, (mac, _, _) in enumerate(devices):
-        expected_command = f"CMD_SEND_ESP_NOW:{mac}:{config.DEFAULT_SLEEP_DURATION_S}\n"
+    for i, (mac, voltage, _) in enumerate(devices):
+        # 全ての電圧値（80%, 90%, 75%）は8%以上なので、NORMAL_SLEEP_DURATION_S（600秒）が適用される
+        expected_command = f"CMD_SEND_ESP_NOW:{mac}:{config.NORMAL_SLEEP_DURATION_S}\n"
         assert written_commands[i] == expected_command
 
 
@@ -190,6 +196,59 @@ async def test_invalid_hash_frame_no_sleep_command(mock_transport):
     # スリープコマンドが送信されていないことを確認
     written_commands = mock_transport.get_written_commands()
     assert len(written_commands) == 0
+
+
+@pytest.mark.asyncio
+async def test_low_voltage_sleep_commands(mock_transport):
+    """低電圧時の時刻ベースのスリープコマンドをテスト"""
+    import datetime
+    from unittest.mock import patch
+    
+    test_mac = "aa:bb:cc:dd:ee:ff"
+    test_voltage = 5  # 8%未満の低電圧
+    test_temperature = 25.5
+    test_timestamp = "2024/01/01 12:00:00.000"
+    
+    # プロトコルインスタンス作成
+    connection_lost_future = asyncio.Future()
+    protocol = SerialProtocol(connection_lost_future)
+    protocol.transport = mock_transport
+    
+    # HASHフレームを作成
+    hash_frame = create_hash_frame(test_mac, test_voltage, test_temperature, test_timestamp)
+    
+    # 午前中（10時）をシミュレート
+    with patch('app.datetime') as mock_datetime:
+        mock_datetime.now.return_value = datetime.datetime(2024, 1, 1, 10, 0, 0)
+        mock_datetime.datetime = datetime.datetime  # datetime.datetime クラスを正しく保持
+        
+        # データ受信をシミュレート
+        protocol.data_received(hash_frame)
+        await asyncio.sleep(0.1)
+        
+        # 午前中の低電圧では MEDIUM_SLEEP_DURATION_S（1時間）が適用される
+        written_commands = mock_transport.get_written_commands()
+        assert len(written_commands) == 1
+        expected_command = f"CMD_SEND_ESP_NOW:{test_mac}:{config.MEDIUM_SLEEP_DURATION_S}\n"
+        assert written_commands[0] == expected_command
+    
+    # リセット
+    mock_transport.reset()
+    
+    # 午後（14時）をシミュレート
+    with patch('app.datetime') as mock_datetime:
+        mock_datetime.now.return_value = datetime.datetime(2024, 1, 1, 14, 0, 0)
+        mock_datetime.datetime = datetime.datetime
+        
+        # データ受信をシミュレート
+        protocol.data_received(hash_frame)
+        await asyncio.sleep(0.1)
+        
+        # 午後の低電圧では LONG_SLEEP_DURATION_S（9時間）が適用される
+        written_commands = mock_transport.get_written_commands()
+        assert len(written_commands) == 1
+        expected_command = f"CMD_SEND_ESP_NOW:{test_mac}:{config.LONG_SLEEP_DURATION_S}\n"
+        assert written_commands[0] == expected_command
 
 
 if __name__ == "__main__":
