@@ -19,6 +19,11 @@ pub mod esp_now;
 pub mod led;
 pub mod mac_address;
 pub mod sleep;
+pub mod app_controller;
+pub mod data_collector;
+pub mod network_manager;
+pub mod rtc_manager;
+pub mod voltage_sensor;
 
 // 内部で使用する型をまとめてエクスポート
 pub use camera::CameraController;
