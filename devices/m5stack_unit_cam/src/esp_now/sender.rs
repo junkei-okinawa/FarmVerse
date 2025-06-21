@@ -88,17 +88,18 @@ impl EspNowSender {
         };
 
         if duration > 0 { // Assuming 0 is not a valid sleep duration to be acted upon here
-            let mut locked_duration = LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock();
-            *locked_duration = Some(duration);
-            SLEEP_CMD_CONDVAR.notify_one(); // Notify the waiting thread
-            // Convert *mut u8 to [u8; 6] safely
-            let mac_array = if !(*recv_info).src_addr.is_null() {
-                let mac_slice = slice::from_raw_parts((*recv_info).src_addr, 6);
-                [mac_slice[0], mac_slice[1], mac_slice[2], mac_slice[3], mac_slice[4], mac_slice[5]]
-            } else {
-                [0; 6]
-            };
-            info!("ESP-NOW: Received sleep duration: {} seconds from MAC: {:02x?}", duration, MacAddress(mac_array));
+            if let Ok(mut locked_duration) = LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock() {
+                *locked_duration = Some(duration);
+                SLEEP_CMD_CONDVAR.notify_one(); // Notify the waiting thread
+                // Convert *mut u8 to [u8; 6] safely
+                let mac_array = if !(*recv_info).src_addr.is_null() {
+                    let mac_slice = slice::from_raw_parts((*recv_info).src_addr, 6);
+                    [mac_slice[0], mac_slice[1], mac_slice[2], mac_slice[3], mac_slice[4], mac_slice[5]]
+                } else {
+                    [0; 6]
+                };
+                info!("ESP-NOW: Received sleep duration: {} seconds from MAC: {:02x?}", duration, MacAddress(mac_array));
+            }
         } else if len >= 10 { // Attempt to log MAC if we likely have it
             // Convert *mut u8 to [u8; 6] safely
             let mac_array = if !(*recv_info).src_addr.is_null() {
@@ -249,7 +250,10 @@ impl EspNowSender {
     /// データを受信したが解析できなかった場合は`None`を返す代わりにエラーを返すことも検討。
     /// 現在の実装では、解析成功時のみ`Ok(Some(duration))`を返す。
     pub fn receive_sleep_command(&self, timeout_ms: u32) -> Result<Option<u32>, EspNowError> {
-        let mut duration_guard = LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock();
+        let duration_guard = LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock()
+            .map_err(|_| EspNowError::RecvError("Failed to lock mutex".to_string()))?;
+        
+        let mut duration_guard = duration_guard;
         *duration_guard = None; // Clear previous duration
 
         let timeout_duration = std::time::Duration::from_millis(timeout_ms as u64);
@@ -258,28 +262,33 @@ impl EspNowSender {
         // The condition for wait_timeout_while should be true as long as we need to wait.
         // So, we wait while *duration_guard is None.
         let result = SLEEP_CMD_CONDVAR.wait_timeout_while(
-            &mut duration_guard,
+            duration_guard,
             timeout_duration,
-            |shared_data_opt| shared_data_opt.is_none(),
+            |shared_data_opt: &mut Option<u32>| shared_data_opt.is_none(),
         );
 
-        if result.timed_out() {
-            warn!("Timeout waiting for sleep command via Condvar");
-            Err(EspNowError::RecvTimeout)
-        } else {
-            // MutexGuard `duration_guard` is still locked here.
-            // The value is what was set by the callback.
-            if duration_guard.is_some() {
-                // info!("Condvar received sleep command: {:?} seconds", *duration_guard); // Logged in cb
-                Ok(*duration_guard) // This dereferences the MutexGuard then copies Option<u32>
-            } else {
-                // This case (woken up but data is None) should ideally not be hit
-                // if the predicate `|shared_data_opt| shared_data_opt.is_none()`
-                // and callback logic are correct.
-                warn!("Condvar woken up but no sleep duration found.");
-                // Potentially return Ok(None) or a specific error
-                Ok(None) // Or perhaps an error indicating an unexpected state
+        match result {
+            Ok((mut duration_guard, timeout_result)) => {
+                if timeout_result.timed_out() {
+                    warn!("Timeout waiting for sleep command via Condvar");
+                    Err(EspNowError::RecvTimeout)
+                } else {
+                    // MutexGuard `duration_guard` is still locked here.
+                    // The value is what was set by the callback.
+                    if duration_guard.is_some() {
+                        // info!("Condvar received sleep command: {:?} seconds", *duration_guard); // Logged in cb
+                        Ok(*duration_guard) // This dereferences the MutexGuard then copies Option<u32>
+                    } else {
+                        // This case (woken up but data is None) should ideally not be hit
+                        // if the predicate `|shared_data_opt| shared_data_opt.is_none()`
+                        // and callback logic are correct.
+                        warn!("Condvar woken up but no sleep duration found.");
+                        // Potentially return Ok(None) or a specific error
+                        Ok(None) // Or perhaps an error indicating an unexpected state
+                    }
+                }
             }
+            Err(_) => Err(EspNowError::RecvError("Condvar wait failed".to_string())),
         }
     }
 
