@@ -16,7 +16,6 @@ use esp_idf_svc::{
     wifi::{BlockingWifi, EspWifi},
 };
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 mod camera;
 mod config;
@@ -138,9 +137,6 @@ fn main() -> anyhow::Result<()> {
     // ESP-IDFの各種初期化
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
-
-    let loop_start_time = Instant::now();
-    let min_sleep_duration = Duration::from_secs(1);
 
     let app_config = match AppConfig::load() {
         Ok(cfg) => Arc::new(cfg),
