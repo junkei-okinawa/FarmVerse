@@ -51,19 +51,23 @@ async def setup_test_environment():
             setattr(config, key, value)
 
 
-@patch('app.write_api')  # write_apiを直接パッチ
+@patch('storage.influxdb_client.get_write_api')  # InfluxDB write APIを直接パッチ
 @patch('app.serial_asyncio.create_serial_connection')
 @patch('app.influxdb_client.InfluxDBClient')
 @patch('app.Image')  # PIL Imageもモック化
-@patch('app.save_image')  # save_image関数もモック化
+@patch('processors.image_processor.save_image')  # save_image関数をモジュール内でパッチ
 class TestSerialProtocolIntegration:
 
     @pytest.mark.asyncio
-    async def test_receive_hash_frame(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_api, setup_test_environment):
+    async def test_receive_hash_frame(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_api_func, setup_test_environment):
         # モックオブジェクトの準備
         mock_transport = MagicMock()
         mock_protocol = MagicMock()
         mock_transport.serial = MagicMock(port="test_port")  # serialオブジェクトを設定
+        
+        # Mock InfluxDB write API
+        mock_write_api = MagicMock()
+        mock_write_api_func.return_value = mock_write_api
 
         mock_serial_connection.return_value = (mock_transport, mock_protocol)
 
@@ -89,7 +93,10 @@ class TestSerialProtocolIntegration:
         # プロトコルインスタンス作成
         loop = asyncio.get_running_loop()
         connection_lost_future = loop.create_future()
-        protocol = SerialProtocol(connection_lost_future)
+        image_buffers = {}
+        last_receive_time = {}
+        stats = {}
+        protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
         protocol.connection_made(mock_transport)
 
         # データ受信
@@ -105,7 +112,7 @@ class TestSerialProtocolIntegration:
         assert record._fields['temperature'] == 25.5
 
     @pytest.mark.asyncio
-    async def test_receive_data_and_eof_frames(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_api, setup_test_environment):
+    async def test_receive_data_and_eof_frames(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_api_func, setup_test_environment):
         # モックオブジェクトの準備
         mock_transport = MagicMock()
         mock_protocol = MagicMock()
@@ -159,7 +166,10 @@ class TestSerialProtocolIntegration:
         # プロトコルインスタンス作成
         loop = asyncio.get_running_loop()
         connection_lost_future = loop.create_future()
-        protocol = SerialProtocol(connection_lost_future)
+        image_buffers = {}
+        last_receive_time = {}
+        stats = {}
+        protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
         protocol.connection_made(mock_transport)
 
         # データ受信
