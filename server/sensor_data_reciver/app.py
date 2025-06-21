@@ -426,14 +426,18 @@ class SerialProtocol(asyncio.Protocol):
                     voltage = None
                     if "VOLT:" in volt_log_entry:
                         volt_value = volt_log_entry.replace("VOLT:", "")
-                        if volt_value != "100": # 100%の時は初回起動またはデバッグ時のため記録しない
-                            try:
-                                voltage = float(volt_value)
-                                point = (
-                                    Point("data").tag("mac_address", sender_mac).field("voltage", float(voltage))
-                                )
-                            except ValueError:
-                                logger.warning(f"Invalid VOLT value from {sender_mac}: {volt_value}")
+                        ### ==========================
+                        # ソーラーパネル導入により100%で正常稼働するパターンが出てきたため100%を記録する
+                        # TODO: 今後のデバイス側の回路変更により復活する可能性あり
+                        # if volt_value != "100": # 100%の時は初回起動またはデバッグ時のため記録しない
+                        ### ==========================
+                        try:
+                            voltage = float(volt_value)
+                            point = (
+                                Point("data").tag("mac_address", sender_mac).field("voltage", float(voltage))
+                            )
+                        except ValueError:
+                            logger.warning(f"Invalid VOLT value from {sender_mac}: {volt_value}")
                     else:
                         logger.warning(f"VOLT not found in HASH payload from {sender_mac}: {payload_str}")
 
