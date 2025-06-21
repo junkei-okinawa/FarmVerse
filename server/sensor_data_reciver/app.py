@@ -38,6 +38,11 @@ class Config:
 # グローバル設定インスタンス
 config = Config()
 
+# --- Helper Functions ---
+def format_sleep_command_to_gateway(sender_mac: str, sleep_duration_s: int) -> str:
+    """Formats the sleep command string to be sent to the gateway."""
+    return f"CMD_SEND_ESP_NOW:{sender_mac}:{sleep_duration_s}\n"
+
 # --- Logging Setup ---
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -470,7 +475,7 @@ class SerialProtocol(asyncio.Protocol):
                     # CMD_SEND_ESP_NOW:<target_mac_address>:<sleep_duration_seconds>\n
                     # Note: The gateway itself does not have a MAC in this context for the command,
                     # the command tells the gateway to send an ESP-NOW message to sender_mac.
-                    command_to_gateway = f"CMD_SEND_ESP_NOW:{sender_mac}:{sleep_duration_s}\n"
+                    command_to_gateway = format_sleep_command_to_gateway(sender_mac, sleep_duration_s)
                     command_bytes = command_to_gateway.encode('utf-8')
 
                     if self.transport:

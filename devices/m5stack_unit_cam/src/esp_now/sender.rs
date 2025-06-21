@@ -1,6 +1,6 @@
 use crate::mac_address::MacAddress;
-use esp_idf_svc::hal::delay::FreeRtos;
-use esp_idf_svc::hal::mutex::{Mutex, RawMutex};
+use esp_idf_svc::hal::delay::{FreeRtos, TickType};
+use esp_idf_svc::hal::mutex::{Condvar, Mutex, RawMutex};
 use esp_idf_svc::sys::{
     esp_now_add_peer, esp_now_deinit, esp_now_init, esp_now_peer_info_t, esp_now_register_recv_cb,
     esp_now_register_send_cb, esp_now_recv_info_t, esp_now_send, esp_err_t,
@@ -11,9 +11,11 @@ use esp_idf_svc::sys::EspError;
 use log::{error, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use core::slice;
+use std::time::Duration;
 
 static LAST_RECEIVED_SLEEP_DURATION_SECONDS: Mutex<Option<u32>> = Mutex::new(None);
-static RECEIVE_FLAG: AtomicBool = AtomicBool::new(false);
+// static RECEIVE_FLAG: AtomicBool = AtomicBool::new(false); // Removed
+static SLEEP_CMD_CONDVAR: Condvar = Condvar::new();
 
 /// ESP-NOW送信結果
 #[derive(Debug, Clone)]
@@ -83,7 +85,7 @@ impl EspNowSender {
         if duration > 0 { // Assuming 0 is not a valid sleep duration to be acted upon here
             let mut locked_duration = LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock();
             *locked_duration = Some(duration);
-            RECEIVE_FLAG.store(true, Ordering::SeqCst);
+            SLEEP_CMD_CONDVAR.notify_one(); // Notify the waiting thread
             info!("ESP-NOW: Received sleep duration: {} seconds from MAC: {:02x?}", duration, MacAddress((*recv_info).src_addr));
         } else if len >= 10 { // Attempt to log MAC if we likely have it
             info!("ESP-NOW: Received data (len {}) from MAC: {:02x?}, but no valid sleep duration parsed.", len, MacAddress((*recv_info).src_addr));
@@ -228,22 +230,38 @@ impl EspNowSender {
     /// データを受信したが解析できなかった場合は`None`を返す代わりにエラーを返すことも検討。
     /// 現在の実装では、解析成功時のみ`Ok(Some(duration))`を返す。
     pub fn receive_sleep_command(&self, timeout_ms: u32) -> Result<Option<u32>, EspNowError> {
-        RECEIVE_FLAG.store(false, Ordering::SeqCst); // Reset flag before waiting
-        *LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock() = None; // Clear previous duration
+        let mut duration_guard = LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock();
+        *duration_guard = None; // Clear previous duration
 
-        let start_time = esp_idf_svc::hal::delay::TickType::now();
-        while (esp_idf_svc::hal::delay::TickType::now() - start_time).to_millis() < timeout_ms as u64 {
-            if RECEIVE_FLAG.load(Ordering::SeqCst) {
-                let duration_opt = *LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock();
-                if duration_opt.is_some() {
-                    // info!("Received sleep command: {:?} seconds", duration_opt); // Logged in callback
-                    return Ok(duration_opt);
-                }
+        let timeout_duration = std::time::Duration::from_millis(timeout_ms as u64);
+
+        // Wait until the duration_guard is Some or timeout occurs
+        // The condition for wait_timeout_while should be true as long as we need to wait.
+        // So, we wait while *duration_guard is None.
+        let result = SLEEP_CMD_CONDVAR.wait_timeout_while(
+            &mut duration_guard,
+            timeout_duration,
+            |shared_data_opt| shared_data_opt.is_none(),
+        );
+
+        if result.timed_out() {
+            warn!("Timeout waiting for sleep command via Condvar");
+            Err(EspNowError::RecvTimeout)
+        } else {
+            // MutexGuard `duration_guard` is still locked here.
+            // The value is what was set by the callback.
+            if duration_guard.is_some() {
+                // info!("Condvar received sleep command: {:?} seconds", *duration_guard); // Logged in cb
+                Ok(*duration_guard) // This dereferences the MutexGuard then copies Option<u32>
+            } else {
+                // This case (woken up but data is None) should ideally not be hit
+                // if the predicate `|shared_data_opt| shared_data_opt.is_none()`
+                // and callback logic are correct.
+                warn!("Condvar woken up but no sleep duration found.");
+                // Potentially return Ok(None) or a specific error
+                Ok(None) // Or perhaps an error indicating an unexpected state
             }
-            FreeRtos::delay_ms(50); // Poll every 50ms
         }
-        warn!("Timeout waiting for sleep command");
-        Err(EspNowError::RecvTimeout)
     }
 
     /// 画像データをチャンクに分割して送信する
