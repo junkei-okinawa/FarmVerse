@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate, Timelike, Utc};
+use chrono::{Timelike, Utc};
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::{
@@ -12,7 +12,7 @@ use esp_idf_svc::{
         delay::FreeRtos,
         peripherals::Peripherals,
     },
-    nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault}, // Added EspNvs, NvsDefault
+    nvs::{EspDefaultNvsPartition, EspNvs}, // Added EspNvs
     wifi::{BlockingWifi, EspWifi},
 };
 use std::sync::Arc;
@@ -173,12 +173,12 @@ fn main() -> anyhow::Result<()> {
 
     let sysloop = EspSystemEventLoop::take()?;
     let nvs_default_partition = EspDefaultNvsPartition::take()?; // Renamed for clarity
-    let mut nvs = EspNvs::new(nvs_default_partition.clone(), NVS_NAMESPACE, true)?; // NvsDefault is not a type, use bool for create_if_missing
+    let _nvs = EspNvs::new(nvs_default_partition.clone(), NVS_NAMESPACE, true)?; // NvsDefault is not a type, use bool for create_if_missing
 
     let mut led = StatusLed::new(peripherals_all.pins.gpio4)?;
     led.turn_off()?;
 
-    let mut deep_sleep_controller = DeepSleep::new(app_config.clone(), EspIdfDeepSleep);
+    let deep_sleep_controller = DeepSleep::new(app_config.clone(), EspIdfDeepSleep);
 
     // `tz` initialization is kept for now as it might be used in fallback sleep logic.
     let tz: chrono_tz::Tz = app_config
@@ -191,7 +191,7 @@ fn main() -> anyhow::Result<()> {
     let modem_taken_for_espnow = modem_peripheral_option
         .take()
         .ok_or_else(|| anyhow::anyhow!("Modem peripheral already taken for ESP-NOW setup"))?;
-    let mut wifi_for_espnow = BlockingWifi::wrap( // Renamed from wifi_instance_for_espnow
+    let mut _wifi_for_espnow = BlockingWifi::wrap( // Keep WiFi alive for ESP-NOW - renamed to _wifi_for_espnow
         EspWifi::new(
             modem_taken_for_espnow,
             sysloop.clone(),
@@ -200,7 +200,7 @@ fn main() -> anyhow::Result<()> {
         sysloop.clone(),
     )?;
 
-    wifi_for_espnow.set_configuration(&esp_idf_svc::wifi::Configuration::Client(
+    _wifi_for_espnow.set_configuration(&esp_idf_svc::wifi::Configuration::Client(
         esp_idf_svc::wifi::ClientConfiguration {
             ssid: "".try_into().unwrap(),
             password: "".try_into().unwrap(),
@@ -208,7 +208,7 @@ fn main() -> anyhow::Result<()> {
             ..Default::default()
         },
     ))?;
-    wifi_for_espnow.start()?;
+    _wifi_for_espnow.start()?;
     info!("WiFiがESP-NOW用にSTAモードで起動しました。");
 
     unsafe {
@@ -232,48 +232,6 @@ fn main() -> anyhow::Result<()> {
     // --- Fallback NVS date storage (if needed for other purposes) ---
     // ... (existing comments)
 
-    // --- WiFi Initialization for ESP-NOW ---
-    info!("ESP-NOW用にWiFiをSTAモードで準備します。");
-    let modem_taken_for_espnow = modem_peripheral_option
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Modem peripheral already taken for ESP-NOW setup"))?;
-    let mut wifi_for_espnow = BlockingWifi::wrap(
-        EspWifi::new(
-            modem_taken_for_espnow,
-            sysloop.clone(),
-            Some(nvs_default_partition.clone()),
-        )?,
-        sysloop.clone(),
-    )?;
-
-    wifi_for_espnow.set_configuration(&esp_idf_svc::wifi::Configuration::Client(
-        esp_idf_svc::wifi::ClientConfiguration {
-            ssid: "".try_into().unwrap(),
-            password: "".try_into().unwrap(),
-            auth_method: esp_idf_svc::wifi::AuthMethod::None,
-            ..Default::default()
-        },
-    ))?;
-    wifi_for_espnow.start()?;
-    info!("WiFiがESP-NOW用にSTAモードで起動しました。");
-
-    unsafe {
-        esp_idf_svc::sys::esp_wifi_set_ps(esp_idf_svc::sys::wifi_ps_type_t_WIFI_PS_NONE);
-    }
-    info!("Wi-Fi Power Save を無効化しました (ESP-NOW用)");
-
-    // --- Initialize EspNowSender ---
-    let esp_now_sender = match EspNowSender::new() {
-        Ok(sender) => sender,
-        Err(e) => {
-            error!("Failed to initialize ESP-NOW sender: {:?}", e);
-            deep_sleep_controller.sleep_for_duration(app_config.sleep_duration_seconds)?;
-            panic!("ESP-NOW init failed: {:?}", e);
-        }
-    };
-    esp_now_sender.add_peer(&app_config.receiver_mac)?;
-    info!("ESP-NOW sender initialized and peer added.");
-
     // --- ADC2 を初期化 ---
     info!("ADC2を初期化しています (GPIO0)");
     let adc2 = AdcDriver::new(peripherals_all.adc2)?;
@@ -286,6 +244,7 @@ fn main() -> anyhow::Result<()> {
 
     // --- 電圧測定 & パーセンテージ計算 ---
     info!("電圧を測定しパーセンテージを計算します...");
+    #[allow(unused_assignments)]
     let mut measured_voltage_percent: u8 = u8::MAX;
     match adc2_ch1.read() {
         Ok(voltage_mv_u16) => {
