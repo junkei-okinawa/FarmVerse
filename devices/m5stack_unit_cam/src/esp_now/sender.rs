@@ -268,7 +268,7 @@ impl EspNowSender {
         );
 
         match result {
-            Ok((mut duration_guard, timeout_result)) => {
+            Ok((duration_guard, timeout_result)) => {
                 if timeout_result.timed_out() {
                     warn!("Timeout waiting for sleep command via Condvar");
                     Err(EspNowError::RecvTimeout)

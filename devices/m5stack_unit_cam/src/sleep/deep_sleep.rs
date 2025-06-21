@@ -721,6 +721,7 @@ impl<P: DeepSleepPlatform> DeepSleep<P> {
     /// # Errors
     ///
     /// Returns `DeepSleepError::WifiError` if disconnection fails.
+    #[allow(dead_code)]
     fn disconnect_wifi_helper(
         &self,
         wifi: &mut BlockingWifi<EspWifi<'static>>,
