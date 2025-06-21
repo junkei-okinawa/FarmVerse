@@ -1,17 +1,15 @@
 use crate::mac_address::MacAddress;
-use esp_idf_svc::hal::delay::{FreeRtos, TickType};
-use esp_idf_svc::hal::mutex::{Condvar, Mutex, RawMutex};
+use esp_idf_svc::hal::delay::FreeRtos;
+use std::sync::{Condvar, Mutex};
 use esp_idf_svc::sys::{
     esp_now_add_peer, esp_now_deinit, esp_now_init, esp_now_peer_info_t, esp_now_register_recv_cb,
-    esp_now_register_send_cb, esp_now_recv_info_t, esp_now_send, esp_err_t,
+    esp_now_register_send_cb, esp_now_recv_info_t, esp_now_send,
     esp_now_send_status_t, esp_now_send_status_t_ESP_NOW_SEND_SUCCESS,
-    wifi_interface_t_WIFI_IF_STA, ESP_IF_WIFI_STA, ESP_OK,
+    wifi_interface_t_WIFI_IF_STA, ESP_OK,
 };
-use esp_idf_svc::sys::EspError;
 use log::{error, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use core::slice;
-use std::time::Duration;
 
 static LAST_RECEIVED_SLEEP_DURATION_SECONDS: Mutex<Option<u32>> = Mutex::new(None);
 // static RECEIVE_FLAG: AtomicBool = AtomicBool::new(false); // Removed
@@ -77,7 +75,14 @@ impl EspNowSender {
         let duration = match duration_slice.try_into() {
             Ok(bytes) => u32::from_le_bytes(bytes),
             Err(_) => {
-                warn!("Failed to parse sleep duration from received data slice. Data len: {}, MAC: {:02x?}", len, MacAddress((*recv_info).src_addr));
+                // Convert *mut u8 to [u8; 6] safely
+                let mac_array = if !(*recv_info).src_addr.is_null() {
+                    let mac_slice = slice::from_raw_parts((*recv_info).src_addr, 6);
+                    [mac_slice[0], mac_slice[1], mac_slice[2], mac_slice[3], mac_slice[4], mac_slice[5]]
+                } else {
+                    [0; 6]
+                };
+                warn!("Failed to parse sleep duration from received data slice. Data len: {}, MAC: {:02x?}", len, MacAddress(mac_array));
                 return; // Return early on parse error
             }
         };
@@ -86,9 +91,23 @@ impl EspNowSender {
             let mut locked_duration = LAST_RECEIVED_SLEEP_DURATION_SECONDS.lock();
             *locked_duration = Some(duration);
             SLEEP_CMD_CONDVAR.notify_one(); // Notify the waiting thread
-            info!("ESP-NOW: Received sleep duration: {} seconds from MAC: {:02x?}", duration, MacAddress((*recv_info).src_addr));
+            // Convert *mut u8 to [u8; 6] safely
+            let mac_array = if !(*recv_info).src_addr.is_null() {
+                let mac_slice = slice::from_raw_parts((*recv_info).src_addr, 6);
+                [mac_slice[0], mac_slice[1], mac_slice[2], mac_slice[3], mac_slice[4], mac_slice[5]]
+            } else {
+                [0; 6]
+            };
+            info!("ESP-NOW: Received sleep duration: {} seconds from MAC: {:02x?}", duration, MacAddress(mac_array));
         } else if len >= 10 { // Attempt to log MAC if we likely have it
-            info!("ESP-NOW: Received data (len {}) from MAC: {:02x?}, but no valid sleep duration parsed.", len, MacAddress((*recv_info).src_addr));
+            // Convert *mut u8 to [u8; 6] safely
+            let mac_array = if !(*recv_info).src_addr.is_null() {
+                let mac_slice = slice::from_raw_parts((*recv_info).src_addr, 6);
+                [mac_slice[0], mac_slice[1], mac_slice[2], mac_slice[3], mac_slice[4], mac_slice[5]]
+            } else {
+                [0; 6]
+            };
+            info!("ESP-NOW: Received data (len {}) from MAC: {:02x?}, but no valid sleep duration parsed.", len, MacAddress(mac_array));
         } else {
             info!("ESP-NOW: Received data (len {}), but no valid sleep duration parsed.", len);
         }
