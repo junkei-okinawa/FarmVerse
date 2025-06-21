@@ -51,23 +51,19 @@ async def setup_test_environment():
             setattr(config, key, value)
 
 
-@patch('storage.influxdb_client.get_write_api')  # InfluxDB write APIを直接パッチ
+@patch('protocol.serial_handler.influx_client.write_sensor_data')  # InfluxDB write操作を直接パッチ
 @patch('app.serial_asyncio.create_serial_connection')
 @patch('app.influxdb_client.InfluxDBClient')
 @patch('app.Image')  # PIL Imageもモック化
-@patch('processors.image_processor.save_image')  # save_image関数をモジュール内でパッチ
+@patch('protocol.serial_handler.save_image')  # save_image関数を正しいパスでパッチ
 class TestSerialProtocolIntegration:
 
     @pytest.mark.asyncio
-    async def test_receive_hash_frame(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_api_func, setup_test_environment):
+    async def test_receive_hash_frame(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_sensor_data, setup_test_environment):
         # モックオブジェクトの準備
         mock_transport = MagicMock()
         mock_protocol = MagicMock()
         mock_transport.serial = MagicMock(port="test_port")  # serialオブジェクトを設定
-        
-        # Mock InfluxDB write API
-        mock_write_api = MagicMock()
-        mock_write_api_func.return_value = mock_write_api
 
         mock_serial_connection.return_value = (mock_transport, mock_protocol)
 
@@ -95,7 +91,7 @@ class TestSerialProtocolIntegration:
         connection_lost_future = loop.create_future()
         image_buffers = {}
         last_receive_time = {}
-        stats = {}
+        stats = {"received_images": 0, "total_bytes": 0, "start_time": 0}
         protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
         protocol.connection_made(mock_transport)
 
@@ -103,16 +99,14 @@ class TestSerialProtocolIntegration:
         protocol.data_received(frame_bytes)
 
         # InfluxDBへの書き込みが呼ばれたか確認
-        mock_write_api.write.assert_called_once()
-        args, kwargs = mock_write_api.write.call_args
-        record = kwargs['record']
-        assert record._name == 'data'  # measurementの内部アクセス
-        assert record._tags['mac_address'] == sender_mac
-        assert record._fields['voltage'] == 12.3
-        assert record._fields['temperature'] == 25.5
+        mock_write_sensor_data.assert_called_once()
+        args, kwargs = mock_write_sensor_data.call_args
+        assert args[0] == sender_mac  # MAC address
+        assert args[1] == 12.3        # voltage
+        assert args[2] == 25.5        # temperature
 
     @pytest.mark.asyncio
-    async def test_receive_data_and_eof_frames(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_api_func, setup_test_environment):
+    async def test_receive_data_and_eof_frames(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_sensor_data, setup_test_environment):
         # モックオブジェクトの準備
         mock_transport = MagicMock()
         mock_protocol = MagicMock()
@@ -168,7 +162,7 @@ class TestSerialProtocolIntegration:
         connection_lost_future = loop.create_future()
         image_buffers = {}
         last_receive_time = {}
-        stats = {}
+        stats = {"received_images": 0, "total_bytes": 0, "start_time": 0}
         protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
         protocol.connection_made(mock_transport)
 
