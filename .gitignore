@@ -1,1 +1,26 @@
 .vscode/
+
+# ESP32/Rust build artifacts
+devices/**/.embuild/
+devices/**/target/
+devices/**/.cargo/
+devices/**/build/
+devices/**/.ccache/
+devices/**/*.lock
+devices/**/components_*.lock
+devices/**/managed_components/
+devices/**/dependencies.lock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv
+.env
+
+# General
+.DS_Store
+*.tmp
+*.log
