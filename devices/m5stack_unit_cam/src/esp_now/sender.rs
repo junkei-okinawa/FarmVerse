@@ -1,12 +1,12 @@
 use crate::mac_address::MacAddress;
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_sys::{
-    esp_now_add_peer, esp_now_init, esp_now_peer_info_t, esp_now_register_send_cb, esp_now_send,
+    esp_now_add_peer, esp_now_init, esp_now_peer_info_t, esp_now_recv_info_t, esp_now_register_recv_cb, esp_now_register_send_cb, esp_now_send,
     esp_now_send_status_t, esp_now_send_status_t_ESP_NOW_SEND_SUCCESS,
     wifi_interface_t_WIFI_IF_STA,
 };
 use log::error;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// ESP-NOW送信結果
 #[derive(Debug, Clone)]
@@ -41,6 +41,10 @@ pub enum EspNowError {
 static SEND_COMPLETE: AtomicBool = AtomicBool::new(true);
 static SEND_FAILED: AtomicBool = AtomicBool::new(false);
 
+/// 受信したスリープコマンドのデータ
+static RECEIVED_SLEEP_DURATION: AtomicU32 = AtomicU32::new(0);
+static SLEEP_COMMAND_RECEIVED: AtomicBool = AtomicBool::new(false);
+
 /// ESP-NOW送信コールバック
 extern "C" fn esp_now_send_cb(_mac_addr: *const u8, status: esp_now_send_status_t) {
     if status == esp_now_send_status_t_ESP_NOW_SEND_SUCCESS {
@@ -50,6 +54,27 @@ extern "C" fn esp_now_send_cb(_mac_addr: *const u8, status: esp_now_send_status_
         SEND_FAILED.store(true, Ordering::SeqCst);
     }
     SEND_COMPLETE.store(true, Ordering::SeqCst);
+}
+
+/// ESP-NOW受信コールバック
+extern "C" fn esp_now_recv_cb(
+    _recv_info: *const esp_now_recv_info_t,
+    data: *const u8,
+    data_len: i32,
+) {
+    if data_len >= 4 {
+        // 4バイトのスリープ時間（秒）を受信
+        let sleep_bytes = unsafe { std::slice::from_raw_parts(data, 4) };
+        let sleep_duration = u32::from_le_bytes([
+            sleep_bytes[0],
+            sleep_bytes[1],
+            sleep_bytes[2],
+            sleep_bytes[3],
+        ]);
+        
+        RECEIVED_SLEEP_DURATION.store(sleep_duration, Ordering::SeqCst);
+        SLEEP_COMMAND_RECEIVED.store(true, Ordering::SeqCst);
+    }
 }
 
 /// ESP-NOW送信機
@@ -73,6 +98,7 @@ impl EspNowSender {
 
         unsafe {
             esp_now_register_send_cb(Some(esp_now_send_cb));
+            esp_now_register_recv_cb(Some(esp_now_recv_cb));
         }
 
         Ok(Self { initialized: true })
@@ -100,6 +126,34 @@ impl EspNowSender {
         }
 
         Ok(())
+    }
+
+    /// スリープコマンドを受信するまで待機する
+    ///
+    /// # 引数
+    ///
+    /// * `timeout_ms` - タイムアウト時間（ミリ秒）
+    ///
+    /// # 戻り値
+    ///
+    /// Some(duration) - 受信したスリープ時間（秒）
+    /// None - タイムアウトまたは受信できなかった場合
+    pub fn receive_sleep_command(&self, timeout_ms: u32) -> Option<u32> {
+        // 受信状態をリセット
+        SLEEP_COMMAND_RECEIVED.store(false, Ordering::SeqCst);
+        RECEIVED_SLEEP_DURATION.store(0, Ordering::SeqCst);
+
+        let mut elapsed_ms = 0;
+        while elapsed_ms < timeout_ms {
+            if SLEEP_COMMAND_RECEIVED.load(Ordering::SeqCst) {
+                return Some(RECEIVED_SLEEP_DURATION.load(Ordering::SeqCst));
+            }
+            
+            FreeRtos::delay_ms(10);
+            elapsed_ms += 10;
+        }
+
+        None
     }
 
     /// メッセージを送信します
