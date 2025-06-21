@@ -3,7 +3,7 @@ Async Sensor Data Receiver Application
 
 Refactored sensor data receiver with modular architecture:
 - Configuration management
-- Protocol handling (frame parsing, serial communication)  
+- Protocol handling (frame parsing, serial communication)
 - Data processing (image, voltage, temperature)
 - Storage (InfluxDB)
 - Utilities (logging)
@@ -14,15 +14,8 @@ by re-exporting necessary classes and functions.
 
 import argparse
 import asyncio
-import io
-import os
 import serial
 import serial_asyncio
-from datetime import datetime
-from PIL import Image
-import influxdb_client
-from dotenv import load_dotenv
-from influxdb_client.client.write_api import SYNCHRONOUS
 
 from config import config
 from processors import ImageReceiver, ensure_dir_exists
@@ -32,57 +25,10 @@ from utils import setup_logging
 # Backward compatibility imports for existing tests
 from processors.voltage_processor import VoltageDataProcessor
 from processors.sleep_controller import determine_sleep_duration, format_sleep_command_to_gateway
-# Note: save_image is defined as a wrapper function below
-from protocol.frame_parser import FrameParser as _FrameParser
-from protocol.constants import (
-    MAC_ADDRESS_LENGTH, FRAME_TYPE_LENGTH, SEQUENCE_NUM_LENGTH, 
-    LENGTH_FIELD_BYTES, CHECKSUM_LENGTH, START_MARKER, END_MARKER,
-    FRAME_TYPE_HASH, FRAME_TYPE_DATA, FRAME_TYPE_EOF, HEADER_LENGTH, FOOTER_LENGTH
-)
-
-# Backward compatibility wrapper for FrameParser
-class FrameParser(_FrameParser):
-    @staticmethod
-    def validate_frame_data(data_len: int, mac_bytes: bytes) -> bool:
-        """Backward compatibility wrapper for existing tests"""
-        return _FrameParser.validate_frame_data(data_len, mac_bytes, config.MAX_DATA_LEN)
-
-# Backward compatibility function for tests
-def write_file_sync(filename: str, data: bytes) -> None:
-    """Synchronous helper function to write file data."""
-    with open(filename, "wb") as f:
-        f.write(data)
-
-    # 回転画像保存
-    try:
-        # バイト列から Image オブジェクト生成
-        im = Image.open(io.BytesIO(data))
-        # 左90度回転
-        rotated = im.rotate(90, expand=True)
-        # ファイル名から MAC 部分だけ取り出し
-        base = os.path.splitext(os.path.basename(filename))[0].split("_")[0]
-        rotated_filename = os.path.join(config.IMAGE_DIR, f"{base}.jpg")
-        rotated.save(rotated_filename)
-        logger.info(f"Saved rotated image: {rotated_filename}")
-    except Exception as e:
-        logger.error(f"Error saving rotated image: {e}")
-
-# Backward compatibility wrapper for save_image
-async def save_image(sender_mac_str: str, image_data: bytes, stats: dict = None) -> None:
-    """Backward compatibility wrapper for save_image function."""
-    from processors.image_processor import save_image as _save_image
-    if stats is None:
-        stats = {}
-    await _save_image(sender_mac_str, image_data, stats)
+from protocol.frame_parser import FrameParser
 
 # Setup logging
 logger = setup_logging()
-
-# Backward compatibility: InfluxDB client for tests
-load_dotenv()
-token = os.environ.get("INFLUXDB_TOKEN")
-client = influxdb_client.InfluxDBClient(url=config.INFLUXDB_URL, token=token, org=config.INFLUXDB_ORG)
-write_api = client.write_api(write_options=SYNCHRONOUS)
 
 # Global image receiver instance
 image_receiver = ImageReceiver()

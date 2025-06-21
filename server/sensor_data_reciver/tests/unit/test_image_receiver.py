@@ -66,7 +66,7 @@ async def test_cleanup_buffer(receiver_instance):
     assert mac2 in receiver_instance.image_buffers
     assert mac2 in receiver_instance.last_receive_time
 
-@patch('app.write_file_sync')
+@patch('processors.image_processor.write_file_sync')
 @pytest.mark.asyncio
 async def test_save_image(mock_write_file_sync):
     mac_str = "01:02:03:04:05:06"

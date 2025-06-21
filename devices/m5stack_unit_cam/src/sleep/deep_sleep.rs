@@ -320,7 +320,7 @@ impl<P: DeepSleepPlatform> DeepSleep<P> {
         info!("Entering fixed interval sleep mode.");
         let interval_total_secs = self.config.sleep_duration_seconds as u64;
 
-        let mut sleep_for_secs = if interval_total_secs > elapsed_time_in_current_loop.as_secs() {
+        let sleep_for_secs = if interval_total_secs > elapsed_time_in_current_loop.as_secs() {
             interval_total_secs - elapsed_time_in_current_loop.as_secs()
         } else {
             warn!(
@@ -721,6 +721,7 @@ impl<P: DeepSleepPlatform> DeepSleep<P> {
     /// # Errors
     ///
     /// Returns `DeepSleepError::WifiError` if disconnection fails.
+    #[allow(dead_code)]
     fn disconnect_wifi_helper(
         &self,
         wifi: &mut BlockingWifi<EspWifi<'static>>,

@@ -9,7 +9,7 @@
 - ESP32カメラモジュールによる定期的な画像撮影
 - 撮影した画像のSHA256ハッシュ計算と検証
 - ESP-NOWプロトコルを使用した画像データのチャンク送信
-- 省電力のためのディープスリープ制御
+- 省電力のためのディープスリープ制御（サーバーからの指示またはフォールバック設定に基づく）
 - LED表示によるステータス通知
 
 ## 受信機との連携
@@ -29,7 +29,7 @@
 - **esp_now**: ESP-NOWプロトコル通信と画像フレーム処理
 - **led**: ステータス表示用LEDの制御
 - **mac_address**: MACアドレス処理
-- **sleep**: ディープスリープ制御
+- **sleep**: ディープスリープ制御。サーバーから次回の起動間隔を受信し、それに従ってスリープします。受信できない場合は設定ファイルに基づいたフォールバック動作を行います。
 
 ### データフロー
 
@@ -40,8 +40,8 @@
    - 最初にハッシュ情報を送信
    - 次に画像データをチャンクに分けて送信
    - 最後にEOFマーカーを送信
-5. 送信完了後、ディープスリープに移行
-6. 一定時間後に再び起動して次の撮影サイクルを開始
+5. 送信完了後、サーバーからの応答を待ち、次回の起動時刻指示を受信。
+6. 指示された時間、または指示がない場合は設定に基づいた時間ディープスリープに移行し、その後再び起動して次の撮影サイクルを開始。
 
 ## 使用方法
 
@@ -69,7 +69,7 @@
    ```toml
    [image-sender]
    receiver_mac = "1A:2B:3C:4D:5E:6F"  # 受信機のMACアドレスに変更
-   sleep_duration_seconds = 60         # ディープスリープ時間（秒）
+   sleep_duration_seconds = 60         # フォールバック用のディープスリープ時間（秒）
    ```
    
    `sleep_duration_seconds`の値を変更することで、撮影と送信の間隔を調整できます。例えば、5分間隔で撮影したい場合は`300`に設定します。
@@ -104,7 +104,7 @@ cargo espflash flash --release --port /dev/your-port --monitor --partition-table
 # データ送信先のMacAddress（example/usb_cdc_receiver の受信機デバイス）
 receiver_mac = "11:22:33:44:55:66"
 
-# ディープスリープ時間（秒）
+# フォールバック用のディープスリープ時間（秒）
 sleep_duration_seconds = 60
 
 # 起動時刻の調整用パラメータ (オプション)
@@ -143,7 +143,7 @@ timezone = "Asia/Tokyo"
 ### 設定可能な項目
 
 -   `receiver_mac`: (必須) データ送信先のESP-NOW受信側デバイスのMACアドレス。
--   `sleep_duration_seconds`: (必須) 通常のディープスリープ時間（秒）。
+-   `sleep_duration_seconds`: (必須) 通常のディープスリープ時間（秒）。サーバーから次回の起動指示を受信できなかった場合のフォールバックとして使用されます。
 -   `target_minute_last_digit`: (オプション) 起動する「分」の下一桁 (0-9)。コメントアウトまたは未設定の場合はこの条件を無視します。
 -   `target_second_last_digit`: (オプション) 起動する「秒」の上一桁 (0-5)。コメントアウトまたは未設定の場合はこの条件を無視します。
     -   `target_minute_last_digit` と `target_second_last_digit` が両方設定されている場合、`sleep_duration_seconds` で指定されたおおよそのスリープ後、さらに指定された分の下一桁・秒の下一桁に合致する最も近い未来の時刻まで起動を遅延させます。
@@ -151,7 +151,21 @@ timezone = "Asia/Tokyo"
 -   `frame_size`: (必須) カメラの解像度。例: `"SVGA"`, `"QVGA"`, `"HD"` など。利用可能な値の完全なリストは `esp-idf-sys` のドキュメントを参照してください。
 -   `auto_exposure_enabled`: (必須) カメラの自動露光調整を有効にするか (`true` または `false`)。
 -   `camera_warmup_frames`: (必須) カメラ起動時に撮影する捨て画像の枚数。画質安定化のために使用します。
--   `timezone`: (必須) タイムゾーンを指定する文字列。例: `"Asia/Tokyo"`, `"America/New_York"`。有効なタイムゾーン文字列については、`chrono-tz` クレートから参照されている[List of tz database time zones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)のドキュメントを参照してください。時刻同期 (`sntp`) が有効な場合に参照されます。
+-   `timezone`: (必須) タイムゾーンを指定する文字列。ログ時刻の表示などに使用されます。例: `"Asia/Tokyo"`, `"America/New_York"`。有効なタイムゾーン文字列については、`chrono-tz` クレートから参照されている[List of tz database time zones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)のドキュメントを参照してください。
+
+## スリープ制御について (About Sleep Control)
+
+本デバイスのディープスリープ間隔は、主に連携するサーバーアプリケーション (`sensor_data_reciver/app.py`) によって制御されます。
+
+1.  デバイスはデータ（ハッシュ情報、画像データ）を送信後、サーバー（ゲートウェイ経由）からの応答を短時間待ちます。
+2.  サーバーは、データ受信時に適切な次のスリープ時間（秒単位）を計算し、ゲートウェイデバイスに特定のシリアルコマンド (`CMD_SEND_ESP_NOW:<target_mac>:<duration_seconds>\n`) で指示します。
+3.  ゲートウェイデバイスは、このシリアルコマンドを解釈し、該当するM5Stack Unit CamデバイスにESP-NOWパケットでスリープ時間を送信します。
+4.  M5Stack Unit Camデバイスは、このESP-NOWパケットを受信すると、指定された期間スリープします。
+5.  サーバーからの応答がない場合や、受信したデータが無効な場合は、`cfg.toml` の `sleep_duration_seconds` や電圧に基づくフォールバックの睡眠ロジックが作動します。
+
+この仕組みにより、SNTPによる時刻同期なしに、サーバー側で柔軟にデバイスの動作間隔を調整できます。
+
+**重要:** この機能は、ESP-NOWとシリアル間の通信を中継するゲートウェイデバイスが、サーバーからのシリアルコマンドを解釈し、M5Stack Unit CamへESP-NOWで適切に応答を転送するよう改造されていることを前提とします。ゲートウェイの改造については本リポジトリの範囲外です。
 
 ## テスト
 
