@@ -21,6 +21,7 @@ from config import config
 from processors import save_image, determine_sleep_duration, format_sleep_command_to_gateway
 from processors.voltage_processor import VoltageDataProcessor
 from storage import influx_client
+from utils.data_parser import DataParser
 
 logger = logging.getLogger(__name__)
 
@@ -210,40 +211,14 @@ class SerialProtocol(asyncio.Protocol):
         temp_value = payload_split[2] if len(payload_split) > 2 else ""
 
         # 電圧・温度情報を抽出
-        voltage = self._extract_voltage(volt_log_entry, sender_mac)
-        temperature = self._extract_temperature(temp_value, sender_mac)
+        voltage = DataParser.extract_voltage_with_validation(volt_log_entry, sender_mac)
+        temperature = DataParser.extract_temperature_with_validation(temp_value, sender_mac)
 
         # InfluxDBに書き込み
         influx_client.write_sensor_data(sender_mac, voltage, temperature)
 
         # スリープコマンドを送信
         self._send_sleep_command(sender_mac, voltage)
-
-    def _extract_voltage(self, volt_log_entry: str, sender_mac: str):
-        """電圧情報を抽出"""
-        if "VOLT:" in volt_log_entry:
-            volt_value = volt_log_entry.replace("VOLT:", "")
-            if volt_value != "100":  # 100%の時は初回起動またはデバッグ時のため記録しない
-                try:
-                    return float(volt_value)
-                except ValueError:
-                    logger.warning(f"Invalid VOLT value from {sender_mac}: {volt_value}")
-        else:
-            logger.warning(f"VOLT not found in HASH payload from {sender_mac}")
-        return None
-
-    def _extract_temperature(self, temp_value: str, sender_mac: str):
-        """温度情報を抽出"""
-        if "TEMP:" in temp_value:
-            temp_value = temp_value.replace("TEMP:", "")
-            if "-999" not in temp_value:
-                try:
-                    return float(temp_value)
-                except ValueError:
-                    logger.warning(f"Invalid TEMP value from {sender_mac}: {temp_value}")
-        elif temp_value:  # 空文字列でない場合のみ警告
-            logger.warning(f"TEMP not found in HASH payload from {sender_mac}")
-        return None
 
     def _send_sleep_command(self, sender_mac: str, voltage: float):
         """スリープコマンドを送信"""
