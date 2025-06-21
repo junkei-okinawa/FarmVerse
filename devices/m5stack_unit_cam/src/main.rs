@@ -6,28 +6,20 @@ use esp_idf_svc::{
 use std::sync::Arc;
 
 // 内部モジュール
-mod app_controller;
-mod camera;
-mod config;
-mod data_collector;
-mod esp_now;
-mod led;
+mod communication;
+mod core;
+mod hardware;
 mod mac_address;
-mod network_manager;
-mod rtc_manager;
-mod sleep;
-mod voltage_sensor;
+mod power;
 
 // 使用するモジュールのインポート
-use app_controller::AppController;
-use config::AppConfig;
-use data_collector::{CameraPins, DataCollector, MeasuredData};
-use led::StatusLed;
+use communication::NetworkManager;
+use core::{AppController, AppConfig, DataService, MeasuredData, RtcManager};
+use hardware::{CameraPins, VoltageSensor};
+use hardware::camera::M5UnitCamConfig;
+use hardware::led::StatusLed;
 use log::{error, info};
-use network_manager::NetworkManager;
-use rtc_manager::RtcManager;
-use sleep::{DeepSleep, EspIdfDeepSleep};
-use voltage_sensor::VoltageSensor;
+use power::sleep::{DeepSleep, EspIdfDeepSleep};
 
 /// アプリケーションのメインエントリーポイント
 fn main() -> anyhow::Result<()> {
@@ -100,7 +92,7 @@ fn main() -> anyhow::Result<()> {
     );
 
     // 画像キャプチャ（電圧に基づく条件付き）
-    let image_data = DataCollector::capture_image_if_voltage_sufficient(
+    let image_data = DataService::capture_image_if_voltage_sufficient(
         voltage_percent,
         camera_pins,
         &app_config,
@@ -111,7 +103,7 @@ fn main() -> anyhow::Result<()> {
     info!("データ送信タスクを開始します");
     let measured_data = MeasuredData::new(voltage_percent, image_data);
     
-    if let Err(e) = DataCollector::transmit_data(
+    if let Err(e) = DataService::transmit_data(
         &app_config,
         &esp_now_sender,
         &mut led,

@@ -6,8 +6,8 @@ use esp_idf_svc::{
 use esp_idf_svc::hal::modem::Modem;
 use log::info;
 
-use crate::config::AppConfig;
-use crate::esp_now::EspNowSender;
+use crate::core::config::AppConfig;
+use crate::communication::esp_now::EspNowSender;
 
 /// WiFiとESP-NOWの初期化を管理するモジュール
 pub struct NetworkManager;

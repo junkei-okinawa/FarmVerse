@@ -99,6 +99,13 @@ impl M5UnitCamConfig {
             }
         }
     }
+
+    /// CameraPinsから設定を作成
+    pub fn from_pins(_pins: crate::hardware::CameraPins) -> Self {
+        // ピンは使用されるが、現在の実装では設定に直接影響しない
+        // 将来的にピン設定に基づいた最適化が可能
+        Self::default()
+    }
 }
 
 /// カメラ制御に関するエラー

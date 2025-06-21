@@ -1,9 +1,9 @@
 use log::{error, info, warn};
 use std::sync::Arc;
 
-use crate::config::AppConfig;
-use crate::esp_now::EspNowSender;
-use crate::sleep::{DeepSleep, DeepSleepPlatform};
+use crate::core::config::AppConfig;
+use crate::communication::esp_now::EspNowSender;
+use crate::power::sleep::{DeepSleep, DeepSleepPlatform};
 
 /// アプリケーションの主要な制御フローを管理するモジュール
 pub struct AppController;
