@@ -79,7 +79,10 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
     
     # プロトコルインスタンス作成
     connection_lost_future = asyncio.Future()
-    protocol = SerialProtocol(connection_lost_future)
+    image_buffers = {}
+    last_receive_time = {}
+    stats = {}
+    protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
     protocol.transport = mock_transport
     
     # HASHフレームを作成してデータ受信をシミュレート
@@ -111,7 +114,10 @@ async def test_multiple_devices_sleep_commands(mock_transport):
     
     # プロトコルインスタンス作成
     connection_lost_future = asyncio.Future()
-    protocol = SerialProtocol(connection_lost_future)
+    image_buffers = {}
+    last_receive_time = {}
+    stats = {}
+    protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
     protocol.transport = mock_transport
     
     # 各デバイスからHASHフレームを送信
@@ -140,7 +146,10 @@ async def test_no_sleep_command_without_transport(mock_transport):
     
     # プロトコルインスタンス作成（トランスポートなし）
     connection_lost_future = asyncio.Future()
-    protocol = SerialProtocol(connection_lost_future)
+    image_buffers = {}
+    last_receive_time = {}
+    stats = {}
+    protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
     protocol.transport = None  # トランスポートなし
     
     # HASHフレームを作成してデータ受信をシミュレート
@@ -171,7 +180,10 @@ async def test_invalid_hash_frame_no_sleep_command(mock_transport):
     """無効なHASHフレームに対してスリープコマンドが送信されないことをテスト"""
     # プロトコルインスタンス作成
     connection_lost_future = asyncio.Future()
-    protocol = SerialProtocol(connection_lost_future)
+    image_buffers = {}
+    last_receive_time = {}
+    stats = {}
+    protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
     protocol.transport = mock_transport
     
     # 無効なフレーム（不正なペイロード）を作成
@@ -211,14 +223,17 @@ async def test_low_voltage_sleep_commands(mock_transport):
     
     # プロトコルインスタンス作成
     connection_lost_future = asyncio.Future()
-    protocol = SerialProtocol(connection_lost_future)
+    image_buffers = {}
+    last_receive_time = {}
+    stats = {}
+    protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
     protocol.transport = mock_transport
     
     # HASHフレームを作成
     hash_frame = create_hash_frame(test_mac, test_voltage, test_temperature, test_timestamp)
     
     # 午前中（10時）をシミュレート
-    with patch('app.datetime') as mock_datetime:
+    with patch('processors.sleep_controller.datetime') as mock_datetime:
         mock_datetime.now.return_value = datetime.datetime(2024, 1, 1, 10, 0, 0)
         mock_datetime.datetime = datetime.datetime  # datetime.datetime クラスを正しく保持
         
@@ -236,7 +251,7 @@ async def test_low_voltage_sleep_commands(mock_transport):
     mock_transport.reset()
     
     # 午後（14時）をシミュレート
-    with patch('app.datetime') as mock_datetime:
+    with patch('processors.sleep_controller.datetime') as mock_datetime:
         mock_datetime.now.return_value = datetime.datetime(2024, 1, 1, 14, 0, 0)
         mock_datetime.datetime = datetime.datetime
         
