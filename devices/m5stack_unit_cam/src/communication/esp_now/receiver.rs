@@ -58,18 +58,30 @@ impl EspNowReceiver {
 
 /// ESP-NOW受信コールバック
 extern "C" fn esp_now_recv_cb(
-    _recv_info: *const esp_idf_sys::esp_now_recv_info_t,
+    recv_info: *const esp_idf_sys::esp_now_recv_info_t,
     data: *const u8,
     data_len: i32,
 ) {
     if data_len <= 0 {
+        warn!("ESP-NOW受信: データ長が無効 ({})", data_len);
         return;
     }
 
     unsafe {
         let data_slice = std::slice::from_raw_parts(data, data_len as usize);
         
-        info!("ESP-NOW受信: データサイズ={}", data_len);
+        // 送信者MACアドレスを取得（安全な方法）
+        let sender_mac = if !recv_info.is_null() {
+            let recv_info_ref = &*recv_info;
+            let src_addr_slice = std::slice::from_raw_parts(recv_info_ref.src_addr, 6);
+            format!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                src_addr_slice[0], src_addr_slice[1], src_addr_slice[2],
+                src_addr_slice[3], src_addr_slice[4], src_addr_slice[5])
+        } else {
+            "UNKNOWN".to_string()
+        };
+        
+        info!("ESP-NOW受信: 送信者={}, データサイズ={}, データ={:?}", sender_mac, data_len, data_slice);
         
         // バイナリ形式の場合（4バイトのu32）
         if data_len == 4 {

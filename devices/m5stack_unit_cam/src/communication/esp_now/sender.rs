@@ -64,10 +64,13 @@ impl EspNowSender {
 
     /// データを送信
     pub fn send(&self, data: &[u8], _timeout_ms: u32) -> Result<(), EspNowError> {
-        info!("ESP-NOW送信開始: データサイズ={}, 送信先={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
-              data.len(),
-              self.peer_mac.0[0], self.peer_mac.0[1], self.peer_mac.0[2], 
-              self.peer_mac.0[3], self.peer_mac.0[4], self.peer_mac.0[5]);
+        // チャンクログを削除 - 大きなデータサイズのみログ出力
+        if data.len() > 100 {
+            info!("ESP-NOW送信開始: データサイズ={}, 送信先={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
+                  data.len(),
+                  self.peer_mac.0[0], self.peer_mac.0[1], self.peer_mac.0[2], 
+                  self.peer_mac.0[3], self.peer_mac.0[4], self.peer_mac.0[5]);
+        }
 
         {
             let esp_now_guard = self.esp_now.lock().unwrap();
@@ -78,7 +81,10 @@ impl EspNowSender {
                 })?;
         }
 
-        info!("ESP-NOW送信成功");
+        // 大きなデータのみ成功ログ出力
+        if data.len() > 100 {
+            info!("ESP-NOW送信成功");
+        }
         Ok(())
     }
 
@@ -92,11 +98,16 @@ impl EspNowSender {
         let mut last_error = EspNowError::SendTimeout;
         
         for attempt in 1..=max_retries {
-            info!("ESP-NOW送信試行 {}/{}", attempt, max_retries);
+            // 大きなデータまたは最初の試行のみログ出力
+            if data.len() > 100 || attempt == 1 {
+                info!("ESP-NOW送信試行 {}/{}", attempt, max_retries);
+            }
             
             match self.send(data, timeout_ms) {
                 Ok(()) => {
-                    info!("ESP-NOW送信成功 (試行 {})", attempt);
+                    if data.len() > 100 || attempt > 1 {
+                        info!("ESP-NOW送信成功 (試行 {})", attempt);
+                    }
                     return Ok(());
                 }
                 Err(e) => {
@@ -141,7 +152,9 @@ impl EspNowSender {
         voltage_percentage: u8,
         timestamp: &str,
     ) -> Result<(), EspNowError> {
-        let hash_data = format!("HASH:{},VOLT:{},{}", hash, voltage_percentage, timestamp);
+        // M5Stack Unit Camには温度センサーがないため、ダミー値を使用
+        let temp_celsius = 25.0; // ダミー値（室温想定）
+        let hash_data = format!("HASH:{},VOLT:{},TEMP:{:.1},{}", hash, voltage_percentage, temp_celsius, timestamp);
         info!("ハッシュフレーム送信: {}", hash_data);
         
         self.send_with_retry(hash_data.as_bytes(), 1000, 3)?;
