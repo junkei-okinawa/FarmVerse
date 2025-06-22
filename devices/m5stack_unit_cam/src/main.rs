@@ -110,6 +110,38 @@ fn main() -> anyhow::Result<()> {
     
     info!("ESP-NOW sender initialized and peer added. Receiver MAC: {}", app_config.receiver_mac);
 
+    // デバイス情報の表示
+    info!("=== デバイス情報 ===");
+    
+    // 実際のMACアドレスを取得・表示
+    let wifi_mac = unsafe {
+        let mut mac = [0u8; 6];
+        let result = esp_idf_sys::esp_wifi_get_mac(esp_idf_sys::wifi_interface_t_WIFI_IF_STA, mac.as_mut_ptr());
+        if result == 0 {
+            format!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+        } else {
+            "UNKNOWN".to_string()
+        }
+    };
+    info!("実際のWiFi STA MAC: {}", wifi_mac);
+    
+    // WiFiチャンネル情報を取得・表示
+    let wifi_channel = unsafe {
+        let mut primary = 0u8;
+        let mut second = 0;
+        let result = esp_idf_sys::esp_wifi_get_channel(&mut primary, &mut second);
+        if result == 0 {
+            format!("Primary: {}, Secondary: {}", primary, second)
+        } else {
+            "UNKNOWN".to_string()
+        }
+    };
+    info!("WiFiチャンネル: {}", wifi_channel);
+    
+    info!("設定されている受信先MAC: {}", app_config.receiver_mac);
+    info!("設定されているスリープ時間: {}秒", app_config.sleep_duration_seconds);
+
     // カメラ用ピンの準備
     let camera_pins = CameraPins::new(
         pins.gpio27, pins.gpio32, pins.gpio35, pins.gpio34,
