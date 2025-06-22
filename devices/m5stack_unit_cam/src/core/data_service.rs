@@ -109,6 +109,8 @@ impl DataService {
 
         // 設定されたサーバーMACアドレスを使用
         info!("設定されたサーバーMACアドレス: {}", app_config.receiver_mac);
+        
+        // 画像データを送信（チャンク形式）
         match esp_now_sender.send_image_chunks(
             image_data,
             250,  // チャンクサイズ (以前の動作していた値)
@@ -116,12 +118,37 @@ impl DataService {
         ) {
             Ok(_) => {
                 info!("画像データの送信が完了しました");
-                led.blink_success()?;
             }
             Err(e) => {
                 error!("画像データの送信に失敗しました: {:?}", e);
                 led.blink_error()?;
                 return Err(anyhow::anyhow!("データ送信エラー: {:?}", e));
+            }
+        }
+
+        // HASHフレームを送信（サーバーがスリープコマンドを送信するために必要）
+        let current_time = "2025/06/22 12:00:00.000"; // 簡易タイムスタンプ
+        match esp_now_sender.send_hash_frame(&_hash, measured_data.voltage_percent, current_time) {
+            Ok(_) => {
+                info!("HASHフレームの送信が完了しました");
+            }
+            Err(e) => {
+                error!("HASHフレームの送信に失敗しました: {:?}", e);
+                led.blink_error()?;
+                return Err(anyhow::anyhow!("HASHフレーム送信エラー: {:?}", e));
+            }
+        }
+
+        // EOFマーカーを送信（画像送信完了を示す）
+        match esp_now_sender.send_eof_marker() {
+            Ok(_) => {
+                info!("EOFマーカーの送信が完了しました");
+                led.blink_success()?;
+            }
+            Err(e) => {
+                error!("EOFマーカーの送信に失敗しました: {:?}", e);
+                led.blink_error()?;
+                return Err(anyhow::anyhow!("EOFマーカー送信エラー: {:?}", e));
             }
         }
 
