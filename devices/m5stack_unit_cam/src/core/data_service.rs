@@ -111,8 +111,8 @@ impl DataService {
         match esp_now_sender.send_image_chunks(
             &app_config.receiver_mac,
             image_data,
-            1024, // チャンクサイズ 
-            10,   // チャンク間の遅延(ms)
+            250,  // チャンクサイズ (以前の動作していた値)
+            5,    // チャンク間の遅延(ms) (以前の動作していた値)
         ) {
             Ok(_) => {
                 info!("画像データの送信が完了しました");

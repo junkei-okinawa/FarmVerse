@@ -198,20 +198,6 @@ impl EspNowSender {
               peer_mac.0[0], peer_mac.0[1], peer_mac.0[2], 
               peer_mac.0[3], peer_mac.0[4], peer_mac.0[5]);
 
-        // WiFi状態を確認
-        self.check_wifi_status()?;
-        
-        // ピア状態を確認
-        if let Err(e) = self.check_peer_status(peer_mac) {
-            error!("ピア状態確認失敗: {:?}", e);
-        }
-        
-        // ESP-NOW統計情報を表示
-        self.print_espnow_stats();
-        
-        // ESP-NOW送信前に少し待機（WiFiインターフェースの安定化）
-        FreeRtos::delay_ms(50);
-
         // 前回の送信が完了するまで待機
         let mut timeout_counter = 0;
         while !SEND_COMPLETE.load(Ordering::SeqCst) {

@@ -13,7 +13,7 @@ mod mac_address;
 mod power;
 
 // 使用するモジュールのインポート
-use communication::NetworkManager;
+use communication::{NetworkManager, esp_now::EspNowSender};
 use core::{AppController, AppConfig, DataService, MeasuredData, RtcManager};
 use hardware::{CameraPins, VoltageSensor};
 use hardware::camera::M5UnitCamConfig;
@@ -66,13 +66,26 @@ fn main() -> anyhow::Result<()> {
         voltage_pin,
     )?;
 
-    // ネットワーク（ESP-NOW）初期化
-    let (esp_now_sender, _wifi_connection) = NetworkManager::initialize_esp_now(
+    // ネットワーク（WiFi）初期化
+    let _wifi_connection = NetworkManager::initialize_wifi_for_esp_now(
         peripherals.modem,
         &sysloop,
         &nvs_partition,
-        &app_config,
     ).map_err(|e| {
+        if let Err(sleep_err) = AppController::fallback_sleep(
+            &deep_sleep_controller,
+            &app_config,
+            &format!("WiFi初期化に失敗: {:?}", e),
+        ) {
+            log::error!("Deep sleep failed: {:?}", sleep_err);
+        }
+        e
+    })?;
+
+    // ESP-NOW初期化（WiFi初期化完了後）
+    info!("ESP-NOWセンダーを初期化中...");
+    let esp_now_sender = EspNowSender::new().map_err(|e| {
+        log::error!("ESP-NOW初期化に失敗: {:?}", e);
         if let Err(sleep_err) = AppController::fallback_sleep(
             &deep_sleep_controller,
             &app_config,
@@ -80,8 +93,21 @@ fn main() -> anyhow::Result<()> {
         ) {
             log::error!("Deep sleep failed: {:?}", sleep_err);
         }
-        e
+        anyhow::anyhow!("ESP-NOW初期化に失敗: {:?}", e)
     })?;
+
+    esp_now_sender.add_peer(&app_config.receiver_mac).map_err(|e| {
+        log::error!("ESP-NOWピア追加に失敗: {:?}", e);
+        if let Err(sleep_err) = AppController::fallback_sleep(
+            &deep_sleep_controller,
+            &app_config,
+            &format!("ESP-NOWピア追加に失敗: {:?}", e),
+        ) {
+            log::error!("Deep sleep failed: {:?}", sleep_err);
+        }
+        anyhow::anyhow!("ESP-NOWピア追加に失敗: {:?}", e)
+    })?;
+    info!("ESP-NOW sender initialized and peer added. Receiver MAC: {}", app_config.receiver_mac);
 
     // カメラ用ピンの準備
     let camera_pins = CameraPins::new(
