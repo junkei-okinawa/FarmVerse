@@ -2,9 +2,12 @@ use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     nvs::EspDefaultNvsPartition,
     wifi::{BlockingWifi, EspWifi},
+    espnow::EspNow,
 };
 use esp_idf_svc::hal::modem::Modem;
 use log::info;
+use std::sync::{Arc, Mutex};
+use crate::communication::esp_now::EspNowReceiver;
 
 /// WiFiとESP-NOWの初期化を管理するモジュール
 pub struct NetworkManager;
@@ -53,5 +56,21 @@ impl NetworkManager {
         info!("Wi-Fi Power Save を無効化しました (ESP-NOW用)");
 
         Ok(wifi)
+    }
+
+    /// ESP-NOW初期化（送信＆受信機能付き）
+    pub fn initialize_esp_now(
+        _wifi: &BlockingWifi<EspWifi<'static>>,
+    ) -> anyhow::Result<(Arc<Mutex<EspNow<'static>>>, EspNowReceiver)> {
+        info!("ESP-NOWを初期化中（送信＆受信機能付き）...");
+        
+        let esp_now = EspNow::take()?;
+        let esp_now_arc = Arc::new(Mutex::new(esp_now));
+        
+        // ESP-NOW受信機能を初期化
+        let receiver = EspNowReceiver::new(Arc::clone(&esp_now_arc))?;
+        
+        info!("ESP-NOW初期化完了（送信＆受信機能）");
+        Ok((esp_now_arc, receiver))
     }
 }

@@ -18,7 +18,7 @@ pub mod mac_address;
 pub mod power;
 
 // 内部で使用する型をまとめてエクスポート
-pub use communication::esp_now::{EspNowError, EspNowSender, ImageFrame, SendResult};
+pub use communication::esp_now::{EspNowError, EspNowSender, EspNowReceiver};
 pub use core::{AppConfig, ConfigError, DataService, MeasuredData};
 pub use hardware::camera::CameraController;
 pub use hardware::led::status_led::{LedError, StatusLed};

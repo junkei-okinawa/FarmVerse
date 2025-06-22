@@ -13,7 +13,7 @@ mod mac_address;
 mod power;
 
 // 使用するモジュールのインポート
-use communication::{NetworkManager, esp_now::EspNowSender};
+use communication::{NetworkManager, esp_now::{EspNowSender, EspNowReceiver}};
 use core::{AppController, AppConfig, DataService, MeasuredData, RtcManager};
 use hardware::{CameraPins, VoltageSensor};
 use hardware::camera::M5UnitCamConfig;
@@ -84,7 +84,7 @@ fn main() -> anyhow::Result<()> {
 
     // ESP-NOW初期化（WiFi初期化完了後）
     info!("ESP-NOWセンダーを初期化中...");
-    let esp_now_sender = EspNowSender::new().map_err(|e| {
+    let (esp_now_arc, esp_now_receiver) = NetworkManager::initialize_esp_now(&_wifi_connection).map_err(|e| {
         log::error!("ESP-NOW初期化に失敗: {:?}", e);
         if let Err(sleep_err) = AppController::fallback_sleep(
             &deep_sleep_controller,
@@ -96,17 +96,18 @@ fn main() -> anyhow::Result<()> {
         anyhow::anyhow!("ESP-NOW初期化に失敗: {:?}", e)
     })?;
 
-    esp_now_sender.add_peer(&app_config.receiver_mac).map_err(|e| {
-        log::error!("ESP-NOWピア追加に失敗: {:?}", e);
+    let esp_now_sender = EspNowSender::new(esp_now_arc, app_config.receiver_mac.clone()).map_err(|e| {
+        log::error!("ESP-NOWセンダー初期化に失敗: {:?}", e);
         if let Err(sleep_err) = AppController::fallback_sleep(
             &deep_sleep_controller,
             &app_config,
-            &format!("ESP-NOWピア追加に失敗: {:?}", e),
+            &format!("ESP-NOWセンダー初期化に失敗: {:?}", e),
         ) {
             log::error!("Deep sleep failed: {:?}", sleep_err);
         }
-        anyhow::anyhow!("ESP-NOWピア追加に失敗: {:?}", e)
+        anyhow::anyhow!("ESP-NOWセンダー初期化に失敗: {:?}", e)
     })?;
+    
     info!("ESP-NOW sender initialized and peer added. Receiver MAC: {}", app_config.receiver_mac);
 
     // カメラ用ピンの準備
@@ -143,7 +144,7 @@ fn main() -> anyhow::Result<()> {
 
     // スリープ管理（サーバーからのコマンド待機）
     AppController::handle_sleep_with_server_command(
-        &esp_now_sender,
+        &esp_now_receiver,
         &deep_sleep_controller,
         &app_config,
     )?;

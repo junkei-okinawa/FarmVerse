@@ -1,7 +1,7 @@
 use esp_idf_svc::hal::delay::FreeRtos;
 use log::{error, info, warn};
 
-use crate::communication::esp_now::{EspNowSender, ImageFrame};
+use crate::communication::esp_now::EspNowSender;
 use crate::core::config::AppConfig;
 use crate::hardware::camera::{CameraController, M5UnitCamConfig};
 use crate::hardware::led::StatusLed;
@@ -98,7 +98,8 @@ impl DataService {
                 (vec![], DUMMY_HASH.to_string())
             } else {
                 info!("画像データを送信中: {} bytes", data.len());
-                let hash = ImageFrame::calculate_hash(&data).unwrap_or_else(|_| DUMMY_HASH.to_string());
+                // 簡単なハッシュ計算（画像サイズとチェックサムベース）
+                let hash = format!("{:08x}{:08x}", data.len(), data.iter().map(|&b| b as u32).sum::<u32>());
                 (data, hash)
             }
         } else {
@@ -109,7 +110,6 @@ impl DataService {
         // 設定されたサーバーMACアドレスを使用
         info!("設定されたサーバーMACアドレス: {}", app_config.receiver_mac);
         match esp_now_sender.send_image_chunks(
-            &app_config.receiver_mac,
             image_data,
             250,  // チャンクサイズ (以前の動作していた値)
             5,    // チャンク間の遅延(ms) (以前の動作していた値)

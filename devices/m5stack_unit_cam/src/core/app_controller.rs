@@ -2,7 +2,7 @@ use log::{error, info, warn};
 use std::sync::Arc;
 
 use crate::core::config::AppConfig;
-use crate::communication::esp_now::EspNowSender;
+use crate::communication::esp_now::EspNowReceiver;
 use crate::power::sleep::{DeepSleep, DeepSleepPlatform};
 
 /// アプリケーションの主要な制御フローを管理するモジュール
@@ -11,13 +11,13 @@ pub struct AppController;
 impl AppController {
     /// スリープコマンドを受信してディープスリープを実行
     pub fn handle_sleep_with_server_command<P: DeepSleepPlatform>(
-        esp_now_sender: &EspNowSender,
+        esp_now_receiver: &EspNowReceiver,
         deep_sleep_controller: &DeepSleep<P>,
         config: &Arc<AppConfig>,
     ) -> anyhow::Result<()> {
         info!("サーバーからのスリープ時間を受信中...");
         
-        match esp_now_sender.receive_sleep_command(2000) {
+        match esp_now_receiver.wait_for_sleep_command(2) {
             Some(duration_seconds) => {
                 if duration_seconds > 0 {
                     info!(
