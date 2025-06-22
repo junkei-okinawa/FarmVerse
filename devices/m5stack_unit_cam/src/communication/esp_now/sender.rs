@@ -5,7 +5,7 @@ use esp_idf_sys::{
     esp_now_send_status_t, esp_now_send_status_t_ESP_NOW_SEND_SUCCESS,
     wifi_interface_t_WIFI_IF_STA,
 };
-use log::{error, info};
+use log::{error, info, warn};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// ESP-NOW送信結果
@@ -201,6 +201,14 @@ impl EspNowSender {
         // WiFi状態を確認
         self.check_wifi_status()?;
         
+        // ピア状態を確認
+        if let Err(e) = self.check_peer_status(peer_mac) {
+            error!("ピア状態確認失敗: {:?}", e);
+        }
+        
+        // ESP-NOW統計情報を表示
+        self.print_espnow_stats();
+        
         // ESP-NOW送信前に少し待機（WiFiインターフェースの安定化）
         FreeRtos::delay_ms(50);
 
@@ -288,9 +296,24 @@ impl EspNowSender {
                     error!("ESP-NOW送信失敗 (試行 {}): {:?}", attempt, e);
                     last_error = e;
                     
+                    // エラーが12390（キュー満杯）の場合、2回目の試行前にキューリセットを試行
+                    if let EspNowError::SendFailed(12390) = last_error {
+                        if attempt == 1 {
+                            warn!("ESP-NOWキューが満杯です。キューリセットを試行します...");
+                            if let Err(reset_err) = self.reset_espnow_queue() {
+                                error!("キューリセット失敗: {:?}", reset_err);
+                            } else {
+                                // ピアを再追加
+                                if let Err(peer_err) = self.add_peer(peer_mac) {
+                                    error!("ピア再追加失敗: {:?}", peer_err);
+                                }
+                            }
+                        }
+                    }
+                    
                     if attempt < max_retries {
                         // リトライ前に少し待機
-                        FreeRtos::delay_ms(100 * attempt as u32);
+                        FreeRtos::delay_ms(200 * attempt as u32);
                     }
                 }
             }
@@ -353,6 +376,84 @@ impl EspNowSender {
             return Err(EspNowError::InitFailed(-1));
         }
         
+        Ok(())
+    }
+
+    /// ESP-NOWピアの状態を確認
+    pub fn check_peer_status(&self, peer_mac: &MacAddress) -> Result<(), EspNowError> {
+        use esp_idf_sys::{esp_now_get_peer, esp_now_peer_info_t};
+        
+        let mut peer_info = esp_now_peer_info_t::default();
+        let result = unsafe { 
+            esp_now_get_peer(peer_mac.0.as_ptr(), &mut peer_info) 
+        };
+        
+        if result != 0 {
+            error!("ピア情報取得失敗: {} (0x{:X})", result, result as u32);
+            match result {
+                -4 => error!("ピアが見つかりません - MACアドレス {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X} は登録されていない可能性", 
+                            peer_mac.0[0], peer_mac.0[1], peer_mac.0[2], 
+                            peer_mac.0[3], peer_mac.0[4], peer_mac.0[5]),
+                _ => error!("不明なピア確認エラー"),
+            }
+            return Err(EspNowError::AddPeerFailed(result));
+        }
+        
+        info!("ピア情報確認成功: チャンネル={}, 暗号化={}", 
+              peer_info.channel, peer_info.encrypt);
+        Ok(())
+    }
+
+    /// ESP-NOWの統計情報を表示
+    pub fn print_espnow_stats(&self) {
+        info!("=== ESP-NOW診断情報 ===");
+        
+        // WiFiチャンネル情報を取得
+        unsafe {
+            use esp_idf_sys::{esp_wifi_get_channel, wifi_second_chan_t};
+            let mut primary = 0u8;
+            let mut second: wifi_second_chan_t = 0;
+            let result = esp_wifi_get_channel(&mut primary, &mut second);
+            if result == 0 {
+                info!("WiFiチャンネル: プライマリ={}, セカンダリ={}", primary, second);
+            } else {
+                error!("WiFiチャンネル取得失敗: {}", result);
+            }
+        }
+        
+        info!("デバイス送信準備完了 - 受信機が同じチャンネルで待機している必要があります");
+        info!("======================");
+    }
+
+    /// ESP-NOWキューをクリアしてリセット（診断用）
+    pub fn reset_espnow_queue(&self) -> Result<(), EspNowError> {
+        use esp_idf_sys::{esp_now_deinit, esp_now_init};
+        
+        info!("ESP-NOWキューリセットを実行中...");
+        
+        // ESP-NOWを一度無効化
+        let result = unsafe { esp_now_deinit() };
+        if result != 0 {
+            error!("ESP-NOW無効化失敗: {} (0x{:X})", result, result as u32);
+        }
+        
+        // 短時間待機
+        FreeRtos::delay_ms(100);
+        
+        // ESP-NOWを再初期化
+        let result = unsafe { esp_now_init() };
+        if result != 0 {
+            error!("ESP-NOW再初期化失敗: {} (0x{:X})", result, result as u32);
+            return Err(EspNowError::InitFailed(result));
+        }
+        
+        // コールバックを再設定
+        unsafe {
+            esp_now_register_send_cb(Some(esp_now_send_cb));
+            esp_now_register_recv_cb(Some(esp_now_recv_cb));
+        }
+        
+        info!("ESP-NOWキューリセット完了");
         Ok(())
     }
 }
