@@ -261,6 +261,40 @@ fn main() -> Result<()> {
     // Wi-Fi初期化（モデムを渡す）
     let _wifi = initialize_wifi(peripherals.modem)?;
 
+    // デバイス情報の表示
+    info!("=== USBゲートウェイ デバイス情報 ===");
+    
+    // 実際のMACアドレスを取得・表示
+    let wifi_mac = unsafe {
+        let mut mac = [0u8; 6];
+        let result = esp_idf_sys::esp_wifi_get_mac(esp_idf_sys::wifi_interface_t_WIFI_IF_STA, mac.as_mut_ptr());
+        if result == 0 {
+            format!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+        } else {
+            "UNKNOWN".to_string()
+        }
+    };
+    info!("実際のWiFi STA MAC: {}", wifi_mac);
+    
+    // WiFiチャンネル情報を取得・表示
+    let wifi_channel = unsafe {
+        let mut primary = 0u8;
+        let mut second = 0;
+        let result = esp_idf_sys::esp_wifi_get_channel(&mut primary, &mut second);
+        if result == 0 {
+            format!("Primary: {}, Secondary: {}", primary, second)
+        } else {
+            "UNKNOWN".to_string()
+        }
+    };
+    info!("WiFiチャンネル: {}", wifi_channel);
+    
+    info!("登録されたカメラ数: {}", cameras.len());
+    for (i, camera) in cameras.iter().enumerate() {
+        info!("  カメラ{}: {} ({})", i + 1, camera.name, camera.mac_address);
+    }
+
     // ESP-NOW初期化
     initialize_esp_now()?;
 
