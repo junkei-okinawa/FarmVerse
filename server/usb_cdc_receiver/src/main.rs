@@ -38,44 +38,46 @@ extern "C" fn esp_now_recv_cb(
 ///
 /// カメラのMACアドレスをESP-NOWピアとして登録します。
 fn register_esp_now_peers(cameras: &[config::CameraConfig]) -> Result<()> {
-    info!("Registering {} cameras as ESP-NOW peers", cameras.len());
+    info!("=== ESP-NOWピア登録開始 ===");
+    info!("登録するカメラ数: {}", cameras.len());
 
     unsafe {
-        for camera in cameras {
-            info!(
-                "Registering camera {} with MAC: {}",
-                camera.name, camera.mac_address
-            );
+        for (i, camera) in cameras.iter().enumerate() {
+            info!("カメラ {}/{}: {}", i + 1, cameras.len(), camera.name);
+            info!("  MAC: {}", camera.mac_address);
 
             let mut peer_info = esp_idf_svc::sys::esp_now_peer_info_t::default();
             peer_info.channel = 0; // 現在のチャンネルを使用
             peer_info.ifidx = esp_idf_svc::sys::wifi_interface_t_WIFI_IF_STA; // STA interface
             peer_info.encrypt = false; // 暗号化なし
             peer_info.peer_addr = camera.mac_address.into_bytes();
+            
+            info!("  チャンネル: {}", peer_info.channel);
+            info!("  インターフェース: {}", peer_info.ifidx);
+            info!("  暗号化: {}", peer_info.encrypt);
+            info!("  ピアアドレス: {:02X?}", peer_info.peer_addr);
 
             let add_result = esp_idf_svc::sys::esp_now_add_peer(&peer_info);
             if add_result == 0 {
-                info!(
-                    "ESP-NOW: Added camera {} as peer: {}",
-                    camera.name, camera.mac_address
-                );
+                info!("  ✓ ESP-NOWピア登録成功: {}", camera.name);
             } else {
-                error!(
-                    "ESP-NOW: Failed to add camera {} as peer: {}",
-                    camera.name, add_result
-                );
+                error!("  ✗ ESP-NOWピア登録失敗: {} (エラーコード: {})", camera.name, add_result);
             }
         }
 
+        info!("=== PMK設定 ===");
         // ESP-NOW添付ファイル(PMK)の拡張設定
         let pmk: [u8; 16] = [
             0x50, 0x4d, 0x4b, 0x5f, 0x4b, 0x45, 0x59, 0x5f, 0x42, 0x59, 0x5f, 0x43, 0x55, 0x53,
             0x54, 0x4f,
         ];
+        info!("PMKデータ: {:02X?}", pmk);
         let pmk_result = esp_idf_svc::sys::esp_now_set_pmk(pmk.as_ptr());
 
-        if pmk_result != 0 {
-            error!("ESP-NOW: Failed to set PMK: {}", pmk_result);
+        if pmk_result == 0 {
+            info!("✓ PMK設定成功");
+        } else {
+            error!("✗ PMK設定失敗: エラーコード {}", pmk_result);
         }
     }
 
@@ -202,7 +204,7 @@ fn process_data_loop(usb_cdc: &mut UsbCdc, esp_now_sender: &mut EspNowSender) ->
         // 2. USBからのコマンドをチェック（ノンブロッキング）
         match usb_cdc.read_command(10) { // 10ms timeout
             Ok(Some(command_str)) => {
-                info!("Received USB command: '{}'", command_str);
+                info!("=== Received USB command: '{}' ===", command_str);
                 
                 match parse_command(&command_str) {
                     Ok(Command::SendEspNow { mac_address, sleep_seconds }) => {
@@ -210,10 +212,10 @@ fn process_data_loop(usb_cdc: &mut UsbCdc, esp_now_sender: &mut EspNowSender) ->
                         
                         match esp_now_sender.send_sleep_command(&mac_address, sleep_seconds) {
                             Ok(()) => {
-                                info!("ESP-NOW sleep command sent successfully to {}", mac_address);
+                                info!("✓ ESP-NOW sleep command sent successfully to {}", mac_address);
                             }
                             Err(e) => {
-                                error!("Failed to send ESP-NOW sleep command to {}: {:?}", mac_address, e);
+                                error!("✗ Failed to send ESP-NOW sleep command to {}: {:?}", mac_address, e);
                             }
                         }
                     }

@@ -55,7 +55,10 @@ impl EspNowSender {
     /// * `Result<(), EspNowSendError>` - 成功時はOk(())、失敗時はエラー
     pub fn send_data(&self, mac_address: [u8; 6], data: &[u8]) -> Result<(), EspNowSendError> {
         // ピアは register_esp_now_peers() で登録済みなので、直接送信
-
+        info!("ESP-NOW low-level send: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}, {} bytes",
+              mac_address[0], mac_address[1], mac_address[2],
+              mac_address[3], mac_address[4], mac_address[5], data.len());
+        
         let result = unsafe {
             esp_now_send(
                 mac_address.as_ptr(),
@@ -65,12 +68,10 @@ impl EspNowSender {
         };
 
         if result == 0 {
-            info!("ESP-NOW data sent to {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}, {} bytes",
-                mac_address[0], mac_address[1], mac_address[2],
-                mac_address[3], mac_address[4], mac_address[5], data.len());
+            info!("✓ ESP-NOW raw send successful: error code {}", result);
             Ok(())
         } else {
-            error!("ESP-NOW send failed: error code {}", result);
+            error!("✗ ESP-NOW raw send failed: error code {}", result);
             Err(EspNowSendError::SendFailed(result))
         }
     }
@@ -84,12 +85,32 @@ impl EspNowSender {
     /// # 戻り値
     /// * `Result<(), EspNowSendError>` - 成功時はOk(())、失敗時はエラー
     pub fn send_sleep_command(&self, mac_str: &str, sleep_seconds: u32) -> Result<(), EspNowSendError> {
+        info!("=== ESP-NOW Sleep Command Sending ===");
+        info!("Target MAC: {}", mac_str);
+        info!("Sleep Duration: {} seconds", sleep_seconds);
+        
         let mac_address = Self::parse_mac_address(mac_str)?;
+        info!("Parsed MAC address: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+              mac_address[0], mac_address[1], mac_address[2],
+              mac_address[3], mac_address[4], mac_address[5]);
         
         // バイナリ形式でスリープ時間を送信（4バイトのu32）
         let sleep_data = sleep_seconds.to_le_bytes();
+        info!("Sleep data bytes: {:02X} {:02X} {:02X} {:02X}",
+              sleep_data[0], sleep_data[1], sleep_data[2], sleep_data[3]);
         
-        info!("Sending sleep command: {} seconds to {}", sleep_seconds, mac_str);
-        self.send_data(mac_address, &sleep_data)
+        info!("Attempting ESP-NOW send...");
+        let result = self.send_data(mac_address, &sleep_data);
+        
+        match &result {
+            Ok(()) => {
+                info!("✓ Sleep command sent successfully via ESP-NOW");
+            }
+            Err(e) => {
+                error!("✗ ESP-NOW send failed: {:?}", e);
+            }
+        }
+        
+        result
     }
 }

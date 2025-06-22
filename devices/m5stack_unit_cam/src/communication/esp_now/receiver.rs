@@ -28,7 +28,8 @@ impl EspNowReceiver {
 
     /// スリープコマンドを待機（タイムアウト付き）
     pub fn wait_for_sleep_command(&self, timeout_seconds: u32) -> Option<u32> {
-        info!("スリープコマンドを{}秒間待機中...", timeout_seconds);
+        info!("=== スリープコマンド待機開始 ===");
+        info!("タイムアウト: {}秒", timeout_seconds);
         
         let timeout_ms = timeout_seconds * 1000;
         let check_interval_ms = 100;
@@ -36,22 +37,32 @@ impl EspNowReceiver {
 
         // 受信フラグをリセット
         SLEEP_COMMAND_RECEIVED.store(false, Ordering::SeqCst);
+        RECEIVED_SLEEP_DURATION.store(0, Ordering::SeqCst);
+        
+        info!("受信フラグをリセットしました");
 
         while elapsed_ms < timeout_ms {
             // 受信データをチェック
             if SLEEP_COMMAND_RECEIVED.load(Ordering::SeqCst) {
                 let sleep_duration = RECEIVED_SLEEP_DURATION.load(Ordering::SeqCst);
+                info!("受信データ検出: sleep_duration={}", sleep_duration);
                 if sleep_duration > 0 && sleep_duration <= 86400 { // 最大24時間
-                    info!("スリープコマンドを受信しました: {}秒", sleep_duration);
+                    info!("✓ 有効なスリープコマンドを受信: {}秒", sleep_duration);
                     return Some(sleep_duration);
+                } else {
+                    warn!("無効なスリープ時間: {}", sleep_duration);
                 }
+            }
+
+            if elapsed_ms % 500 == 0 { // 0.5秒毎に進捗をログ出力
+                info!("待機中... {}/{}秒", elapsed_ms / 1000, timeout_seconds);
             }
 
             FreeRtos::delay_ms(check_interval_ms);
             elapsed_ms += check_interval_ms;
         }
 
-        warn!("スリープコマンドのタイムアウト（{}秒）", timeout_seconds);
+        warn!("✗ スリープコマンドのタイムアウト（{}秒）", timeout_seconds);
         None
     }
 }
@@ -62,6 +73,8 @@ extern "C" fn esp_now_recv_cb(
     data: *const u8,
     data_len: i32,
 ) {
+    info!("=== ESP-NOW受信コールバック ===");
+    
     if data_len <= 0 {
         warn!("ESP-NOW受信: データ長が無効 ({})", data_len);
         return;
@@ -81,34 +94,42 @@ extern "C" fn esp_now_recv_cb(
             "UNKNOWN".to_string()
         };
         
-        info!("ESP-NOW受信: 送信者={}, データサイズ={}, データ={:?}", sender_mac, data_len, data_slice);
+        info!("送信者MAC: {}", sender_mac);
+        info!("データサイズ: {}", data_len);
+        info!("データ内容: {:02X?}", data_slice);
         
         // バイナリ形式の場合（4バイトのu32）
         if data_len == 4 {
             let sleep_seconds = u32::from_le_bytes([data_slice[0], data_slice[1], data_slice[2], data_slice[3]]);
+            info!("バイナリ形式でのスリープ時間: {}秒", sleep_seconds);
             if sleep_seconds > 0 && sleep_seconds <= 86400 {
-                info!("バイナリスリープコマンド受信: {}秒", sleep_seconds);
+                info!("✓ 有効なバイナリスリープコマンド受信: {}秒", sleep_seconds);
                 RECEIVED_SLEEP_DURATION.store(sleep_seconds, Ordering::SeqCst);
                 SLEEP_COMMAND_RECEIVED.store(true, Ordering::SeqCst);
                 return;
+            } else {
+                warn!("無効なバイナリスリープ時間: {}", sleep_seconds);
             }
         }
 
         // 文字列形式の場合
         if let Ok(command_str) = std::str::from_utf8(data_slice) {
-            info!("受信コマンド文字列: '{}'", command_str);
+            info!("文字列形式でのコマンド: '{}'", command_str);
             
             // 数値のみの場合（秒数）
             if let Ok(sleep_seconds) = command_str.trim().parse::<u32>() {
+                info!("文字列形式でのスリープ時間: {}秒", sleep_seconds);
                 if sleep_seconds > 0 && sleep_seconds <= 86400 { // 最大24時間
-                    info!("文字列スリープコマンド受信: {}秒", sleep_seconds);
+                    info!("✓ 有効な文字列スリープコマンド受信: {}秒", sleep_seconds);
                     RECEIVED_SLEEP_DURATION.store(sleep_seconds, Ordering::SeqCst);
                     SLEEP_COMMAND_RECEIVED.store(true, Ordering::SeqCst);
                     return;
+                } else {
+                    warn!("無効な文字列スリープ時間: {}", sleep_seconds);
                 }
             }
         }
 
-        warn!("無効なスリープコマンド形式: {:?}", data_slice);
+        warn!("✗ 無効なスリープコマンド形式: {:02X?}", data_slice);
     }
 }
