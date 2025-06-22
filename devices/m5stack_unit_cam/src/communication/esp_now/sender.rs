@@ -5,7 +5,7 @@ use esp_idf_sys::{
     esp_now_send_status_t, esp_now_send_status_t_ESP_NOW_SEND_SUCCESS,
     wifi_interface_t_WIFI_IF_STA,
 };
-use log::error;
+use log::{error, info};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// ESP-NOW送信結果
@@ -198,6 +198,12 @@ impl EspNowSender {
               peer_mac.0[0], peer_mac.0[1], peer_mac.0[2], 
               peer_mac.0[3], peer_mac.0[4], peer_mac.0[5]);
 
+        // WiFi状態を確認
+        self.check_wifi_status()?;
+        
+        // ESP-NOW送信前に少し待機（WiFiインターフェースの安定化）
+        FreeRtos::delay_ms(50);
+
         // 前回の送信が完了するまで待機
         let mut timeout_counter = 0;
         while !SEND_COMPLETE.load(Ordering::SeqCst) {
@@ -216,7 +222,7 @@ impl EspNowSender {
         // データを送信
         let result = unsafe { esp_now_send(peer_mac.0.as_ptr(), data.as_ptr(), data.len()) };
         if result != 0 {
-            error!("ESP-NOW送信失敗: esp_now_send returned {}", result);
+            error!("ESP-NOW送信失敗: esp_now_send returned {} (0x{:X})", result, result as u32);
             // エラーコードの詳細を表示
             match result {
                 -1 => error!("ESP-NOW送信エラー: ESP_ERR_INVALID_ARG (引数が無効)"),
@@ -224,7 +230,14 @@ impl EspNowSender {
                 -3 => error!("ESP-NOW送信エラー: ESP_ERR_NO_MEM (メモリ不足)"),
                 -4 => error!("ESP-NOW送信エラー: ESP_ERR_NOT_FOUND (ピアが見つからない)"),
                 -5 => error!("ESP-NOW送信エラー: ESP_ERR_INVALID_SIZE (データサイズが無効)"),
-                _ => error!("ESP-NOW送信エラー: 未知のエラーコード {}", result),
+                12390 => error!("ESP-NOW送信エラー: ESP_ERR_ESPNOW_FULL (ESP-NOWキューが満杯) - WiFi接続が必要"),
+                _ => {
+                    error!("ESP-NOW送信エラー: 未知のエラーコード {} (0x{:X})", result, result as u32);
+                    // ESP-IDFエラーコードをデコード
+                    let err_base = (result as u32 >> 12) & 0xFF;
+                    let err_code = result as u32 & 0xFFF;
+                    error!("エラーベース: 0x{:X}, エラーコード: 0x{:X}", err_base, err_code);
+                }
             }
             SEND_COMPLETE.store(true, Ordering::SeqCst);
             return Err(EspNowError::SendFailed(result));
@@ -253,6 +266,40 @@ impl EspNowSender {
         Ok(())
     }
 
+    /// リトライ機能付きのデータ送信
+    pub fn send_with_retry(
+        &self,
+        peer_mac: &MacAddress,
+        data: &[u8],
+        timeout_ms: u32,
+        max_retries: u8,
+    ) -> Result<(), EspNowError> {
+        let mut last_error = EspNowError::SendTimeout;
+        
+        for attempt in 1..=max_retries {
+            info!("ESP-NOW送信試行 {}/{}", attempt, max_retries);
+            
+            match self.send(peer_mac, data, timeout_ms) {
+                Ok(()) => {
+                    info!("ESP-NOW送信成功 (試行 {})", attempt);
+                    return Ok(());
+                }
+                Err(e) => {
+                    error!("ESP-NOW送信失敗 (試行 {}): {:?}", attempt, e);
+                    last_error = e;
+                    
+                    if attempt < max_retries {
+                        // リトライ前に少し待機
+                        FreeRtos::delay_ms(100 * attempt as u32);
+                    }
+                }
+            }
+        }
+        
+        error!("ESP-NOW送信: 全ての試行が失敗しました");
+        Err(last_error)
+    }
+
     /// 画像データをチャンクに分割して送信する
     ///
     /// # 引数
@@ -273,7 +320,8 @@ impl EspNowSender {
         delay_between_chunks_ms: u32,
     ) -> Result<(), EspNowError> {
         for chunk in data.chunks(chunk_size) {
-            self.send(peer_mac, chunk, 1000)?;
+            // リトライ機能付きで送信
+            self.send_with_retry(peer_mac, chunk, 1000, 3)?;
 
             // チャンク間にディレイを挿入
             if delay_between_chunks_ms > 0 {
@@ -283,8 +331,28 @@ impl EspNowSender {
 
         // EOFマーカー送信
         FreeRtos::delay_ms(15); // EOFマーカー送信前に少し待機
-        self.send(peer_mac, b"EOF!", 1000)?;
+        self.send_with_retry(peer_mac, b"EOF!", 1000, 3)?;
 
+        Ok(())
+    }
+
+    /// WiFi状態を確認してESP-NOW送信の準備ができているかチェック
+    pub fn check_wifi_status(&self) -> Result<(), EspNowError> {
+        use esp_idf_sys::{esp_wifi_get_mode, wifi_mode_t};
+        
+        let mut mode: wifi_mode_t = 0;
+        let result = unsafe { esp_wifi_get_mode(&mut mode) };
+        if result != 0 {
+            error!("WiFiモード取得に失敗: {}", result);
+            return Err(EspNowError::InitFailed(result));
+        }
+        
+        info!("現在のWiFiモード: {}", mode);
+        if mode == 0 {  // WIFI_MODE_NULL
+            error!("WiFiが無効化されています - ESP-NOW送信には WiFi STA または AP モードが必要");
+            return Err(EspNowError::InitFailed(-1));
+        }
+        
         Ok(())
     }
 }

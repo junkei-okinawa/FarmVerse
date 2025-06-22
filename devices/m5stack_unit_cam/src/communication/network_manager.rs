@@ -41,6 +41,16 @@ impl NetworkManager {
         wifi.start()?;
         info!("WiFiがESP-NOW用にSTAモードで起動しました。");
 
+        // WiFi状態の詳細確認
+        let wifi_status = wifi.is_started();
+        info!("WiFi起動状態: {:?}", wifi_status);
+        
+        // WiFiのMACアドレスを取得して表示
+        let mac_addr = wifi.wifi().sta_netif().get_mac()?;
+        info!("デバイスMACアドレス: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
+              mac_addr[0], mac_addr[1], mac_addr[2], 
+              mac_addr[3], mac_addr[4], mac_addr[5]);
+
         // WiFi Power Saveを無効化
         unsafe {
             esp_idf_svc::sys::esp_wifi_set_ps(esp_idf_svc::sys::wifi_ps_type_t_WIFI_PS_NONE);
