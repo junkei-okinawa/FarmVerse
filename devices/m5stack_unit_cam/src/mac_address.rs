@@ -32,6 +32,11 @@ impl MacAddress {
 
         Ok(MacAddress(mac))
     }
+
+    /// バイト配列からMACアドレスを作成
+    pub fn new(addr: [u8; 6]) -> Self {
+        MacAddress(addr)
+    }
 }
 
 impl fmt::Display for MacAddress {

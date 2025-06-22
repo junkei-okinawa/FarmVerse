@@ -1,32 +1,30 @@
 /*!
- * # Image Sender Library
+ * # M5Stack Unit Cam Image Sender Library
  *
  * ESP32カメラ画像を撮影して ESP-NOW プロトコルで送信するためのライブラリ
  *
- * このライブラリは以下の主要な機能を提供します：
- * - カメラ制御と画像キャプチャ
- * - ESP-NOW プロトコルを使った画像データの送信
- * - ステータスLED制御
- * - 設定管理
- * - MACアドレス処理
- * - ディープスリープ制御
+ * ## モジュール構成
+ * - `core`: アプリケーションの核となる機能（設定、データサービス、制御）
+ * - `hardware`: ハードウェア制御（カメラ、LED、電圧センサー、ピン設定）
+ * - `communication`: 通信機能（ESP-NOW、ネットワーク管理）
+ * - `power`: 電源管理（ディープスリープ）
  */
 
 // 公開モジュール
-pub mod camera;
-pub mod config;
-pub mod esp_now;
-pub mod led;
+pub mod communication;
+pub mod core;
+pub mod hardware;
 pub mod mac_address;
-pub mod sleep;
+pub mod power;
 
 // 内部で使用する型をまとめてエクスポート
-pub use camera::CameraController;
-pub use config::{AppConfig, ConfigError};
-pub use esp_now::{EspNowError, EspNowSender, ImageFrame, SendResult};
-pub use led::status_led::{LedError, StatusLed};
+pub use communication::esp_now::{EspNowError, EspNowSender, EspNowReceiver};
+pub use core::{AppConfig, ConfigError, DataService, MeasuredData};
+pub use hardware::camera::CameraController;
+pub use hardware::led::status_led::{LedError, StatusLed};
+pub use hardware::{CameraPins, VoltageSensor};
 pub use mac_address::MacAddress;
-pub use sleep::{DeepSleep, DeepSleepError};
+pub use power::{DeepSleep, DeepSleepError};
 
 /// ライブラリのバージョン情報
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
