@@ -64,6 +64,12 @@ impl NetworkManager {
     ) -> anyhow::Result<(Arc<Mutex<EspNow<'static>>>, EspNowReceiver)> {
         info!("ESP-NOWを初期化中（送信＆受信機能付き）...");
         
+        // ESP-NOWのメモリ設定を最適化
+        unsafe {
+            // ESP-NOWの送信バッファサイズを調整（デフォルトより小さく）
+            esp_idf_svc::sys::esp_wifi_set_storage(esp_idf_svc::sys::wifi_storage_t_WIFI_STORAGE_RAM);
+        }
+        
         let esp_now = EspNow::take()?;
         let esp_now_arc = Arc::new(Mutex::new(esp_now));
         

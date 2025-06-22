@@ -21,7 +21,7 @@ class Config:
     MAX_DATA_LEN: int = 512
     
     # InfluxDB settings
-    INFLUXDB_URL: str = "http://localhost:8086"
+    INFLUXDB_URL: str = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
     INFLUXDB_ORG: str = "agri"
     INFLUXDB_BUCKET: str = "balcony"
     INFLUXDB_TOKEN: str = os.environ.get("INFLUXDB_TOKEN", "")

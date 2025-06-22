@@ -112,15 +112,22 @@ impl EspNowSender {
         chunk_size: usize,
         delay_between_chunks_ms: u32,
     ) -> Result<(), EspNowError> {
-        for chunk in data.chunks(chunk_size) {
-            // リトライ機能付きで送信
-            self.send_with_retry(chunk, 1000, 3)?;
-            
-            // チャンク間のディレイ（最後のチャンクの後は不要）
-            if chunk.len() == chunk_size {
-                FreeRtos::delay_ms(delay_between_chunks_ms);
+        info!("画像データを{}バイトのチャンクに分割して送信開始", chunk_size);
+        let total_chunks = (data.len() + chunk_size - 1) / chunk_size;
+        
+        for (i, chunk) in data.chunks(chunk_size).enumerate() {
+            if i % 10 == 0 { // 10チャンクごとに進捗表示
+                info!("チャンク送信進捗: {}/{}", i + 1, total_chunks);
             }
+            
+            // メモリ不足対策：リトライ回数を減らして1回のみ試行
+            self.send_with_retry(chunk, 1000, 1)?;
+            
+            // チャンク間のディレイ（メモリクリア時間を確保）
+            FreeRtos::delay_ms(delay_between_chunks_ms);
         }
+        
+        info!("画像データ送信完了: {}チャンク送信", total_chunks);
         Ok(())
     }
 
