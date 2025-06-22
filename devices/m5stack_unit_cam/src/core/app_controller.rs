@@ -15,23 +15,27 @@ impl AppController {
         deep_sleep_controller: &DeepSleep<P>,
         config: &Arc<AppConfig>,
     ) -> anyhow::Result<()> {
-        info!("サーバーからのスリープ時間を受信中...");
+        info!("=== サーバーからのスリープコマンド待機開始 ===");
+        info!("設定されたデフォルトスリープ時間: {}秒", config.sleep_duration_seconds);
+        info!("スリープコマンド待機タイムアウト: 10秒");
         
-        match esp_now_receiver.wait_for_sleep_command(2) {
+        match esp_now_receiver.wait_for_sleep_command(10) { // 2秒から10秒に延長
             Some(duration_seconds) => {
                 if duration_seconds > 0 {
                     info!(
-                        "サーバーからスリープ時間を受信: {}秒。ディープスリープに入ります。",
+                        "✓ サーバーからスリープ時間を受信: {}秒。ディープスリープに入ります。",
                         duration_seconds
                     );
                     deep_sleep_controller.sleep_for_duration(duration_seconds as u64)?;
                 } else {
                     warn!("無効なスリープ時間 (0秒) を受信。デフォルト時間を使用します。");
+                    info!("デフォルトスリープ時間でディープスリープに入ります: {}秒", config.sleep_duration_seconds);
                     deep_sleep_controller.sleep_for_duration(config.sleep_duration_seconds)?;
                 }
             }
             None => {
-                warn!("スリープコマンドを受信できませんでした。デフォルト時間を使用します。");
+                warn!("✗ スリープコマンドを受信できませんでした。デフォルト時間を使用します。");
+                info!("デフォルトスリープ時間でディープスリープに入ります: {}秒", config.sleep_duration_seconds);
                 deep_sleep_controller.sleep_for_duration(config.sleep_duration_seconds)?;
             }
         }
