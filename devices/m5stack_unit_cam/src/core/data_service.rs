@@ -5,16 +5,12 @@ use crate::communication::esp_now::{EspNowSender, ImageFrame};
 use crate::core::config::AppConfig;
 use crate::hardware::camera::{CameraController, M5UnitCamConfig};
 use crate::hardware::led::StatusLed;
-use crate::mac_address::MacAddress;
 
 /// 低電圧閾値（パーセンテージ）
 const LOW_VOLTAGE_THRESHOLD_PERCENT: u8 = 8;
 
 /// ダミーハッシュ（SHA256の64文字）
 const DUMMY_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-
-/// サーバーのMACアドレス（デフォルト値）
-const DEFAULT_SERVER_MAC: [u8; 6] = [0x4C, 0x11, 0xAE, 0x12, 0x34, 0x56];
 
 /// 測定データ構造体
 #[derive(Debug)]
@@ -36,21 +32,21 @@ impl MeasuredData {
 pub struct DataService;
 
 impl DataService {
-    /// 電圧レベルに基づいて画像キャプチャを実行
+    /// ADC電圧レベルに基づいて画像キャプチャを実行
     pub fn capture_image_if_voltage_sufficient(
         voltage_percent: u8,
         camera_pins: crate::hardware::CameraPins,
         _app_config: &AppConfig,
         led: &mut StatusLed,
     ) -> anyhow::Result<Option<Vec<u8>>> {
-        // 電圧条件をチェック
+        // ADC電圧条件をチェック
         if voltage_percent <= LOW_VOLTAGE_THRESHOLD_PERCENT {
-            warn!("電圧が低すぎるため画像キャプチャをスキップします: {}%", voltage_percent);
+            warn!("ADC電圧が低すぎるため画像キャプチャをスキップします: {}%", voltage_percent);
             return Ok(None);
         }
 
         if voltage_percent >= 255 {
-            warn!("電圧測定値が異常です: {}%", voltage_percent);
+            warn!("ADC電圧測定値が異常です: {}%", voltage_percent);
             return Ok(None);
         }
 
@@ -88,7 +84,7 @@ impl DataService {
 
     /// 測定データを送信
     pub fn transmit_data(
-        _app_config: &AppConfig,
+        app_config: &AppConfig,
         esp_now_sender: &EspNowSender,
         led: &mut StatusLed,
         measured_data: MeasuredData,
@@ -96,7 +92,7 @@ impl DataService {
         led.turn_on()?;
 
         // 画像データの処理と送信
-        let (image_data, hash) = if let Some(data) = measured_data.image_data {
+        let (image_data, _hash) = if let Some(data) = measured_data.image_data {
             if data.is_empty() {
                 warn!("画像データが空です");
                 (vec![], DUMMY_HASH.to_string())
@@ -110,12 +106,12 @@ impl DataService {
             (vec![], DUMMY_HASH.to_string())
         };
 
-        // データ送信
-        let server_mac = MacAddress::new(DEFAULT_SERVER_MAC);
+        // 設定されたサーバーMACアドレスを使用
+        info!("設定されたサーバーMACアドレス: {}", app_config.receiver_mac);
         match esp_now_sender.send_image_chunks(
-            &server_mac,
+            &app_config.receiver_mac,
             image_data,
-            1024, // チャンクサイズ
+            1024, // チャンクサイズ 
             10,   // チャンク間の遅延(ms)
         ) {
             Ok(_) => {

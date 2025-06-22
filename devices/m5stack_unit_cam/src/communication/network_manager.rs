@@ -14,12 +14,13 @@ pub struct NetworkManager;
 
 impl NetworkManager {
     /// WiFiをESP-NOW用に初期化し、ESP-NOWセンダーを作成
+    /// WiFi接続を適切に管理してESP-NOW通信を安定化
     pub fn initialize_esp_now(
         modem: Modem,
         sysloop: &EspSystemEventLoop,
         nvs_partition: &EspDefaultNvsPartition,
         config: &AppConfig,
-    ) -> anyhow::Result<EspNowSender> {
+    ) -> anyhow::Result<(EspNowSender, BlockingWifi<EspWifi<'static>>)> {
         info!("ESP-NOW用にWiFiをSTAモードで準備します。");
         
         let mut wifi = BlockingWifi::wrap(
@@ -47,13 +48,20 @@ impl NetworkManager {
         info!("Wi-Fi Power Save を無効化しました (ESP-NOW用)");
 
         // ESP-NOWセンダーを初期化
+        info!("ESP-NOWセンダーを初期化中...");
         let esp_now_sender = EspNowSender::new().map_err(|e| {
+            log::error!("ESP-NOW初期化に失敗: {:?}", e);
             anyhow::anyhow!("ESP-NOW初期化に失敗: {:?}", e)
         })?;
+        info!("ESP-NOWセンダーの初期化が完了しました");
         
-        esp_now_sender.add_peer(&config.receiver_mac)?;
-        info!("ESP-NOW sender initialized and peer added.");
+        info!("受信機ピアを追加中: {}", config.receiver_mac);
+        esp_now_sender.add_peer(&config.receiver_mac).map_err(|e| {
+            log::error!("ESP-NOWピア追加に失敗: {:?}", e);
+            anyhow::anyhow!("ESP-NOWピア追加に失敗: {:?}", e)
+        })?;
+        info!("ESP-NOW sender initialized and peer added. Receiver MAC: {}", config.receiver_mac);
 
-        Ok(esp_now_sender)
+        Ok((esp_now_sender, wifi))
     }
 }

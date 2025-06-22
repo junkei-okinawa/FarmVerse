@@ -65,7 +65,7 @@ impl CameraPins {
 pub struct DataCollector;
 
 impl DataCollector {
-    /// 電圧レベルに基づいて画像キャプチャを実行
+    /// ADC電圧レベルに基づいて画像キャプチャを実行
     pub fn capture_image_if_voltage_sufficient(
         voltage_percent: u8,
         camera_pins: CameraPins,
@@ -81,10 +81,10 @@ impl DataCollector {
             Self::capture_camera_image(camera_pins, config, led)
         } else {
             if voltage_percent == 255 {
-                info!("電圧測定エラー (255%) のため、カメラ処理をスキップします。");
+                info!("ADC電圧測定エラー (255%) のため、カメラ処理をスキップします。");
             } else {
                 info!(
-                    "電圧が低い ({}% < {}%) ため、カメラ処理をスキップします。",
+                    "ADC電圧が低い ({}% < {}%) ため、カメラ処理をスキップします。",
                     voltage_percent, LOW_VOLTAGE_THRESHOLD_PERCENT
                 );
             }

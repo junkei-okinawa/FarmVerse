@@ -114,6 +114,12 @@ impl EspNowSender {
     ///
     /// ピア追加に失敗した場合にエラーを返します
     pub fn add_peer(&self, peer_mac: &MacAddress) -> Result<(), EspNowError> {
+        use log::info;
+        
+        info!("ESP-NOWピア追加: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
+              peer_mac.0[0], peer_mac.0[1], peer_mac.0[2], 
+              peer_mac.0[3], peer_mac.0[4], peer_mac.0[5]);
+
         let mut peer_info = esp_now_peer_info_t::default();
         peer_info.channel = 0;
         peer_info.ifidx = wifi_interface_t_WIFI_IF_STA;
@@ -122,9 +128,19 @@ impl EspNowSender {
 
         let result = unsafe { esp_now_add_peer(&peer_info) };
         if result != 0 {
+            error!("ESP-NOWピア追加失敗: esp_now_add_peer returned {}", result);
+            match result {
+                -1 => error!("ESP-NOWピア追加エラー: ESP_ERR_INVALID_ARG (引数が無効)"),
+                -2 => error!("ESP-NOWピア追加エラー: ESP_ERR_INVALID_STATE (ESP-NOWが初期化されていない)"),
+                -3 => error!("ESP-NOWピア追加エラー: ESP_ERR_NO_MEM (メモリ不足)"),
+                -6 => error!("ESP-NOWピア追加エラー: ESP_ERR_ESPNOW_EXIST (ピアが既に存在)"),
+                -7 => error!("ESP-NOWピア追加エラー: ESP_ERR_ESPNOW_FULL (ピアリストが満杯)"),
+                _ => error!("ESP-NOWピア追加エラー: 未知のエラーコード {}", result),
+            }
             return Err(EspNowError::AddPeerFailed(result));
         }
 
+        info!("ESP-NOWピア追加成功");
         Ok(())
     }
 
@@ -175,12 +191,20 @@ impl EspNowSender {
         data: &[u8],
         timeout_ms: u32,
     ) -> Result<(), EspNowError> {
+        use log::info;
+        
+        info!("ESP-NOW送信開始: データサイズ={}, 送信先={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
+              data.len(),
+              peer_mac.0[0], peer_mac.0[1], peer_mac.0[2], 
+              peer_mac.0[3], peer_mac.0[4], peer_mac.0[5]);
+
         // 前回の送信が完了するまで待機
         let mut timeout_counter = 0;
         while !SEND_COMPLETE.load(Ordering::SeqCst) {
             FreeRtos::delay_ms(1);
             timeout_counter += 1;
             if timeout_counter > timeout_ms {
+                error!("ESP-NOW送信: 前回送信の完了待機タイムアウト");
                 return Err(EspNowError::SendTimeout);
             }
         }
@@ -192,9 +216,21 @@ impl EspNowSender {
         // データを送信
         let result = unsafe { esp_now_send(peer_mac.0.as_ptr(), data.as_ptr(), data.len()) };
         if result != 0 {
+            error!("ESP-NOW送信失敗: esp_now_send returned {}", result);
+            // エラーコードの詳細を表示
+            match result {
+                -1 => error!("ESP-NOW送信エラー: ESP_ERR_INVALID_ARG (引数が無効)"),
+                -2 => error!("ESP-NOW送信エラー: ESP_ERR_INVALID_STATE (ESP-NOWが初期化されていない)"),
+                -3 => error!("ESP-NOW送信エラー: ESP_ERR_NO_MEM (メモリ不足)"),
+                -4 => error!("ESP-NOW送信エラー: ESP_ERR_NOT_FOUND (ピアが見つからない)"),
+                -5 => error!("ESP-NOW送信エラー: ESP_ERR_INVALID_SIZE (データサイズが無効)"),
+                _ => error!("ESP-NOW送信エラー: 未知のエラーコード {}", result),
+            }
             SEND_COMPLETE.store(true, Ordering::SeqCst);
             return Err(EspNowError::SendFailed(result));
         }
+
+        info!("ESP-NOW送信コマンド実行成功、送信完了コールバック待機中...");
 
         // 送信完了を待機
         timeout_counter = 0;
@@ -202,15 +238,18 @@ impl EspNowSender {
             FreeRtos::delay_ms(1);
             timeout_counter += 1;
             if timeout_counter > timeout_ms {
+                error!("ESP-NOW送信: 送信完了コールバックタイムアウト ({}ms)", timeout_ms);
                 return Err(EspNowError::SendTimeout);
             }
         }
 
         // 送信結果を確認
         if SEND_FAILED.load(Ordering::SeqCst) {
+            error!("ESP-NOW送信: コールバックで送信失敗が報告された");
             return Err(EspNowError::SendFailedCallback);
         }
 
+        info!("ESP-NOW送信成功");
         Ok(())
     }
 

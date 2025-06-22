@@ -60,14 +60,14 @@ fn main() -> anyhow::Result<()> {
     // RTCタイム管理
     RtcManager::check_and_initialize_rtc(&timezone, &deep_sleep_controller)?;
     
-    // 電圧測定
+    // ADC電圧測定
     let voltage_percent = VoltageSensor::measure_voltage_percentage(
         peripherals.adc2,
         voltage_pin,
     )?;
 
     // ネットワーク（ESP-NOW）初期化
-    let esp_now_sender = NetworkManager::initialize_esp_now(
+    let (esp_now_sender, _wifi_connection) = NetworkManager::initialize_esp_now(
         peripherals.modem,
         &sysloop,
         &nvs_partition,
