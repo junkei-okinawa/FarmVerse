@@ -23,6 +23,7 @@ class InfluxDBClient:
         self.token = os.environ.get("INFLUXDB_TOKEN")
         self.client = None
         self.write_api = None
+        self._tasks = []  # 実行中の非同期タスクを追跡
         
         try:
             self.client = influxdb_client.InfluxDBClient(
@@ -74,7 +75,11 @@ class InfluxDBClient:
             return False
             
         # InfluxDBへの書き込みを非同期で実行し、エラーが発生しても処理を継続する
-        asyncio.create_task(self._write_sensor_data_async(sender_mac, voltage, temperature))
+        task = asyncio.create_task(self._write_sensor_data_async(sender_mac, voltage, temperature))
+        self._tasks.append(task)
+        
+        # 完了したタスクのクリーンアップを非同期で実行
+        asyncio.create_task(self._cleanup_completed_tasks())
         return True  # 非同期実行のため、即座にTrueを返す
     
     async def _write_sensor_data_async(self, sender_mac: str, voltage: float = None, temperature: float = None):
@@ -114,7 +119,35 @@ class InfluxDBClient:
         except ConnectionError as e:
             logger.error(f"Connection error writing to InfluxDB for {sender_mac}: {e} (continuing with other operations)")
         except Exception as e:
-            logger.error(f"Error writing to InfluxDB for {sender_mac}: {e} (continuing with other operations)")
+            logger.error(f"Unexpected error writing to InfluxDB for {sender_mac}: {e}")
+            
+    async def _cleanup_completed_tasks(self):
+        """完了したタスクをクリーンアップし、例外をログに記録"""
+        if not self._tasks:
+            return
+            
+        # 完了したタスクを特定
+        completed_tasks = [task for task in self._tasks if task.done()]
+        
+        # 完了したタスクの例外をチェック
+        for task in completed_tasks:
+            try:
+                # タスクの結果を取得（例外があれば発生）
+                await task
+            except Exception as e:
+                logger.error(f"Exception in InfluxDB write task: {e}")
+                
+        # 完了したタスクを削除
+        self._tasks = [task for task in self._tasks if not task.done()]
+        
+        # タスクリストが大きくなりすぎないよう制限
+        if len(self._tasks) > 100:
+            logger.warning(f"Too many pending InfluxDB tasks: {len(self._tasks)}")
+            # 古いタスクを一部キャンセル
+            for task in self._tasks[:50]:
+                if not task.done():
+                    task.cancel()
+            self._tasks = self._tasks[50:]
     
     def close(self):
         """リソースのクリーンアップ"""
