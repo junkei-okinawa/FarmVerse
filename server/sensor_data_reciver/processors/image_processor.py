@@ -49,10 +49,10 @@ class ImageReceiver:
     async def cleanup_resources(self) -> None:
         """リソースのクリーンアップ"""
         try:
-            if hasattr(self, 'write_api') and self.write_api:
-                self.write_api.close()
-            if hasattr(self, 'client') and self.client:
-                self.client.close()
+            # InfluxDBクライアントのクリーンアップ
+            from storage import influx_client
+            if influx_client and hasattr(influx_client, 'close'):
+                await influx_client.close()
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
 

@@ -120,10 +120,13 @@ impl<'d> UsbCdc<'d> {
         const MAX_RETRIES: u32 = 5; // 最大リトライ回数
 
         let mut bytes_sent = 0;
-        let mut timeout = unsafe { core::mem::zeroed::<sys::TimeOut_t>() };
+        let mut timeout = core::mem::MaybeUninit::<sys::TimeOut_t>::uninit();
         let mut write_timeout_ticks =
             (WRITE_TIMEOUT_MS as u64 * sys::configTICK_RATE_HZ as u64 / 1000) as u32;
-        unsafe { sys::vTaskSetTimeOutState(&mut timeout) };
+        unsafe {
+            sys::vTaskSetTimeOutState(timeout.as_mut_ptr());
+        }
+        let mut timeout = unsafe { timeout.assume_init() };
         let mut timeout_logged = false;
         let mut retry_count = 0;
 
