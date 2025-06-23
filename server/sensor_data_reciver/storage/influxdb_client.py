@@ -23,6 +23,7 @@ class InfluxDBClient:
         self.token = os.environ.get("INFLUXDB_TOKEN")
         self.client = None
         self.write_api = None
+        self._active_tasks = set()  # アクティブタスクの追跡
         
         try:
             self.client = influxdb_client.InfluxDBClient(
@@ -64,9 +65,9 @@ class InfluxDBClient:
     def write_sensor_data(self, sender_mac: str, voltage: float = None, temperature: float = None) -> bool:
         """センサーデータをInfluxDBに書き込み（非同期実行・エラー耐性付き）"""
         # テスト環境ではInfluxDB書き込みをスキップ
-        if os.environ.get('PYTEST_CURRENT_TEST'):
+        if config.IS_TEST_ENV:
             logger.info(f"Test environment detected, skipping InfluxDB write for {sender_mac}")
-            return True
+            return False
             
         # InfluxDBクライアントが初期化されていない場合はスキップ
         if not self.client or not self.write_api:
@@ -79,9 +80,13 @@ class InfluxDBClient:
         cleanup_task = self._cleanup_completed_tasks()
         
         # 両方のタスクを同時実行し、例外を適切に処理
-        asyncio.create_task(
-            asyncio.gather(write_task, cleanup_task, return_exceptions=True)
-        )
+        async def execute_tasks():
+            return await asyncio.gather(write_task, cleanup_task, return_exceptions=True)
+        
+        main_task = asyncio.create_task(execute_tasks())
+        
+        # 作成したタスクをアクティブタスクとして追跡
+        self._active_tasks.add(main_task)
         return True  # 非同期実行のため、即座にTrueを返す
     
     async def _write_sensor_data_async(self, sender_mac: str, voltage: float = None, temperature: float = None):
@@ -124,14 +129,46 @@ class InfluxDBClient:
             logger.error(f"Unexpected error writing to InfluxDB for {sender_mac}: {e}")
             
     async def _cleanup_completed_tasks(self):
-        """バックグラウンドでの定期的なクリーンアップタスク"""
-        # asyncio.gather使用により、個別タスク追跡は不要
-        # メモリリークを防ぐための軽量な処理
-        await asyncio.sleep(0.1)  # 他のタスクに実行権を譲る
+        """バックグラウンドで完了したタスクをクリーンアップ"""
+        try:
+            # 完了したタスクを特定してセットから削除
+            completed_tasks = {task for task in self._active_tasks if task.done()}
+            for task in completed_tasks:
+                self._active_tasks.discard(task)
+                # 例外が発生したタスクをログに記録
+                if task.exception():
+                    logger.warning(f"Task completed with exception: {task.exception()}")
+            
+            if completed_tasks:
+                logger.debug(f"Cleaned up {len(completed_tasks)} completed tasks")
+            
+            # 他のタスクに実行権を譲る
+            await asyncio.sleep(0.01)
+        except Exception as e:
+            logger.error(f"Error during task cleanup: {e}")
+        
         logger.debug("Background cleanup completed")
     
-    def close(self):
-        """リソースのクリーンアップ"""
+    async def close(self):
+        """リソースのクリーンアップ - 全てのアクティブタスクを待機"""
+        try:
+            # 全てのアクティブタスクが完了するまで待機
+            if self._active_tasks:
+                logger.info(f"Waiting for {len(self._active_tasks)} active tasks to complete...")
+                await asyncio.gather(*self._active_tasks, return_exceptions=True)
+                self._active_tasks.clear()
+                logger.info("All active tasks completed")
+            
+            # InfluxDBクライアントのクリーンアップ
+            if hasattr(self, 'write_api') and self.write_api:
+                self.write_api.close()
+            if hasattr(self, 'client') and self.client:
+                self.client.close()
+        except Exception as e:
+            logger.error(f"Error during InfluxDB client cleanup: {e}")
+
+    def close_sync(self):
+        """同期的なクリーンアップメソッド（後方互換性のため）"""
         try:
             if hasattr(self, 'write_api') and self.write_api:
                 self.write_api.close()

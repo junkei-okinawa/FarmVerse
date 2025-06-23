@@ -13,13 +13,14 @@ static SEQUENCE_COUNTERS: Mutex<Option<HashMap<[u8; 6], u32>>> = Mutex::new(None
 
 /// 送信元MACアドレスごとにシーケンス番号を管理するためのヘルパー関数
 fn get_sequence_number(mac_address: [u8; 6], reset: bool) -> u32 {
-    // 初めて使用される場合はHashMapを初期化
-    if SEQUENCE_COUNTERS.lock().unwrap().is_none() {
-        *SEQUENCE_COUNTERS.lock().unwrap() = Some(HashMap::new());
-    }
-
     // シーケンスカウンターを取得または初期化
     let mut counters = SEQUENCE_COUNTERS.lock().unwrap();
+
+    // 初めて使用される場合はHashMapを初期化
+    if counters.is_none() {
+        *counters = Some(HashMap::new());
+    }
+
     if let Some(ref mut counter_map) = *counters {
         // リセットフラグが立っている場合、シーケンス番号をリセット
         if reset {
