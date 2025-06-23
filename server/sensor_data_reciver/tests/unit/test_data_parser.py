@@ -85,12 +85,12 @@ class TestDataParser:
         result = DataParser.extract_voltage_with_validation(payload, "test:mac")
         assert result == 75.0
 
-    def test_extract_voltage_with_validation_skip_100(self):
-        """Test voltage extraction with validation - skip 100% value."""
+    def test_extract_voltage_with_validation_with_100(self):
+        """Test voltage extraction with validation - 100% value is now valid."""
         payload = "VOLT:100"
         
         result = DataParser.extract_voltage_with_validation(payload, "test:mac")
-        assert result is None
+        assert result == 100.0
 
     def test_extract_temperature_with_validation_normal(self):
         """Test temperature extraction with validation - normal case."""
