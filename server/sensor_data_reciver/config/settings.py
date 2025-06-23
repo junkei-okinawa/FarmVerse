@@ -25,6 +25,10 @@ class Config:
     INFLUXDB_ORG: str = "agri"
     INFLUXDB_BUCKET: str = "balcony"
     INFLUXDB_TOKEN: str = os.environ.get("INFLUXDB_TOKEN", "")
+    INFLUXDB_TIMEOUT_SECONDS: int = 3
+    
+    # Test environment detection
+    IS_TEST_ENV: bool = os.environ.get("PYTEST_CURRENT_TEST") is not None
     
     # Debug settings
     DEBUG_FRAME_PARSING: bool = False

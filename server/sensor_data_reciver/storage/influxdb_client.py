@@ -73,6 +73,13 @@ class InfluxDBClient:
         if not self.client or not self.write_api:
             logger.warning(f"InfluxDB client not initialized, skipping write for {sender_mac}")
             return False
+        
+        # イベントループが実行されているかチェック
+        try:
+            asyncio.get_running_loop()  # イベントループの存在確認のみ
+        except RuntimeError:
+            logger.warning(f"No running event loop for InfluxDB write for {sender_mac}, skipping")
+            return False
             
         # InfluxDBへの書き込みを非同期で実行し、エラーが発生しても処理を継続する
         # asyncio.gatherを使用した構造化タスク管理
@@ -83,11 +90,15 @@ class InfluxDBClient:
         async def execute_tasks():
             return await asyncio.gather(write_task, cleanup_task, return_exceptions=True)
         
-        main_task = asyncio.create_task(execute_tasks())
-        
-        # 作成したタスクをアクティブタスクとして追跡
-        self._active_tasks.add(main_task)
-        return True  # 非同期実行のため、即座にTrueを返す
+        try:
+            main_task = asyncio.create_task(execute_tasks())
+            
+            # 作成したタスクをアクティブタスクとして追跡
+            self._active_tasks.add(main_task)
+            return True  # 非同期実行のため、即座にTrueを返す
+        except Exception as e:
+            logger.error(f"Error creating InfluxDB write task for {sender_mac}: {e}")
+            return False
     
     async def _write_sensor_data_async(self, sender_mac: str, voltage: float = None, temperature: float = None):
         """非同期でInfluxDBにデータを書き込み"""
