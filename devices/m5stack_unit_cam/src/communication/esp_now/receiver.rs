@@ -26,35 +26,32 @@ impl EspNowReceiver {
         })
     }
 
+    /// ESP-NOW受信状態をリセットする
+    pub fn reset_receiver_state() {
+        SLEEP_COMMAND_RECEIVED.store(false, Ordering::SeqCst);
+        RECEIVED_SLEEP_DURATION.store(0, Ordering::SeqCst);
+        info!("ESP-NOW受信状態をリセットしました");
+    }
+
     /// スリープコマンドを待機（タイムアウト付き）
     pub fn wait_for_sleep_command(&self, timeout_seconds: u32) -> Option<u32> {
-        info!("=== スリープコマンド待機開始 ===");
-        info!("タイムアウト: {}秒", timeout_seconds);
+        info!("スリープコマンドを{}秒間待機中...", timeout_seconds);
         
         let timeout_ms = timeout_seconds * 1000;
         let check_interval_ms = 100;
         let mut elapsed_ms = 0;
 
-        // 受信フラグをリセット
-        SLEEP_COMMAND_RECEIVED.store(false, Ordering::SeqCst);
-        RECEIVED_SLEEP_DURATION.store(0, Ordering::SeqCst);
-        
-        info!("受信フラグをリセットしました");
-
         while elapsed_ms < timeout_ms {
             // 受信データをチェック
             if SLEEP_COMMAND_RECEIVED.load(Ordering::SeqCst) {
                 let sleep_duration = RECEIVED_SLEEP_DURATION.load(Ordering::SeqCst);
-                info!("受信データ検出: sleep_duration={}", sleep_duration);
                 if sleep_duration > 0 && sleep_duration <= 86400 { // 最大24時間
                     info!("✓ 有効なスリープコマンドを受信: {}秒", sleep_duration);
                     return Some(sleep_duration);
-                } else {
-                    warn!("無効なスリープ時間: {}", sleep_duration);
                 }
             }
 
-            if elapsed_ms % 500 == 0 { // 0.5秒毎に進捗をログ出力
+            if elapsed_ms % 1000 == 0 { // 1秒毎に進捗をログ出力
                 info!("待機中... {}/{}秒", elapsed_ms / 1000, timeout_seconds);
             }
 

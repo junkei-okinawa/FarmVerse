@@ -45,6 +45,9 @@ class SerialProtocol(asyncio.Protocol):
         # 電圧プロセッサー
         self.voltage_processor = VoltageDataProcessor()
         
+        # 電圧情報を一時保存（EOFフレーム時のスリープコマンド送信用）
+        self.voltage_cache = {}  # {sender_mac: voltage}
+        
         logger.info("Serial Protocol initialized.")
 
     def connection_made(self, transport):
@@ -214,11 +217,24 @@ class SerialProtocol(asyncio.Protocol):
         voltage = DataParser.extract_voltage_with_validation(volt_log_entry, sender_mac)
         temperature = DataParser.extract_temperature_with_validation(temp_value, sender_mac)
 
-        # InfluxDBに書き込み
-        influx_client.write_sensor_data(sender_mac, voltage, temperature)
+        # 電圧情報をキャッシュに保存（EOFフレーム時のスリープコマンド送信用）
+        self.voltage_cache[sender_mac] = voltage
 
-        # スリープコマンドを送信
-        self._send_sleep_command(sender_mac, voltage)
+        # InfluxDBに書き込み（非同期・エラー耐性付き）
+        # デバイス検証案件のため、100%電圧も含めて全ての電圧データを記録
+        try:
+            influx_client.write_sensor_data(sender_mac, voltage, temperature)
+            logger.info(f"Initiated InfluxDB write for {sender_mac}")
+        except Exception as e:
+            logger.error(f"Error initiating InfluxDB write for {sender_mac}: {e} (continuing with other operations)")
+
+        # HASHフレーム受信時にスリープコマンドを送信（EOFフレーム問題の回避策）
+        # EOFフレームが正常に受信されない問題があるため、HASHフレーム時点でスリープコマンドを送信
+        if voltage is not None:
+            logger.info(f"Sending sleep command after HASH frame for {sender_mac} (voltage: {voltage})")
+            self._send_sleep_command(sender_mac, voltage)
+        else:
+            logger.warning(f"No voltage data available for sleep command for {sender_mac}")
 
     def _send_sleep_command(self, sender_mac: str, voltage: float):
         """スリープコマンドを送信"""
@@ -245,6 +261,17 @@ class SerialProtocol(asyncio.Protocol):
                 del self.last_receive_time[sender_mac]
         else:
             logger.warning(f"EOF for {sender_mac} but no buffer found.")
+        
+        # EOFフレーム受信時にスリープコマンドを送信
+        # 画像送信完了後にUnit Camがスリープコマンドを待機するため
+        if sender_mac in self.voltage_cache:
+            voltage = self.voltage_cache[sender_mac]
+            logger.info(f"Sending sleep command after EOF for {sender_mac} (voltage: {voltage})")
+            self._send_sleep_command(sender_mac, voltage)
+            # キャッシュから削除
+            del self.voltage_cache[sender_mac]
+        else:
+            logger.warning(f"No voltage cache found for {sender_mac}, cannot send sleep command")
 
     def _process_data_frame(self, sender_mac: str, chunk_data: bytes):
         """DATA フレームの処理"""
