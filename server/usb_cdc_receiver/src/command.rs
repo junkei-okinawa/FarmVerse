@@ -2,6 +2,12 @@
 
 use log::{debug, warn};
 
+// ESP-NOWコマンド解析の定数
+/// ESP-NOWコマンドの期待パーツ数
+/// フォーマット: CMD_SEND_ESP_NOW:XX:XX:XX:XX:XX:XX:SLEEP_SECONDS
+/// = 1(コマンド) + 6(MACアドレス) + 1(スリープ時間) = 8パーツ
+const EXPECTED_ESP_NOW_PARTS: usize = 8;
+
 /// 解析されたコマンド
 #[derive(Debug, Clone)]
 pub enum Command {
@@ -63,9 +69,9 @@ fn parse_esp_now_command(command_str: &str) -> Result<Command, CommandParseError
     
     // フォーマット: CMD_SEND_ESP_NOW:XX:XX:XX:XX:XX:XX:SLEEP_SECONDS
     // 最低8パーツ必要 (CMD_SEND_ESP_NOW + 6つのMACアドレス + SLEEP_SECONDS)
-    if parts.len() != 8 {
-        warn!("Invalid ESP-NOW command format. Expected 8 parts, got {}: '{}'", 
-              parts.len(), command_str);
+    if parts.len() != EXPECTED_ESP_NOW_PARTS {
+        warn!("Invalid ESP-NOW command format. Expected {} parts, got {}: '{}'", 
+              EXPECTED_ESP_NOW_PARTS, parts.len(), command_str);
         return Err(CommandParseError::InvalidFormat);
     }
     

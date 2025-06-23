@@ -64,7 +64,6 @@ class InfluxDBClient:
     def write_sensor_data(self, sender_mac: str, voltage: float = None, temperature: float = None) -> bool:
         """センサーデータをInfluxDBに書き込み（非同期実行・エラー耐性付き）"""
         # テスト環境ではInfluxDB書き込みをスキップ
-        import os
         if os.environ.get('PYTEST_CURRENT_TEST'):
             logger.info(f"Test environment detected, skipping InfluxDB write for {sender_mac}")
             return True
