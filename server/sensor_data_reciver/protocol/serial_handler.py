@@ -266,10 +266,13 @@ class SerialProtocol(asyncio.Protocol):
         # 画像送信完了後にUnit Camがスリープコマンドを待機するため
         if sender_mac in self.voltage_cache:
             voltage = self.voltage_cache[sender_mac]
-            logger.info(f"Sending sleep command after EOF for {sender_mac} (voltage: {voltage})")
-            self._send_sleep_command(sender_mac, voltage)
-            # キャッシュから削除
-            del self.voltage_cache[sender_mac]
+            if isinstance(voltage, float):
+                logger.info(f"Sending sleep command after EOF for {sender_mac} (voltage: {voltage})")
+                self._send_sleep_command(sender_mac, voltage)
+                # キャッシュから削除
+                del self.voltage_cache[sender_mac]
+            else:
+                logger.warning(f"Invalid voltage value for {sender_mac}: {voltage}. Cannot send sleep command.")
         else:
             logger.warning(f"No voltage cache found for {sender_mac}, cannot send sleep command")
 
