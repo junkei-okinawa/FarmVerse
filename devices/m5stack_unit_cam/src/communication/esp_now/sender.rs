@@ -4,6 +4,10 @@ use esp_idf_svc::espnow::EspNow;
 use log::{error, info};
 use std::sync::{Arc, Mutex};
 
+// ESP-NOW関連定数
+/// ESP-NOWメモリ不足エラーコード
+const ESP_ERR_ESPNOW_NO_MEM: i32 = 12391;
+
 /// ESP-NOW送信エラー
 #[derive(Debug, thiserror::Error)]
 pub enum EspNowError {
@@ -50,7 +54,7 @@ impl EspNowSender {
         };
 
         {
-            let mut esp_now_guard = self.esp_now.lock().unwrap();
+            let esp_now_guard = self.esp_now.lock().unwrap();
             esp_now_guard.add_peer(peer_info)
                 .map_err(|e| {
                     error!("ESP-NOWピア追加失敗: {:?}", e);
@@ -98,7 +102,7 @@ impl EspNowSender {
                     return Ok(());
                 }
                 Err(EspNowError::SendFailed(esp_err)) => {
-                    if esp_err.code() == 12391 { // ESP_ERR_ESPNOW_NO_MEM
+                    if esp_err.code() == ESP_ERR_ESPNOW_NO_MEM { // ESP_ERR_ESPNOW_NO_MEM
                         error!("ESP-NOWメモリ不足 (試行 {}/{}): {}", attempt, max_retries, esp_err);
                         last_error = EspNowError::SendFailed(esp_err);
                         

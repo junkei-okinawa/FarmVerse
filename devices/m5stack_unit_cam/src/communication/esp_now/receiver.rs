@@ -1,5 +1,5 @@
 use esp_idf_svc::hal::delay::FreeRtos;
-use log::{error, info, warn};
+use log::{info, warn};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 

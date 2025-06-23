@@ -16,6 +16,7 @@
 - **💡 ステータス表示**: LEDによる動作状態の視覚的フィードバック
 - **🌐 IoT連携**: FarmVerseプラットフォームとの統合
 - **⚡ 電圧監視**: 全電圧レベル（0-100%）の監視とInfluxDB記録
+- **⚙️ 柔軟な設定**: スリープタイムアウト・ADC電圧キャリブレーション値の調整可能
 
 ## 🏗️ アーキテクチャ
 
@@ -144,9 +145,30 @@ graph TD
 | `timezone` | タイムゾーン | "Asia/Tokyo" |
 | `sleep_duration_seconds` | 通常スリープ時間(秒) | 60 |
 | `sleep_duration_seconds_for_long` | 長時間スリープ時間(秒) | 3600 |
+| `sleep_command_timeout_seconds` | スリープコマンド待機タイムアウト(秒) | 10 |
 | `frame_size` | カメラ解像度 ⚠️ M5Stack Unit CamはSVGA推奨 | "SVGA" |
 | `auto_exposure_enabled` | 自動露光調整 | true |
 | `camera_warmup_frames` | ウォームアップフレーム数 | 2 |
+| `adc_voltage_min_mv` | ADC最小電圧値(mV) - キャリブレーション用 | 128.0 |
+| `adc_voltage_max_mv` | ADC最大電圧値(mV) - キャリブレーション用 | 3130.0 |
+| `sleep_command_timeout_seconds` | スリープコマンド待機タイムアウト(秒) | 10 |
+| `adc_voltage_min_mv` | ADC電圧測定最小値(mV) - キャリブレーション用 | 128.0 |
+| `adc_voltage_max_mv` | ADC電圧測定最大値(mV) - キャリブレーション用 | 3130.0 |
+
+### 🔧 重要な設定項目の詳細
+
+#### スリープコマンドタイムアウト
+- **`sleep_command_timeout_seconds`**: サーバーからのスリープコマンド待機時間
+- **推奨値**: 10秒（通信遅延を考慮）
+- **注意**: 値が小さすぎるとスリープコマンドを受信前にタイムアウトする可能性
+
+#### ADC電圧キャリブレーション
+- **`adc_voltage_min_mv`**: 電圧0%時のADC読み取り値（mV）
+- **`adc_voltage_max_mv`**: 電圧100%時のADC読み取り値（mV）
+- **キャリブレーション方法**: 
+  1. 最低電圧時のADC値を測定し、`adc_voltage_min_mv`に設定
+  2. 最高電圧時のADC値を測定し、`adc_voltage_max_mv`に設定
+  3. これにより0-100%の電圧パーセンテージが正確に計算される
 
 ### ピン配置 (M5Stack Unit Cam)
 
