@@ -10,11 +10,7 @@ use esp_idf_svc::hal::{
     gpio::Gpio0,
 };
 use log::{error, info};
-
-/// ADC電圧測定用の定数
-const MIN_MV: f32 = 128.0; // UnitCam GPIO0 の実測値に合わせて調整
-const MAX_MV: f32 = 3130.0; // UnitCam GPIO0 の実測値に合わせて調整
-const RANGE_MV: f32 = MAX_MV - MIN_MV;
+use crate::core::config::CONFIG;
 
 /// ADC電圧センサー管理モジュール
 pub struct VoltageSensor;
@@ -44,10 +40,14 @@ impl VoltageSensor {
                 let voltage_mv = voltage_mv_u16 as f32;
                 info!("ADC電圧測定成功: {:.0} mV", voltage_mv);
                 
-                let percentage = if RANGE_MV <= 0.0 {
+                let min_mv = CONFIG.adc_voltage_min_mv;
+                let max_mv = CONFIG.adc_voltage_max_mv;
+                let range_mv = max_mv - min_mv;
+                
+                let percentage = if range_mv <= 0.0 {
                     0.0
                 } else {
-                    ((voltage_mv - MIN_MV) / RANGE_MV * 100.0)
+                    ((voltage_mv - min_mv) / range_mv * 100.0)
                         .max(0.0)
                         .min(100.0)
                 };

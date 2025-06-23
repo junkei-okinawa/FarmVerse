@@ -44,6 +44,16 @@ pub struct Config {
 
     #[default("Asia/Tokyo")] // Default to Tokyo timezone
     timezone: &'static str,
+
+    #[default(10)] // デフォルト10秒
+    sleep_command_timeout_seconds: u64,
+
+    // ADC電圧測定設定
+    #[default(128.0)] // UnitCam GPIO0 の実測値に合わせて調整
+    adc_voltage_min_mv: f32,
+
+    #[default(3130.0)] // UnitCam GPIO0 の実測値に合わせて調整
+    adc_voltage_max_mv: f32,
 }
 
 /// 設定エラー
@@ -75,6 +85,15 @@ pub struct AppConfig {
 
     /// タイムゾーン
     pub timezone: String,
+
+    /// スリープコマンド待機タイムアウト（秒）
+    pub sleep_command_timeout_seconds: u64,
+
+    /// ADC電圧測定最小値（mV）
+    pub adc_voltage_min_mv: f32,
+
+    /// ADC電圧測定最大値（mV）
+    pub adc_voltage_max_mv: f32,
 }
 
 impl AppConfig {
@@ -119,6 +138,13 @@ impl AppConfig {
         // タイムゾーンを取得
         let timezone = config.timezone.to_string();
 
+        // スリープコマンドタイムアウトを取得
+        let sleep_command_timeout_seconds = config.sleep_command_timeout_seconds;
+
+        // ADC電圧測定設定を取得
+        let adc_voltage_min_mv = config.adc_voltage_min_mv;
+        let adc_voltage_max_mv = config.adc_voltage_max_mv;
+
         Ok(AppConfig {
             receiver_mac,
             sleep_duration_seconds,
@@ -126,6 +152,9 @@ impl AppConfig {
             auto_exposure_enabled,
             camera_warmup_frames,
             timezone,
+            sleep_command_timeout_seconds,
+            adc_voltage_min_mv,
+            adc_voltage_max_mv,
         })
     }
 }
