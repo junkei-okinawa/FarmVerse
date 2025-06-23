@@ -19,6 +19,9 @@ impl AppController {
         info!("設定されたデフォルトスリープ時間: {}秒", config.sleep_duration_seconds);
         info!("スリープコマンド待機タイムアウト: 10秒");
         
+        // ESP-NOW受信状態をリセット（前回の受信データをクリア）
+        EspNowReceiver::reset_receiver_state();
+        
         match esp_now_receiver.wait_for_sleep_command(10) { // 2秒から10秒に延長
             Some(duration_seconds) => {
                 if duration_seconds > 0 {

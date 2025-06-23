@@ -110,11 +110,11 @@ impl DataService {
         // 設定されたサーバーMACアドレスを使用
         info!("設定されたサーバーMACアドレス: {}", app_config.receiver_mac);
         
-        // 画像データを送信（チャンク形式）
+        // 画像データを送信（チャンク形式 - 改修前の設定に戻す）
         match esp_now_sender.send_image_chunks(
             image_data,
-            150,  // チャンクサイズ (メモリ不足対策で250→150に減量)
-            10,   // チャンク間の遅延(ms) (メモリ不足対策で5→10に増量)
+            200,  // チャンクサイズ (改修前の設定に戻す)
+            100,  // チャンク間の遅延(ms) (改修前の設定に戻す)
         ) {
             Ok(_) => {
                 info!("画像データの送信が完了しました");
@@ -144,6 +144,11 @@ impl DataService {
             Ok(_) => {
                 info!("EOFマーカーの送信が完了しました");
                 led.blink_success()?;
+                
+                // EOFマーカーが確実にサーバーに届くまで追加待機
+                info!("EOFマーカー最終配信確認のため追加待機中...");
+                esp_idf_svc::hal::delay::FreeRtos::delay_ms(1000); // 1秒待機（改修前相当）
+                info!("EOFマーカー送信プロセス完全完了");
             }
             Err(e) => {
                 error!("EOFマーカーの送信に失敗しました: {:?}", e);
