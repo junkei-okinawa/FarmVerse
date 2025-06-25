@@ -61,14 +61,22 @@ class SerialProtocol(asyncio.Protocol):
     def data_received(self, data):
         """Called when data is received from the serial port."""
         # 受信データの一部をデバッグ出力（ESP-NOWゲートウェイからの変換確認用）
-        if config.DEBUG_FRAME_PARSING and len(data) < 50:  # 短いデータのみ
-            logger.debug(f"Raw serial data received: {data.hex()} ('{data.decode('ascii', errors='ignore')}')")
+        if config.DEBUG_FRAME_PARSING:
+            if len(data) < 50:  # 短いデータのみ詳細出力
+                logger.debug(f"Raw serial data received: {data.hex()} ('{data.decode('ascii', errors='ignore')}')")
+            else:
+                logger.debug(f"Raw serial data received: {len(data)} bytes, start: {data[:20].hex()}")
         
         self.buffer.extend(data)
         self.process_buffer()  # Process the buffer immediately
 
     def process_buffer(self):
         """Process the buffer to find and handle complete frames with enhanced frame format."""
+        # デバッグ: バッファ内にEOFマーカーが含まれているかチェック
+        if config.DEBUG_FRAME_PARSING and b'EOF' in self.buffer:
+            eof_index = self.buffer.find(b'EOF')
+            logger.warning(f"Raw EOF marker found at buffer position {eof_index}: {self.buffer[max(0, eof_index-10):eof_index+20].hex()}")
+        
         while True:  # Process all complete frames in the buffer
             # フレームレベルのタイムアウトチェック - 長めの値に設定
             if self.frame_start_time and (
@@ -110,6 +118,13 @@ class SerialProtocol(asyncio.Protocol):
                 logger.warning(
                     f"Discarding {start_index} bytes before start marker: {discarded_data.hex()}"
                 )
+                if config.DEBUG_FRAME_PARSING:
+                    # 破棄されたデータの詳細解析
+                    ascii_data = discarded_data.decode('ascii', errors='ignore')
+                    logger.debug(f"Discarded data ASCII: '{ascii_data}'")
+                    if b'EOF' in discarded_data:
+                        logger.warning(f"!!! EOF marker found in discarded data: {discarded_data.hex()}")
+                
                 self.buffer = self.buffer[start_index:]
                 self.frame_start_time = time.monotonic()  # マーカーを見つけたので時間リセット
                 continue  # バッファを更新したのでループの最初から再試行
