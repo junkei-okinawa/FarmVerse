@@ -56,10 +56,10 @@ pub struct Config {
     adc_voltage_max_mv: f32,
 
     // ESP-NOW 画像送信設定
-    #[default(200)] // チャンクサイズ（バイト）
+    #[default(250)] // チャンクサイズ（バイト）
     esp_now_chunk_size: u16,
 
-    #[default(100)] // チャンク間遅延（ミリ秒）
+    #[default(50)] // チャンク間遅延（ミリ秒）
     esp_now_chunk_delay_ms: u32,
 }
 
