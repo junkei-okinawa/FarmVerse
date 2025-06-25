@@ -77,6 +77,9 @@ class SerialProtocol(asyncio.Protocol):
             eof_index = self.buffer.find(b'EOF')
             logger.warning(f"Raw EOF marker found at buffer position {eof_index}: {self.buffer[max(0, eof_index-10):eof_index+20].hex()}")
         
+        # 暫定対策: 生のEOFマーカーを検出して処理
+        self._handle_raw_eof_markers()
+        
         while True:  # Process all complete frames in the buffer
             # フレームレベルのタイムアウトチェック - 長めの値に設定
             if self.frame_start_time and (
@@ -334,3 +337,41 @@ class SerialProtocol(asyncio.Protocol):
                 else ("Done" if self.connection_lost_future.done() else "Exists but not done?")
             )
             logger.warning(f"{log_prefix} connection_lost called but future state is: {state}.")
+
+    def _handle_raw_eof_markers(self):
+        """暫定対策: フレーム化されていない生のEOFマーカーを検出・処理"""
+        eof_pattern = b'EOF'
+        eof_index = self.buffer.find(eof_pattern)
+        
+        while eof_index != -1:
+            # EOFマーカー周辺のデータを確認
+            start_context = max(0, eof_index - 20)
+            end_context = min(len(self.buffer), eof_index + 20)
+            context = self.buffer[start_context:end_context]
+            
+            logger.warning(f"Processing raw EOF marker at position {eof_index}")
+            logger.debug(f"EOF context: {context.hex()} ('{context.decode('ascii', errors='ignore')}')")
+            
+            # 現在進行中の画像受信があるかチェック
+            for sender_mac in list(self.image_buffers.keys()):
+                if sender_mac in self.image_buffers and len(self.image_buffers[sender_mac]) > 0:
+                    logger.info(f"Found raw EOF marker - processing EOF for {sender_mac} with {len(self.image_buffers[sender_mac])} bytes")
+                    self._process_eof_frame(sender_mac)
+                    break
+            
+            # EOFマーカーとその周辺を削除（改行文字も含む）
+            removal_start = eof_index
+            removal_end = eof_index + len(eof_pattern)
+            
+            # 改行文字もあれば一緒に削除
+            if removal_end < len(self.buffer) and self.buffer[removal_end:removal_end+2] in [b'\r\n', b'\n\r', b'\r', b'\n']:
+                if self.buffer[removal_end:removal_end+2] in [b'\r\n', b'\n\r']:
+                    removal_end += 2
+                else:
+                    removal_end += 1
+            
+            self.buffer = self.buffer[:removal_start] + self.buffer[removal_end:]
+            logger.debug("Removed raw EOF marker and surrounding data from buffer")
+            
+            # 次のEOFマーカーを検索
+            eof_index = self.buffer.find(eof_pattern)
