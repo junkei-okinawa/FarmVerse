@@ -110,11 +110,11 @@ impl DataService {
         // 設定されたサーバーMACアドレスを使用
         info!("設定されたサーバーMACアドレス: {}", app_config.receiver_mac);
         
-        // 画像データを送信（チャンク形式 - 改修前の設定に戻す）
+        // 画像データを送信（チャンク形式 - 設定値を使用）
         match esp_now_sender.send_image_chunks(
             image_data,
-            200,  // チャンクサイズ (改修前の設定に戻す)
-            100,  // チャンク間の遅延(ms) (改修前の設定に戻す)
+            app_config.esp_now_chunk_size as usize,  // 設定からチャンクサイズを取得
+            app_config.esp_now_chunk_delay_ms,  // 設定からチャンク間遅延を取得
         ) {
             Ok(_) => {
                 info!("画像データの送信が完了しました");

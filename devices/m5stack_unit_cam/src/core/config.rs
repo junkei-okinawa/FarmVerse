@@ -54,6 +54,13 @@ pub struct Config {
 
     #[default(3130.0)] // UnitCam GPIO0 の実測値に合わせて調整
     adc_voltage_max_mv: f32,
+
+    // ESP-NOW 画像送信設定
+    #[default(200)] // チャンクサイズ（バイト）
+    esp_now_chunk_size: u16,
+
+    #[default(100)] // チャンク間遅延（ミリ秒）
+    esp_now_chunk_delay_ms: u32,
 }
 
 /// 設定エラー
@@ -94,6 +101,12 @@ pub struct AppConfig {
 
     /// ADC電圧測定最大値（mV）
     pub adc_voltage_max_mv: f32,
+
+    /// ESP-NOW画像送信チャンクサイズ（バイト）
+    pub esp_now_chunk_size: u16,
+
+    /// ESP-NOWチャンク間遅延時間（ミリ秒）
+    pub esp_now_chunk_delay_ms: u32,
 }
 
 impl AppConfig {
@@ -145,6 +158,10 @@ impl AppConfig {
         let adc_voltage_min_mv = config.adc_voltage_min_mv;
         let adc_voltage_max_mv = config.adc_voltage_max_mv;
 
+        // ESP-NOW 画像送信設定を取得
+        let esp_now_chunk_size = config.esp_now_chunk_size;
+        let esp_now_chunk_delay_ms = config.esp_now_chunk_delay_ms;
+
         Ok(AppConfig {
             receiver_mac,
             sleep_duration_seconds,
@@ -155,6 +172,8 @@ impl AppConfig {
             sleep_command_timeout_seconds,
             adc_voltage_min_mv,
             adc_voltage_max_mv,
+            esp_now_chunk_size,
+            esp_now_chunk_delay_ms,
         })
     }
 }
