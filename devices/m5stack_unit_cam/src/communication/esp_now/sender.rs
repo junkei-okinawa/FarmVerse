@@ -175,7 +175,7 @@ impl EspNowSender {
         timestamp: &str,
     ) -> Result<(), EspNowError> {
         // M5Stack Unit Camには温度センサーがないため、ダミー値を使用
-        let temp_celsius = 25.0; // ダミー値（室温想定）
+        let temp_celsius = -999.0; // TODO: ダミー値, 温度センサーばUnitCamから削除する予定なので、全ての削除が完了したらtemp_celsiusに関わる実装を削除する
         let hash_data = format!("HASH:{},VOLT:{},TEMP:{:.1},{}", hash, voltage_percentage, temp_celsius, timestamp);
         info!("ハッシュフレーム送信: {}", hash_data);
         

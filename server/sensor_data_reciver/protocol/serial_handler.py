@@ -60,6 +60,10 @@ class SerialProtocol(asyncio.Protocol):
 
     def data_received(self, data):
         """Called when data is received from the serial port."""
+        # 受信データの一部をデバッグ出力（ESP-NOWゲートウェイからの変換確認用）
+        if config.DEBUG_FRAME_PARSING and len(data) < 50:  # 短いデータのみ
+            logger.debug(f"Raw serial data received: {data.hex()} ('{data.decode('ascii', errors='ignore')}')")
+        
         self.buffer.extend(data)
         self.process_buffer()  # Process the buffer immediately
 
@@ -121,6 +125,10 @@ class SerialProtocol(asyncio.Protocol):
             try:
                 sender_mac, frame_type, seq_num, data_len = FrameParser.parse_header(self.buffer, 0)
                 
+                # フレーム受信詳細をデバッグ出力
+                if config.DEBUG_FRAME_PARSING:
+                    logger.debug(f"Frame header: MAC={sender_mac}, Type={frame_type}, Seq={seq_num}, DataLen={data_len}")
+                
                 # MACアドレス長の検証
                 header_start = len(START_MARKER)
                 mac_bytes = self.buffer[header_start : header_start + MAC_ADDRESS_LENGTH]
@@ -170,13 +178,14 @@ class SerialProtocol(asyncio.Protocol):
                     
                 elif frame_type == FRAME_TYPE_EOF:
                     frame_type_str = "EOF"
+                    logger.info(f"Processing EOF frame from {sender_mac} (seq={seq_num}, data_len={data_len})")
                     self._process_eof_frame(sender_mac)
                 
                 elif frame_type == FRAME_TYPE_DATA:
                     frame_type_str = "DATA"
                     self._process_data_frame(sender_mac, chunk_data)
                 else:
-                    logger.warning(f"Unknown frame type {frame_type} from {sender_mac}")
+                    logger.warning(f"Unknown frame type {frame_type} from {sender_mac} (seq={seq_num}, data_len={data_len}, data_preview={chunk_data[:20].hex() if chunk_data else 'empty'})")
 
                 if config.DEBUG_FRAME_PARSING:
                     logger.debug(f"Processed {frame_type_str} frame (seq={seq_num}) from {sender_mac}, {data_len} bytes")
