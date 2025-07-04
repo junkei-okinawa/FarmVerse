@@ -113,11 +113,21 @@ class TestSerialProtocolIntegration:
         mock_transport.serial = MagicMock(port="test_port")
         mock_serial_connection.return_value = (mock_transport, mock_protocol)
 
-        # データフレームの作成
+        # データフレームの作成（有効なJPEG画像データをシミュレート）
         mac_bytes = b"\x01\x02\x03\x04\x05\x06"
         sender_mac = "01:02:03:04:05:06"
         seq_num_data = 1
-        data_chunk_1 = b'\x00' * 500
+        
+        # 有効なJPEGヘッダーとフッターを含む画像データを作成（1000バイト以上）
+        jpeg_header = b'\xff\xd8\xff\xe0'  # JPEG SOI + APP0
+        jpeg_data = b'\x00' * 1200  # 1000バイト以上のダミーデータ
+        jpeg_footer = b'\xff\xd9'  # JPEG EOI
+        
+        # 3つのチャンクに分割（各チャンクが512バイト以下になるように）
+        chunk1_size = 400  # 最大制限内
+        chunk2_size = 400  # 最大制限内
+        
+        data_chunk_1 = (jpeg_header + jpeg_data + jpeg_footer)[:chunk1_size]
         data_len_1 = len(data_chunk_1)
         frame_data_1 = (
             START_MARKER +
@@ -130,7 +140,7 @@ class TestSerialProtocolIntegration:
             END_MARKER
         )
 
-        data_chunk_2 = b'\x01' * 400
+        data_chunk_2 = (jpeg_header + jpeg_data + jpeg_footer)[chunk1_size:chunk1_size + chunk2_size]
         data_len_2 = len(data_chunk_2)
         frame_data_2 = (
             START_MARKER +
@@ -143,8 +153,21 @@ class TestSerialProtocolIntegration:
             END_MARKER
         )
 
+        data_chunk_3 = (jpeg_header + jpeg_data + jpeg_footer)[chunk1_size + chunk2_size:]
+        data_len_3 = len(data_chunk_3)
+        frame_data_3 = (
+            START_MARKER +
+            mac_bytes +
+            bytes([FRAME_TYPE_DATA]) +
+            (seq_num_data + 2).to_bytes(SEQUENCE_NUM_LENGTH, byteorder="big") +
+            data_len_3.to_bytes(LENGTH_FIELD_BYTES, byteorder="big") +
+            data_chunk_3 +
+            b'\x00' * CHECKSUM_LENGTH +
+            END_MARKER
+        )
+
         # EOFフレームの作成
-        seq_num_eof = 2  # EOFフレームのデータ長は0
+        seq_num_eof = 3  # EOFフレームのデータ長は0
         data_len_eof = 0
         frame_eof = (
             START_MARKER +
@@ -169,14 +192,15 @@ class TestSerialProtocolIntegration:
         # データ受信
         protocol.data_received(frame_data_1)
         protocol.data_received(frame_data_2)
+        protocol.data_received(frame_data_3)
         protocol.data_received(frame_eof)
 
         # save_image関数が呼ばれたか確認
         mock_save_image.assert_called_once()
         args, _ = mock_save_image.call_args
         assert args[0] == sender_mac
-        assert args[1] == data_chunk_1 + data_chunk_2
+        assert args[1] == data_chunk_1 + data_chunk_2 + data_chunk_3
         
         # バッファがクリアされたか確認
-        assert sender_mac not in image_receiver.image_buffers
-        assert sender_mac not in image_receiver.last_receive_time
+        assert sender_mac not in protocol.image_buffers
+        assert sender_mac not in protocol.last_receive_time
