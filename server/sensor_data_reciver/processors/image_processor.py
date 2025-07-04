@@ -98,6 +98,17 @@ def write_file_sync(filename: str, data: bytes) -> None:
     with open(filename, "wb") as f:
         f.write(data)
 
+    # 画像データの基本検証
+    if len(data) < 1000:  # 1KB未満は明らかに不正
+        logger.error(f"Image data too small: {len(data)} bytes, skipping rotated image save")
+        return
+        
+    # JPEGヘッダーの確認
+    if not data.startswith(b'\xff\xd8'):
+        logger.error(f"Invalid JPEG header detected, data starts with: {data[:10].hex()}")
+        logger.error("Skipping rotated image save due to corrupted data")
+        return
+
     # 回転画像保存
     try:
         # バイト列から Image オブジェクト生成
@@ -111,3 +122,7 @@ def write_file_sync(filename: str, data: bytes) -> None:
         logger.info(f"Saved rotated image: {rotated_filename}")
     except Exception as e:
         logger.error(f"Error saving rotated image: {e}")
+        # デバッグ情報を追加
+        logger.error(f"Image data size: {len(data)} bytes")
+        logger.error(f"Image data header: {data[:20].hex()}")
+        logger.error(f"Image data footer: {data[-20:].hex()}")
