@@ -36,11 +36,11 @@ class Config:
     # Sleep duration configuration
     DEFAULT_SLEEP_DURATION_S: int = 60  # Default sleep duration for ESP32-CAM in seconds
     
-    # Battery-based sleep duration configuration
+    # voltage-based sleep duration configuration
     LOW_VOLTAGE_THRESHOLD_PERCENT: int = 8  # Same as device-side threshold
-    LONG_SLEEP_DURATION_S: int = 3600 * 9  # 9 hours for low battery (12:00以降)
-    MEDIUM_SLEEP_DURATION_S: int = 3600  # 1 hour for low battery (12:00未満)
-    NORMAL_SLEEP_DURATION_S: int = 600  # 10 minutes for normal battery
+    LONG_SLEEP_DURATION_S: int = 3600 * 9  # 9 hours for low voltage (12:00以降)
+    MEDIUM_SLEEP_DURATION_S: int = 3600  # 1 hour for low voltage (12:00未満)
+    NORMAL_SLEEP_DURATION_S: int = 600  # 10 minutes for normal voltage
 
 
 # Global configuration instance
