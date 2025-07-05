@@ -1,7 +1,7 @@
 use crate::mac_address::MacAddress;
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::espnow::EspNow;
-use log::{error, info};
+use log::{error, info, warn};
 use std::sync::{Arc, Mutex};
 
 // ESP-NOW関連定数
@@ -68,6 +68,12 @@ impl EspNowSender {
 
     /// データを送信
     pub fn send(&self, data: &[u8], _timeout_ms: u32) -> Result<(), EspNowError> {
+        // データサイズの事前チェック
+        if data.len() > 250 {
+            error!("ESP-NOWデータサイズ制限超過: {}バイト (最大250バイト)", data.len());
+            return Err(EspNowError::SendFailed(esp_idf_sys::EspError::from(esp_idf_sys::ESP_ERR_INVALID_ARG).unwrap()));
+        }
+        
         {
             let esp_now_guard = self.esp_now.lock().unwrap();
             match esp_now_guard.send(self.peer_mac.0, data) {
@@ -77,6 +83,10 @@ impl EspNowSender {
                 }
                 Err(e) => {
                     error!("ESP-NOW送信失敗: {:?} (データ長: {}バイト)", e, data.len());
+                    error!("ESP-NOWエラーコード: {}, ピアMAC: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
+                           e.code(), 
+                           self.peer_mac.0[0], self.peer_mac.0[1], self.peer_mac.0[2], 
+                           self.peer_mac.0[3], self.peer_mac.0[4], self.peer_mac.0[5]);
                     Err(EspNowError::SendFailed(e))
                 }
             }
@@ -141,30 +151,82 @@ impl EspNowSender {
         Err(last_error)
     }
 
-    /// 画像データをチャンクに分割して送信する（シンプル実装）
+    /// 画像データをチャンクに分割して送信する（アダプティブ実装）
     pub fn send_image_chunks(
         &self,
         data: Vec<u8>,
-        chunk_size: usize,
+        initial_chunk_size: usize,
         delay_between_chunks_ms: u32,
     ) -> Result<(), EspNowError> {
-        info!("画像データを{}バイトのチャンクに分割して送信開始", chunk_size);
-        let total_chunks = (data.len() + chunk_size - 1) / chunk_size;
+        // 段階的にチャンクサイズを小さくして試行
+        let chunk_sizes = [initial_chunk_size, 150, 100, 50];
         
-        for (i, chunk) in data.chunks(chunk_size).enumerate() {
-            if i % 20 == 0 { // 20チャンクごとに進捗表示
-                info!("チャンク送信進捗: {}/{}", i + 1, total_chunks);
+        for &chunk_size in &chunk_sizes {
+            info!("画像データを{}バイトのチャンクに分割して送信開始", chunk_size);
+            info!("総データサイズ: {}バイト", data.len());
+            let total_chunks = (data.len() + chunk_size - 1) / chunk_size;
+            
+            let mut success = true;
+            
+            for (i, chunk) in data.chunks(chunk_size).enumerate() {
+                if i % 20 == 0 { // 20チャンクごとに進捗表示
+                    info!("チャンク送信進捗: {}/{}", i + 1, total_chunks);
+                }
+                
+                // 最初のチャンクの詳細を出力
+                if i == 0 {
+                    info!("最初のチャンク詳細: サイズ={}バイト, プレビュー={:02X?}", chunk.len(), &chunk[..std::cmp::min(10, chunk.len())]);
+                }
+                
+                // 重要なチャンク（最初の3チャンク）は重複送信で信頼性向上
+                let retry_count = if i < 3 { 
+                    warn!("重要チャンク{}: 信頼性向上のため複数回送信", i + 1);
+                    2 // 重要チャンクは2回送信
+                } else { 
+                    1 // 通常チャンクは1回
+                };
+                
+                let mut chunk_success = false;
+                for attempt in 1..=retry_count {
+                    match self.send_with_retry(chunk, 1000, 3) {
+                        Ok(()) => {
+                            if retry_count > 1 {
+                                info!("重要チャンク{} 送信成功 (試行{}/{})", i + 1, attempt, retry_count);
+                            }
+                            chunk_success = true;
+                            break;
+                        }
+                        Err(e) => {
+                            if attempt == retry_count {
+                                error!("チャンク{} 送信失敗 (チャンクサイズ{}バイト): {:?}", i + 1, chunk_size, e);
+                            } else {
+                                warn!("重要チャンク{} 送信失敗 (試行{}/{}), 再送します", i + 1, attempt, retry_count);
+                                FreeRtos::delay_ms(100); // 重要チャンク再送間隔
+                            }
+                        }
+                    }
+                }
+                
+                if !chunk_success {
+                    success = false;
+                    break;
+                }
+                
+                // チャンク間の遅延
+                FreeRtos::delay_ms(delay_between_chunks_ms);
             }
             
-            // シンプルなリトライ機構（改修前の方式）
-            self.send_with_retry(chunk, 1000, 3)?;
-            
-            // チャンク間の遅延
-            FreeRtos::delay_ms(delay_between_chunks_ms);
+            if success {
+                info!("画像データ送信完了: {}チャンク送信 (チャンクサイズ: {}バイト)", total_chunks, chunk_size);
+                return Ok(());
+            } else {
+                warn!("チャンクサイズ{}バイトで送信失敗、より小さなサイズで再試行します", chunk_size);
+                FreeRtos::delay_ms(1000); // 再試行前の待機
+            }
         }
         
-        info!("画像データ送信完了: {}チャンク送信", total_chunks);
-        Ok(())
+        error!("全てのチャンクサイズで送信失敗");
+        Err(EspNowError::SendTimeout)
     }
 
     /// メタデータを含むハッシュフレームを送信
@@ -185,7 +247,8 @@ impl EspNowSender {
 
     /// 画像送信終了マーカーを送信
     pub fn send_eof_marker(&self) -> Result<(), EspNowError> {
-        let eof_marker = b"EOF";
+        // より明確なEOFマーカーを送信（パディングを追加して干渉を防ぐ）
+        let eof_marker = b"---EOF---\r\n"; // 前後にパディングを追加
         info!("EOF マーカー送信開始");
         
         // 複数回送信で信頼性を向上
