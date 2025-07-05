@@ -346,11 +346,11 @@ class SerialProtocol(asyncio.Protocol):
             return
 
         volt_log_entry = payload_split[1]
-        temp_value = payload_split[2] if len(payload_split) > 2 else ""
+        temp_log_entry = payload_split[2] if len(payload_split) > 2 else ""
 
         # 電圧・温度情報を抽出
         voltage = DataParser.extract_voltage_with_validation(volt_log_entry, sender_mac)
-        temperature = DataParser.extract_temperature_with_validation(temp_value, sender_mac)
+        temperature = DataParser.extract_temperature_with_validation(temp_log_entry, sender_mac)
 
         # 電圧情報をキャッシュに保存（EOFフレーム時のスリープコマンド送信用）
         self.voltage_cache[sender_mac] = voltage
