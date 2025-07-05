@@ -88,14 +88,14 @@ class DataParser:
         """
         volt_str = DataParser.extract_value_from_payload(payload, "VOLT:")
         if volt_str is not None:
-            try:
-                voltage_value = float(volt_str)
-                # 100%の電圧でもスリープコマンド送信のために値を返す
-                # InfluxDBには記録しないが、スリープコマンドは送信する
-                return voltage_value
-            except ValueError:
-                logger.warning(f"Invalid VOLT value from {sender_mac}: {volt_str}")
-                return None
+            if "255" not in volt_str:
+                try:
+                    voltage_value = float(volt_str)
+                    return voltage_value
+                except ValueError:
+                    logger.warning(f"Invalid VOLT value from {sender_mac}: {volt_str}")
+                    return None
+            return None  # 255は無効値
         else:
             logger.warning(f"VOLT not found in HASH payload from {sender_mac}")
         return None
