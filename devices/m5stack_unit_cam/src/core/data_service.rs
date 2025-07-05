@@ -74,6 +74,13 @@ impl DataService {
 
         FreeRtos::delay_ms(100); // カメラの安定化を待つ
 
+        // カメラウォームアップ（設定回数分画像を捨てる）
+        let warmup_count = _app_config.camera_warmup_frames.unwrap_or(0);
+        for i in 0..warmup_count {
+            let _ = camera.capture_image();
+            info!("ウォームアップキャプチャ {} / {}", i + 1, warmup_count);
+        }
+
         let frame_buffer = camera.capture_image()?;
         let image_data = frame_buffer.data().to_vec();
         info!("画像キャプチャ完了: {} bytes", image_data.len());
