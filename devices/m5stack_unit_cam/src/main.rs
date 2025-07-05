@@ -66,6 +66,29 @@ fn main() -> anyhow::Result<()> {
         voltage_pin,
     )?;
 
+    info!("設定されている受信先MAC: {}", app_config.receiver_mac);
+    info!("設定されているスリープ時間: {}秒", app_config.sleep_duration_seconds);
+
+    // カメラ用ピンの準備
+    let camera_pins = CameraPins::new(
+        pins.gpio27, pins.gpio32, pins.gpio35, pins.gpio34,
+        pins.gpio5, pins.gpio39, pins.gpio18, pins.gpio36,
+        pins.gpio19, pins.gpio22, pins.gpio26, pins.gpio21,
+        pins.gpio25, pins.gpio23,
+    );
+
+    // 画像キャプチャ（電圧に基づく条件付き）
+    let image_data = DataService::capture_image_if_voltage_sufficient(
+        voltage_percent,
+        camera_pins,
+        &app_config,
+        &mut led,
+    )?;
+
+    // 測定データの準備と送信
+    info!("データ送信タスクを開始します");
+    let measured_data = MeasuredData::new(voltage_percent, image_data);
+
     // ネットワーク（WiFi）初期化
     let _wifi_connection = NetworkManager::initialize_wifi_for_esp_now(
         peripherals.modem,
@@ -138,30 +161,7 @@ fn main() -> anyhow::Result<()> {
         }
     };
     info!("WiFiチャンネル: {}", wifi_channel);
-    
-    info!("設定されている受信先MAC: {}", app_config.receiver_mac);
-    info!("設定されているスリープ時間: {}秒", app_config.sleep_duration_seconds);
 
-    // カメラ用ピンの準備
-    let camera_pins = CameraPins::new(
-        pins.gpio27, pins.gpio32, pins.gpio35, pins.gpio34,
-        pins.gpio5, pins.gpio39, pins.gpio18, pins.gpio36,
-        pins.gpio19, pins.gpio22, pins.gpio26, pins.gpio21,
-        pins.gpio25, pins.gpio23,
-    );
-
-    // 画像キャプチャ（電圧に基づく条件付き）
-    let image_data = DataService::capture_image_if_voltage_sufficient(
-        voltage_percent,
-        camera_pins,
-        &app_config,
-        &mut led,
-    )?;
-
-    // 測定データの準備と送信
-    info!("データ送信タスクを開始します");
-    let measured_data = MeasuredData::new(voltage_percent, image_data);
-    
     if let Err(e) = DataService::transmit_data(
         &app_config,
         &esp_now_sender,
