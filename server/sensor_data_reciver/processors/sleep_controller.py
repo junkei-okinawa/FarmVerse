@@ -33,21 +33,21 @@ def determine_sleep_duration(voltage_percent: Optional[float]) -> int:
         return config.DEFAULT_SLEEP_DURATION_S
     
     if voltage_percent < config.LOW_VOLTAGE_THRESHOLD_PERCENT:
-        # Low battery: use time-based long sleep to conserve power
+        # Low voltage: use time-based long sleep to conserve power
         current_time = datetime.now()
         current_hour = current_time.hour
         
         if current_hour >= 12:
             # 12:00以降（午後・夜間）: 9時間スリープ
             # 夜間は暗くなるためカメラ画像撮影は行わない想定
-            logger.info(f"Low battery ({voltage_percent}% < {config.LOW_VOLTAGE_THRESHOLD_PERCENT}%) + afternoon/night ({current_hour}:xx >= 12:00), using 9-hour sleep: {config.LONG_SLEEP_DURATION_S}s")
+            logger.info(f"Low voltage ({voltage_percent}% < {config.LOW_VOLTAGE_THRESHOLD_PERCENT}%) + afternoon/night ({current_hour}:xx >= 12:00), using 9-hour sleep: {config.LONG_SLEEP_DURATION_S}s")
             return config.LONG_SLEEP_DURATION_S
         else:
             # 12:00未満（午前中）: 1時間スリープ
             # 夜明け前にロングスリープから覚めてしまった場合を想定
-            logger.info(f"Low battery ({voltage_percent}% < {config.LOW_VOLTAGE_THRESHOLD_PERCENT}%) + morning ({current_hour}:xx < 12:00), using 1-hour sleep: {config.MEDIUM_SLEEP_DURATION_S}s")
+            logger.info(f"Low voltage ({voltage_percent}% < {config.LOW_VOLTAGE_THRESHOLD_PERCENT}%) + morning ({current_hour}:xx < 12:00), using 1-hour sleep: {config.MEDIUM_SLEEP_DURATION_S}s")
             return config.MEDIUM_SLEEP_DURATION_S
     else:
         # Normal battery: use normal sleep interval (10 minutes)
-        logger.info(f"Normal battery ({voltage_percent}% >= {config.LOW_VOLTAGE_THRESHOLD_PERCENT}%), using normal sleep: {config.NORMAL_SLEEP_DURATION_S}s")
+        logger.info(f"Normal voltage ({voltage_percent}% >= {config.LOW_VOLTAGE_THRESHOLD_PERCENT}%), using normal sleep: {config.NORMAL_SLEEP_DURATION_S}s")
         return config.NORMAL_SLEEP_DURATION_S
