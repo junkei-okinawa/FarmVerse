@@ -1,0 +1,21 @@
+# Rust
+target/
+**/*.rs.bk
+*.orig
+
+# Cargo
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Configuration
+cfg.toml
+!cfg.toml.example
+
+# Build artifacts
+# Note: .cargo/config.toml should be included for build configuration

@@ -8,6 +8,7 @@ devices/**/build/
 devices/**/.ccache/
 devices/**/*.lock
 devices/**/components_*.lock
+server/**/.embuild/
 devices/**/managed_components/
 devices/**/dependencies.lock
 

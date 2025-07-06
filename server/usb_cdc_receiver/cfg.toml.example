@@ -1,0 +1,7 @@
+[usb_cdc_receiver]
+image_sender_cam1 = "11:22:33:44:55:66"
+image_sender_cam2 = "77:88:99:00:11:22"
+image_sender_cam3 = "33:44:55:66:77:88"
+image_sender_cam4 = "99:00:11:22:33:44"
+# image_sender_cam5 = "XX:XX:XX:XX:XX:XX"
+# image_sender_cam6 = "XX:XX:XX:XX:XX:XX"
