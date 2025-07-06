@@ -79,6 +79,7 @@ impl DataService {
         for i in 0..warmup_count {
             let _ = camera.capture_image();
             info!("ウォームアップキャプチャ {} / {}", i + 1, warmup_count);
+            FreeRtos::delay_ms(1000);
         }
 
         let frame_buffer = camera.capture_image()?;

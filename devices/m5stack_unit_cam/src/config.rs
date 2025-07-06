@@ -27,7 +27,7 @@ pub struct Config {
     #[default(false)]
     auto_exposure_enabled: bool,
 
-    #[default(255)]
+    #[default(0)]
     camera_warmup_frames: u8,
 
     #[default(255)]
