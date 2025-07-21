@@ -36,6 +36,19 @@ impl ImageFrame {
 
         Ok(hash_hex)
     }
+
+    /// 画像データからフレームを作成
+    pub fn from_image_data(data: Vec<u8>) -> Result<Self, FrameError> {
+        if data.is_empty() {
+            return Err(FrameError::EmptyData);
+        }
+        Ok(ImageFrame)
+    }
+
+    /// ダミーフレームを作成
+    pub fn dummy(_hash: &str) -> Self {
+        ImageFrame
+    }
 }
 
 #[cfg(test)]

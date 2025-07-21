@@ -21,22 +21,26 @@ class Config:
     MAX_DATA_LEN: int = 512
     
     # InfluxDB settings
-    INFLUXDB_URL: str = "http://localhost:8086"
+    INFLUXDB_URL: str = os.environ.get("INFLUXDB_URL", "http://localhost:8086")
     INFLUXDB_ORG: str = "agri"
     INFLUXDB_BUCKET: str = "balcony"
     INFLUXDB_TOKEN: str = os.environ.get("INFLUXDB_TOKEN", "")
+    INFLUXDB_TIMEOUT_SECONDS: int = 3
+    
+    # Test environment detection
+    IS_TEST_ENV: bool = os.environ.get("PYTEST_CURRENT_TEST") is not None
     
     # Debug settings
-    DEBUG_FRAME_PARSING: bool = False
+    DEBUG_FRAME_PARSING: bool = True
     
     # Sleep duration configuration
     DEFAULT_SLEEP_DURATION_S: int = 60  # Default sleep duration for ESP32-CAM in seconds
     
-    # Battery-based sleep duration configuration
+    # voltage-based sleep duration configuration
     LOW_VOLTAGE_THRESHOLD_PERCENT: int = 8  # Same as device-side threshold
-    LONG_SLEEP_DURATION_S: int = 3600 * 9  # 9 hours for low battery (12:00以降)
-    MEDIUM_SLEEP_DURATION_S: int = 3600  # 1 hour for low battery (12:00未満)
-    NORMAL_SLEEP_DURATION_S: int = 600  # 10 minutes for normal battery
+    LONG_SLEEP_DURATION_S: int = 3600 * 9  # 9 hours for low voltage (12:00以降)
+    MEDIUM_SLEEP_DURATION_S: int = 3600  # 1 hour for low voltage (12:00未満)
+    NORMAL_SLEEP_DURATION_S: int = 600  # 10 minutes for normal voltage
 
 
 # Global configuration instance
