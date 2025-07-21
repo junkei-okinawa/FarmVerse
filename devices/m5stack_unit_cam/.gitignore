@@ -3,3 +3,5 @@
 # Rust
 target
 cfg.toml
+
+.embuild

@@ -60,11 +60,26 @@ impl StatusLed {
     ///
     /// LED制御に失敗した場合にエラーを返します
     pub fn blink_error(&mut self) -> Result<(), LedError> {
-        for _ in 0..5 {
+        for _ in 0..3 {
             self.turn_on()?;
-            FreeRtos::delay_ms(50);
+            FreeRtos::delay_ms(300);
             self.turn_off()?;
-            FreeRtos::delay_ms(50);
+            FreeRtos::delay_ms(300);
+        }
+        Ok(())
+    }
+
+    /// 成功時のLED点滅（短い点滅）
+    ///
+    /// # エラー
+    ///
+    /// LED制御に失敗した場合にエラーを返します
+    pub fn blink_success(&mut self) -> Result<(), LedError> {
+        for _ in 0..2 {
+            self.turn_on()?;
+            FreeRtos::delay_ms(100);
+            self.turn_off()?;
+            FreeRtos::delay_ms(100);
         }
         Ok(())
     }

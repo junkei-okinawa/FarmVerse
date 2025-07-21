@@ -88,12 +88,14 @@ class DataParser:
         """
         volt_str = DataParser.extract_value_from_payload(payload, "VOLT:")
         if volt_str is not None:
-            if volt_str != "100":  # 100%の時は初回起動またはデバッグ時のため記録しない
+            if "255" not in volt_str:
                 try:
-                    return float(volt_str)
+                    voltage_value = float(volt_str)
+                    return voltage_value
                 except ValueError:
                     logger.warning(f"Invalid VOLT value from {sender_mac}: {volt_str}")
-            return None  # 100%の場合は記録しない
+                    return None
+            return None  # 255は無効値
         else:
             logger.warning(f"VOLT not found in HASH payload from {sender_mac}")
         return None
