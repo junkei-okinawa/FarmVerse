@@ -1,0 +1,7 @@
+.vscode
+
+# Rust
+target
+cfg.toml
+
+.embuild
