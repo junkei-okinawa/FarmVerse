@@ -44,6 +44,21 @@ pub struct Config {
 
     #[default("Asia/Tokyo")] // Default to Tokyo timezone
     timezone: &'static str,
+
+    #[default(30)] // 30 seconds timeout
+    sleep_command_timeout_seconds: u64,
+
+    #[default(240)]
+    esp_now_chunk_size: u16,
+
+    #[default(10)]
+    esp_now_chunk_delay_ms: u16,
+
+    #[default(3300)]
+    adc_voltage_min_mv: u16,
+
+    #[default(4200)]
+    adc_voltage_max_mv: u16,
 }
 
 /// 設定エラー
@@ -65,6 +80,7 @@ pub enum ConfigError {
 
 /// 目標時刻設定
 #[derive(Debug, Clone, Copy)] // Added Copy
+#[allow(dead_code)] // 将来的に時刻制御機能で使用予定
 pub struct TargetDigitsConfig {
     pub minute_last_digit: Option<u8>, // Changed to Option<u8>
     pub second_tens_digit: Option<u8>, // Changed to Option<u8>
@@ -108,6 +124,68 @@ pub struct AppConfig {
 
     /// スリープ時間補正値 (マイクロ秒)
     pub sleep_compensation_micros: i64,
+
+    /// スリープコマンドタイムアウト時間（秒）
+    pub sleep_command_timeout_seconds: u64,
+
+    /// ESP-NOWチャンクサイズ
+    pub esp_now_chunk_size: u16,
+
+    /// ESP-NOWチャンク間遅延（ミリ秒）
+    pub esp_now_chunk_delay_ms: u16,
+
+    /// ADC電圧最小値（ミリボルト）
+    pub adc_voltage_min_mv: u16,
+
+    /// ADC電圧最大値（ミリボルト）
+    pub adc_voltage_max_mv: u16,
+}
+
+/// メモリ管理設定
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Issue #12 ストリーミング機能実装で使用予定
+pub struct MemoryConfig {
+    /// 最大チャンクサイズ（バイト）
+    pub max_chunk_size: usize,
+    /// 送信バッファサイズ（バイト）
+    pub send_buffer_size: usize,
+    /// 受信バッファサイズ（バイト）
+    pub receive_buffer_size: usize,
+    /// 同時処理可能な最大ストリーム数
+    pub max_concurrent_streams: usize,
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self {
+            max_chunk_size: 240,
+            send_buffer_size: 4096,
+            receive_buffer_size: 8192,
+            max_concurrent_streams: 3,
+        }
+    }
+}
+
+impl MemoryConfig {
+    /// 新しいMemoryConfigインスタンスを作成
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// PSRAMが有効かどうか
+    pub fn is_psram_enabled(&self) -> bool {
+        true // ESP32S3はPSRAMサポート
+    }
+
+    /// 利用可能なヒープサイズを取得
+    pub fn get_available_heap_size(&self) -> usize {
+        8 * 1024 * 1024 // 8MB PSRAM
+    }
+
+    /// カメラバッファサイズを取得
+    pub fn get_camera_buffer_size(&self) -> usize {
+        300 * 1024 // 300KB for UXGA
+    }
 }
 
 impl AppConfig {
@@ -198,6 +276,13 @@ impl AppConfig {
         // スリープ時間補正値を取得
         let sleep_compensation_micros = config.sleep_compensation_micros;
 
+        // その他の設定値を取得
+        let sleep_command_timeout_seconds = config.sleep_command_timeout_seconds;
+        let esp_now_chunk_size = config.esp_now_chunk_size;
+        let esp_now_chunk_delay_ms = config.esp_now_chunk_delay_ms;
+        let adc_voltage_min_mv = config.adc_voltage_min_mv;
+        let adc_voltage_max_mv = config.adc_voltage_max_mv;
+
         Ok(AppConfig {
             receiver_mac,
             sleep_duration_seconds,
@@ -211,6 +296,11 @@ impl AppConfig {
             wifi_password,
             timezone,
             sleep_compensation_micros,
+            sleep_command_timeout_seconds,
+            esp_now_chunk_size,
+            esp_now_chunk_delay_ms,
+            adc_voltage_min_mv,
+            adc_voltage_max_mv,
         })
     }
 }
@@ -292,6 +382,11 @@ mod tests {
             wifi_password: wifi_password_str.to_string(),
             timezone: timezone_str.to_string(),
             sleep_compensation_micros: 0, // Default compensation micros
+            sleep_command_timeout_seconds: 30, // Default timeout
+            esp_now_chunk_size: 240, // Default chunk size
+            esp_now_chunk_delay_ms: 10, // Default delay
+            adc_voltage_min_mv: 3300, // Default min voltage
+            adc_voltage_max_mv: 4200, // Default max voltage
         }))
     }
 

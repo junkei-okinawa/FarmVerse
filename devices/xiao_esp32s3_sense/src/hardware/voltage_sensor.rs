@@ -10,7 +10,7 @@ use esp_idf_svc::hal::{
     gpio::Gpio6,
 };
 use log::{error, info};
-use crate::core::config::CONFIG;
+use crate::config::CONFIG;
 
 /// ADC電圧センサー管理モジュール
 pub struct VoltageSensor;
@@ -40,8 +40,8 @@ impl VoltageSensor {
                 let voltage_mv = voltage_mv_u16 as f32;
                 info!("ADC電圧測定成功: {:.0} mV", voltage_mv);
                 
-                let min_mv = CONFIG.adc_voltage_min_mv;
-                let max_mv = CONFIG.adc_voltage_max_mv;
+                let min_mv = CONFIG.adc_voltage_min_mv as f32;
+                let max_mv = CONFIG.adc_voltage_max_mv as f32;
                 let range_mv = max_mv - min_mv;
                 
                 let percentage = if range_mv <= 0.0 {
