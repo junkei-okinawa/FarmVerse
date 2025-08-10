@@ -1,5 +1,57 @@
 use crate::mac_address::MacAddress;
 
+/// メモリ設定構造体（テスト用）
+#[derive(Debug, Clone)]
+pub struct MemoryConfig {
+    pub heap_size: usize,
+    pub stack_size: usize,
+    pub buffer_size: usize,
+    pub max_allocation: usize,
+}
+
+impl MemoryConfig {
+    pub fn new() -> Self {
+        Self {
+            heap_size: 256 * 1024,    // 256KB
+            stack_size: 32 * 1024,    // 32KB  
+            buffer_size: 16 * 1024,   // 16KB
+            max_allocation: 64 * 1024, // 64KB
+        }
+    }
+    
+    pub fn with_heap_size(mut self, size: usize) -> Self {
+        self.heap_size = size;
+        self
+    }
+    
+    pub fn with_buffer_size(mut self, size: usize) -> Self {
+        self.buffer_size = size;
+        self
+    }
+    
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.heap_size == 0 {
+            return Err("Heap size cannot be zero");
+        }
+        if self.stack_size == 0 {
+            return Err("Stack size cannot be zero");
+        }
+        if self.buffer_size == 0 {
+            return Err("Buffer size cannot be zero");
+        }
+        if self.max_allocation > self.heap_size {
+            return Err("Max allocation cannot exceed heap size");
+        }
+        Ok(())
+    }
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// アプリケーション設定
 ///
 /// この構造体はビルド時に`build.rs`によって`cfg.toml`ファイルから

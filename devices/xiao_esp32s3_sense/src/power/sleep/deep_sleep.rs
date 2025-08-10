@@ -1,4 +1,4 @@
-use crate::core::config::AppConfig;
+use crate::config::AppConfig;
 use log::info;
 use std::sync::Arc;
 

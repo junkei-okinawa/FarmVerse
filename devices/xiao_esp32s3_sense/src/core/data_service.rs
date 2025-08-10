@@ -2,7 +2,7 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use log::{error, info, warn};
 
 use crate::communication::esp_now::EspNowSender;
-use crate::core::config::AppConfig;
+use crate::config::AppConfig;
 use crate::hardware::camera::{CameraController, CamConfig};
 use crate::hardware::led::StatusLed;
 
@@ -126,7 +126,7 @@ impl DataService {
         match esp_now_sender.send_image_chunks(
             image_data,
             app_config.esp_now_chunk_size as usize,  // 設定からチャンクサイズを取得
-            app_config.esp_now_chunk_delay_ms,  // 設定からチャンク間遅延を取得
+            app_config.esp_now_chunk_delay_ms as u32,  // 設定からチャンク間遅延を取得
         ) {
             Ok(_) => {
                 info!("画像データの送信が完了しました");

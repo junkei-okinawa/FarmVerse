@@ -1,7 +1,7 @@
 use log::{error, info, warn};
 use std::sync::Arc;
 
-use crate::core::config::AppConfig;
+use crate::config::AppConfig;
 use crate::communication::esp_now::EspNowReceiver;
 use crate::power::sleep::{DeepSleep, DeepSleepPlatform};
 

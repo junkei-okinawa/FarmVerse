@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 // 内部モジュール
 mod communication;
+mod config;
 mod core;
 mod hardware;
 mod mac_address;
@@ -14,7 +15,8 @@ mod power;
 
 // 使用するモジュールのインポート
 use communication::{NetworkManager, esp_now::{EspNowSender}};
-use core::{AppController, AppConfig, DataService, MeasuredData, RtcManager};
+use config::AppConfig;
+use core::{AppController, DataService, MeasuredData, RtcManager};
 use hardware::{CameraPins, VoltageSensor};
 use hardware::led::StatusLed;
 use log::{error, info};

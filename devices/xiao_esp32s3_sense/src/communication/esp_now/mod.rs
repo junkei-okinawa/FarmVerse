@@ -4,7 +4,8 @@ pub mod sender;
 pub mod receiver;
 /// フレーム処理モジュール
 pub mod frame;
+/// ストリーミング送信モジュール（Issue #12）
+pub mod streaming;
 
 pub use sender::*;
 pub use receiver::*;
-pub use frame::*;

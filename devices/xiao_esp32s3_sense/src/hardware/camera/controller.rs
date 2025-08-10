@@ -1,3 +1,5 @@
+#[allow(dead_code)] // 将来的にカメラ制御機能で使用予定
+
 use esp_camera_rs::{Camera, CameraParams, FrameBuffer};
 use esp_idf_svc::hal::gpio;
 use esp_idf_sys::camera::*;
