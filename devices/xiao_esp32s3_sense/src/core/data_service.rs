@@ -36,21 +36,43 @@ impl DataService {
     pub fn capture_image_if_voltage_sufficient(
         voltage_percent: u8,
         camera_pins: crate::hardware::CameraPins,
-        _app_config: &AppConfig,
+        app_config: &AppConfig,
         led: &mut StatusLed,
     ) -> anyhow::Result<Option<Vec<u8>>> {
-        // ADC電圧条件をチェック
-        if voltage_percent <= LOW_VOLTAGE_THRESHOLD_PERCENT {
+        // デバッグモードの場合は詳細ログを出力
+        if app_config.debug_mode {
+            info!("🔧 デバッグ: 画像キャプチャ開始 - 電圧:{}%, force_camera_test:{}, bypass_voltage_threshold:{}", 
+                voltage_percent, app_config.force_camera_test, app_config.bypass_voltage_threshold);
+        }
+
+        // 電圧チェック（bypass_voltage_thresholdが有効な場合はスキップ）
+        let should_capture_by_voltage = if app_config.bypass_voltage_threshold {
+            if app_config.debug_mode {
+                info!("🔧 デバッグ: 電圧閾値チェックをバイパス中");
+            }
+            true
+        } else if voltage_percent <= LOW_VOLTAGE_THRESHOLD_PERCENT {
             warn!("ADC電圧が低すぎるため画像キャプチャをスキップします: {}%", voltage_percent);
-            return Ok(None);
-        }
-
-        if voltage_percent >= 255 {
+            false
+        } else if voltage_percent >= 255 {
             warn!("ADC電圧測定値が異常です: {}%", voltage_percent);
+            false
+        } else {
+            true
+        };
+
+        // カメラテスト強制実行の場合
+        let force_capture = app_config.force_camera_test;
+        if force_capture && app_config.debug_mode {
+            info!("🔧 デバッグ: カメラテストを強制実行中");
+        }
+
+        // キャプチャ実行判定
+        if !should_capture_by_voltage && !force_capture {
             return Ok(None);
         }
 
-        info!("電圧条件OK({}%)、画像キャプチャを開始", voltage_percent);
+        info!("画像キャプチャを開始 (電圧:{}%, 強制実行:{})", voltage_percent, force_capture);
         led.turn_on()?;
 
         // カメラ初期化とキャプチャ
@@ -79,7 +101,7 @@ impl DataService {
         FreeRtos::delay_ms(100); // カメラの安定化を待つ
 
         // カメラウォームアップ（設定回数分画像を捨てる）
-        let warmup_count = _app_config.camera_warmup_frames.unwrap_or(0);
+        let warmup_count = app_config.camera_warmup_frames.unwrap_or(0);
         for i in 0..warmup_count {
             let _ = camera.capture_image();
             info!("ウォームアップキャプチャ {} / {}", i + 1, warmup_count);
@@ -102,6 +124,12 @@ impl DataService {
         measured_data: MeasuredData,
     ) -> anyhow::Result<()> {
         led.turn_on()?;
+
+        // デバッグモードの場合は詳細ログを出力
+        if app_config.debug_mode {
+            info!("🔧 デバッグ: データ送信開始 - 画像データサイズ:{} bytes", 
+                measured_data.image_data.as_ref().map_or(0, |data| data.len()));
+        }
 
         // 画像データの処理と送信
         let (image_data, _hash) = if let Some(data) = measured_data.image_data {

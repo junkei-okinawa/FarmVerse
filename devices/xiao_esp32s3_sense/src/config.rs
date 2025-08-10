@@ -59,6 +59,16 @@ pub struct Config {
 
     #[default(4200)]
     adc_voltage_max_mv: u16,
+
+    // テスト・デバッグ設定
+    #[default(false)]
+    force_camera_test: bool,
+
+    #[default(false)]
+    bypass_voltage_threshold: bool,
+
+    #[default(false)]
+    debug_mode: bool,
 }
 
 /// 設定エラー
@@ -139,6 +149,16 @@ pub struct AppConfig {
 
     /// ADC電圧最大値（ミリボルト）
     pub adc_voltage_max_mv: u16,
+
+    // テスト・デバッグ設定
+    /// 電圧チェックを無視してカメラテストを強制実行
+    pub force_camera_test: bool,
+
+    /// 電圧閾値を無視してダミーデータではなく実際の画像送信を行う
+    pub bypass_voltage_threshold: bool,
+
+    /// デバッグモード（詳細ログ出力）
+    pub debug_mode: bool,
 }
 
 /// メモリ管理設定
@@ -283,6 +303,11 @@ impl AppConfig {
         let adc_voltage_min_mv = config.adc_voltage_min_mv;
         let adc_voltage_max_mv = config.adc_voltage_max_mv;
 
+        // 新しいテスト設定を取得
+        let force_camera_test = config.force_camera_test;
+        let bypass_voltage_threshold = config.bypass_voltage_threshold;
+        let debug_mode = config.debug_mode;
+
         Ok(AppConfig {
             receiver_mac,
             sleep_duration_seconds,
@@ -301,6 +326,9 @@ impl AppConfig {
             esp_now_chunk_delay_ms,
             adc_voltage_min_mv,
             adc_voltage_max_mv,
+            force_camera_test,
+            bypass_voltage_threshold,
+            debug_mode,
         })
     }
 }
@@ -326,6 +354,10 @@ mod tests {
         wifi_ssid_str: &str,
         wifi_password_str: &str,
         timezone_str: &str,
+        // 新しいテスト設定パラメータ
+        force_camera_test: bool,
+        bypass_voltage_threshold: bool,
+        debug_mode: bool,
     ) -> Result<Box<AppConfig>, ConfigError> {
         let mac = MacAddress::from_str(receiver_mac_str)
             .map_err(|_| ConfigError::InvalidReceiverMac(receiver_mac_str.to_string()))?;
@@ -387,6 +419,9 @@ mod tests {
             esp_now_chunk_delay_ms: 10, // Default delay
             adc_voltage_min_mv: 3300, // Default min voltage
             adc_voltage_max_mv: 4200, // Default max voltage
+            force_camera_test,
+            bypass_voltage_threshold,
+            debug_mode,
         }))
     }
 
@@ -405,6 +440,9 @@ mod tests {
             "test_ssid",
             "test_password",
             "Europe/London",
+            false, // force_camera_test
+            false, // bypass_voltage_threshold
+            false, // debug_mode
         )
         .unwrap();
         assert_eq!(config.receiver_mac.to_string(), "00:11:22:33:44:55");
@@ -443,6 +481,9 @@ mod tests {
             "another_ssid",
             "", // Empty password
             "UTC",
+            false, // force_camera_test
+            false, // bypass_voltage_threshold
+            false, // debug_mode
         )
         .unwrap();
         assert_eq!(config.camera_warmup_frames, None);
@@ -466,6 +507,9 @@ mod tests {
             "ssid",
             "pass",
             "Asia/Tokyo",
+            false, // force_camera_test
+            false, // bypass_voltage_threshold
+            false, // debug_mode
         );
         assert!(matches!(
             result,
@@ -488,6 +532,9 @@ mod tests {
             "ssid",
             "pass",
             "Asia/Tokyo",
+            false, // force_camera_test
+            false, // bypass_voltage_threshold
+            false, // debug_mode
         );
         assert!(matches!(
             result,
@@ -510,6 +557,9 @@ mod tests {
             "ssid",
             "pass",
             "Asia/Tokyo",
+            false, // force_camera_test
+            false, // bypass_voltage_threshold
+            false, // debug_mode
         );
         assert!(matches!(
             result,
@@ -559,6 +609,9 @@ mod tests {
             "", // Missing SSID
             "pass",
             "Asia/Tokyo",
+            false, // force_camera_test
+            false, // bypass_voltage_threshold
+            false, // debug_mode
         );
         assert!(matches!(result, Err(ConfigError::MissingWifiSsid)));
     }
@@ -566,7 +619,7 @@ mod tests {
     // Test for missing WiFi password (which is allowed for open networks)
     #[test]
     fn test_missing_wifi_password() {
-         let config = simulate_app_config_creation(
+        let config = simulate_app_config_creation(
             "00:11:22:33:44:55",
             30,
             900,
@@ -579,6 +632,9 @@ mod tests {
             "open_network_ssid",
             "", // Empty password
             "Asia/Tokyo",
+            false, // force_camera_test
+            false, // bypass_voltage_threshold
+            false, // debug_mode
         )
         .unwrap();
         assert_eq!(config.wifi_password, "");
@@ -600,6 +656,9 @@ mod tests {
             "ssid",
             "pass",
             "Asia/Tokyo",
+            false, // force_camera_test
+            false, // bypass_voltage_threshold
+            false, // debug_mode
         )
         .unwrap();
         assert!(config.target_digits_config.is_some());
@@ -624,6 +683,9 @@ mod tests {
             "ssid",
             "pass",
             "Asia/Tokyo",
+            false, // force_camera_test
+            false, // bypass_voltage_threshold
+            false, // debug_mode
         )
         .unwrap();
         assert!(config.target_digits_config.is_some());
