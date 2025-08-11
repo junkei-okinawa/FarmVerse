@@ -229,7 +229,8 @@ impl DeviceStreamManager {
         // デバイスが登録されているか確認
         if !self.streams.contains_key(&mac_address) {
             // 未登録デバイスの場合、自動登録する
-            let device_name = format!("Device_{:02X}{:02X}{:02X}", 
+            let device_name = format!("Device_{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}", 
+                                     mac_address[0], mac_address[1], mac_address[2], 
                                      mac_address[3], mac_address[4], mac_address[5]);
             self.register_device(mac_address, device_name)?;
         }
