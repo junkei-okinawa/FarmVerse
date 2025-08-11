@@ -1,0 +1,2 @@
+# スタックサイズ設定（最適化完了: Box化により8KB動作確認済み）
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

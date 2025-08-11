@@ -14,8 +14,6 @@ use std::collections::HashMap;
 pub struct DeviceStream {
     /// デバイスのMACアドレス
     pub mac_address: [u8; 6],
-    /// デバイス名（識別用）
-    pub name: String,
     /// フレームプロセッサ
     frame_processor: FrameProcessor,
     /// ストリーミングバッファ
@@ -29,17 +27,23 @@ pub struct DeviceStream {
 }
 
 impl DeviceStream {
-    /// 新しいデバイスストリームを作成
-    pub fn new(mac_address: [u8; 6], name: String) -> Self {
-        DeviceStream {
+    /// 新しいDeviceStreamを作成
+    pub fn new(mac_address: [u8; 6]) -> StreamingResult<Self> {
+        let frame_processor = FrameProcessor::new();
+        let buffer = StreamingBuffer::new();
+        let statistics = StreamingStatistics::new();
+        let timestamp = get_current_timestamp();
+        
+        let device_stream = DeviceStream {
             mac_address,
-            name,
-            frame_processor: FrameProcessor::new(),
-            buffer: StreamingBuffer::new(),
-            statistics: StreamingStatistics::new(),
-            last_activity: get_current_timestamp(),
             status: StreamStatus::Active,
-        }
+            frame_processor,
+            buffer,
+            statistics,
+            last_activity: timestamp,
+        };
+        
+        Ok(device_stream)
     }
     
     /// 受信データを処理
@@ -47,7 +51,7 @@ impl DeviceStream {
         self.last_activity = get_current_timestamp();
         self.statistics.count_frame_received();
         
-        debug!("DeviceStream[{}]: processing {} bytes", self.name, data.len());
+        debug!("DeviceStream[{:02X?}]: processing {} bytes", self.mac_address, data.len());
         
         // フレームプロセッサでデータを処理
         let processing_results = self.frame_processor.process_data(data);
@@ -61,26 +65,26 @@ impl DeviceStream {
                     
                     let processed_frame = ProcessedFrame {
                         mac_address: self.mac_address,
-                        device_name: self.name.clone(),
+                        device_name: format!("{:02X?}", self.mac_address),
                         sequence: header.sequence,
                         payload,
                         timestamp: self.last_activity,
                     };
                     
-                    debug!("DeviceStream[{}]: frame processed - seq: {}, size: {} bytes",
-                           self.name, header.sequence, processed_frame.payload.len());
+                    debug!("DeviceStream[{:02X?}]: frame processed - seq: {}, size: {} bytes",
+                           self.mac_address, header.sequence, processed_frame.payload.len());
                     
                     processed_frames.push(processed_frame);
                 }
                 ProcessingResult::IncompleteFrame { needed_bytes } => {
-                    debug!("DeviceStream[{}]: incomplete frame, need {} more bytes",
-                           self.name, needed_bytes);
+                    debug!("DeviceStream[{:02X?}]: incomplete frame, need {} more bytes",
+                           self.mac_address, needed_bytes);
                     // 不完全フレームは次のデータ到着を待つ
                 }
                 ProcessingResult::FrameError { error, consumed_bytes } => {
                     self.statistics.count_error(&error);
-                    warn!("DeviceStream[{}]: frame error - {}, consumed {} bytes",
-                          self.name, error, consumed_bytes);
+                    warn!("DeviceStream[{:02X?}]: frame error - {}, consumed {} bytes",
+                          self.mac_address, error, consumed_bytes);
                 }
             }
         }
@@ -122,7 +126,7 @@ impl DeviceStream {
     /// ストリーム状態を設定
     pub fn set_status(&mut self, status: StreamStatus) {
         self.status = status;
-        info!("DeviceStream[{}]: status changed to {:?}", self.name, status);
+        info!("DeviceStream[{:02X?}]: status changed to {:?}", self.mac_address, status);
     }
     
     /// 古いデータをクリーンアップ
@@ -137,7 +141,7 @@ impl DeviceStream {
         self.statistics.reset();
         self.last_activity = get_current_timestamp();
         self.status = StreamStatus::Active;
-        info!("DeviceStream[{}]: reset completed", self.name);
+        info!("DeviceStream[{:02X?}]: reset completed", self.mac_address);
     }
 }
 
@@ -180,9 +184,9 @@ impl ProcessedFrame {
 
 /// 複数デバイスのストリーム管理
 pub struct DeviceStreamManager {
-    /// デバイス別ストリーム（MAC address -> DeviceStream）
-    streams: HashMap<[u8; 6], DeviceStream>,
-    /// 管理設定
+    /// 登録されたデバイスストリーム
+    streams: HashMap<[u8; 6], Box<DeviceStream>>,
+    /// マネージャー設定
     config: StreamManagerConfig,
     /// 全体統計
     global_stats: StreamingStatistics,
@@ -191,6 +195,7 @@ pub struct DeviceStreamManager {
 impl DeviceStreamManager {
     /// 新しいデバイスストリーム管理者を作成
     pub fn new(config: StreamManagerConfig) -> Self {
+        info!("Creating DeviceStreamManager with config: {:?}", config);
         DeviceStreamManager {
             streams: HashMap::new(),
             config,
@@ -201,23 +206,24 @@ impl DeviceStreamManager {
     /// デバイスを登録
     pub fn register_device(&mut self, mac_address: [u8; 6], name: String) -> StreamingResult<()> {
         if self.streams.contains_key(&mac_address) {
+            warn!("Device already registered: {:02X?}", mac_address);
             return Err(StreamingError::Other(
                 format!("Device already registered: {:02X?}", mac_address)
             ));
         }
         
-        let stream = DeviceStream::new(mac_address, name.clone());
+        // Box化でヒープ割り当て（メモリ効率とポータビリティのため）
+        let stream = Box::new(DeviceStream::new(mac_address)?);
         self.streams.insert(mac_address, stream);
         
-        info!("DeviceStreamManager: registered device {} ({:02X?})", name, mac_address);
         Ok(())
     }
     
     /// デバイスを登録解除
     pub fn unregister_device(&mut self, mac_address: &[u8; 6]) -> StreamingResult<()> {
         if let Some(stream) = self.streams.remove(mac_address) {
-            info!("DeviceStreamManager: unregistered device {} ({:02X?})", 
-                  stream.name, mac_address);
+            info!("DeviceStreamManager: unregistered device {:02X?}", 
+                  mac_address);
             Ok(())
         } else {
             Err(StreamingError::DeviceNotFound(*mac_address))
@@ -255,7 +261,7 @@ impl DeviceStreamManager {
     /// 登録されているデバイス一覧を取得
     pub fn get_devices(&self) -> Vec<([u8; 6], String, StreamStatus)> {
         self.streams.iter()
-            .map(|(mac, stream)| (*mac, stream.name.clone(), stream.status()))
+            .map(|(mac, stream)| (*mac, format!("{:02X?}", mac), stream.status()))
             .collect()
     }
     
@@ -285,8 +291,8 @@ impl DeviceStreamManager {
         
         for mac in inactive_devices {
             if let Some(stream) = self.streams.remove(&mac) {
-                warn!("DeviceStreamManager: removed inactive device {} (timeout: {}ms)",
-                      stream.name, self.config.device_timeout_ms);
+                warn!("DeviceStreamManager: removed inactive device {:02X?} (timeout: {}ms)",
+                      mac, self.config.device_timeout_ms);
                 removed_count += 1;
             }
         }
@@ -368,10 +374,9 @@ impl Default for StreamManagerConfig {
 
 /// 現在のタイムスタンプを取得（ミリ秒）
 fn get_current_timestamp() -> u64 {
+    // FreeRTOSのシステムティックを使用
     unsafe {
-        let ticks = esp_idf_svc::sys::xTaskGetTickCount();
-        let ms_per_tick = 1000 / esp_idf_svc::sys::configTICK_RATE_HZ;
-        (ticks * ms_per_tick) as u64
+        esp_idf_sys::xTaskGetTickCount() as u64
     }
 }
 
