@@ -213,9 +213,80 @@ if __name__ == "__main__":
         "-b", "--baud", type=int, default=config.BAUD_RATE,
         help=f"Baud rate (default: {config.BAUD_RATE})"
     )
+    parser.add_argument(
+        "--streaming", action="store_true",
+        help="Enable streaming mode (experimental)"
+    )
     args = parser.parse_args()
 
-    try:
-        asyncio.run(main(args.port, args.baud))
-    except KeyboardInterrupt:
-        logger.info("Exiting due to KeyboardInterrupt.")
+    if args.streaming:
+        logger.info("Starting in STREAMING mode")
+        from protocol import StreamingSerialProtocol
+        
+        async def main_streaming(port: str, baud: int) -> None:
+            """ストリーミングモードのメイン関数"""
+            ensure_dir_exists()
+            logger.info("Starting Streaming Sensor Data Receiver")
+            logger.info(f"Images will be saved to: {config.IMAGE_DIR}")
+
+            loop = asyncio.get_running_loop()
+
+            while True:  # 再接続ループ
+                transport = None
+                connection_lost_future = loop.create_future()
+
+                try:
+                    logger.info(f"Attempting streaming connection to {port} at {baud} baud...")
+
+                    def streaming_protocol_factory():
+                        # 共有統計情報
+                        stats = {"received_images": 0, "total_bytes": 0}
+                        return StreamingSerialProtocol(connection_lost_future, stats)
+
+                    transport, protocol = await serial_asyncio.create_serial_connection(
+                        loop, streaming_protocol_factory, port, baudrate=baud
+                    )
+                    logger.info("Streaming connection established.")
+
+                    await connection_lost_future
+
+                except serial.SerialException as e:
+                    logger.error(f"Streaming serial connection error: {e}")
+                    if not connection_lost_future.done():
+                        connection_lost_future.set_exception(e)
+                        
+                except asyncio.CancelledError:
+                    logger.info("Streaming task cancelled.")
+                    break
+                    
+                except Exception as e:
+                    logger.exception(f"Error during streaming connection: {e}")
+                    if connection_lost_future and not connection_lost_future.done():
+                        try:
+                            connection_lost_future.set_exception(e)
+                        except asyncio.InvalidStateError:
+                            pass
+                            
+                finally:
+                    if transport and not transport.is_closing():
+                        transport.close()
+                    transport = None
+
+                logger.info("Waiting 5 seconds before retrying streaming connection...")
+                try:
+                    await asyncio.sleep(5)
+                except asyncio.CancelledError:
+                    break
+
+            logger.info("Streaming application finished.")
+        
+        try:
+            asyncio.run(main_streaming(args.port, args.baud))
+        except KeyboardInterrupt:
+            logger.info("Exiting streaming mode due to KeyboardInterrupt.")
+    else:
+        logger.info("Starting in LEGACY mode")
+        try:
+            asyncio.run(main(args.port, args.baud))
+        except KeyboardInterrupt:
+            logger.info("Exiting due to KeyboardInterrupt.")
