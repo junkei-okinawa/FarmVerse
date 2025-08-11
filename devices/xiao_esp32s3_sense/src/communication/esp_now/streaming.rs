@@ -8,15 +8,36 @@
 #[allow(dead_code)] // Issue #12 実装中のため一時的に警告を抑制
 
 use crate::hardware::camera::StreamingCameraConfig;
+use crate::communication::esp_now::sender::{EspNowSender, EspNowError};
+use crate::mac_address::MacAddress;
+use esp_idf_svc::hal::delay::FreeRtos;
+use log::{debug, info, warn, error};
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
-/// ストリーミングプロトコルのメッセージタイプ
+/// メッセージタイプ
 #[derive(Debug, PartialEq, Clone, Copy)]
+#[repr(u8)]
 pub enum MessageType {
-    StartFrame,
-    DataChunk,
-    EndFrame,
-    Ack,
-    Nack,
+    StartFrame = 1,
+    DataChunk = 2,
+    EndFrame = 3,
+    Ack = 4,
+    Nack = 5,
+}
+
+impl MessageType {
+    /// u8値からMessageTypeに変換
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(MessageType::StartFrame),
+            2 => Some(MessageType::DataChunk),
+            3 => Some(MessageType::EndFrame),
+            4 => Some(MessageType::Ack),
+            5 => Some(MessageType::Nack),
+            _ => None,
+        }
+    }
 }
 
 /// ストリーミングメッセージヘッダー
@@ -92,6 +113,76 @@ pub struct StreamingMessage {
 impl StreamingMessage {
     pub fn new(header: StreamingHeader, data: Vec<u8>) -> Self {
         Self { header, data }
+    }
+    
+    /// メッセージをバイト配列にシリアライズする
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut serialized = Vec::new();
+        
+        // ヘッダーをシリアライズ
+        serialized.push(self.header.message_type as u8);
+        serialized.extend_from_slice(&self.header.sequence_id.to_le_bytes());
+        serialized.extend_from_slice(&self.header.frame_id.to_le_bytes());
+        serialized.extend_from_slice(&self.header.chunk_index.to_le_bytes());
+        serialized.extend_from_slice(&self.header.total_chunks.to_le_bytes());
+        serialized.extend_from_slice(&self.header.data_length.to_le_bytes());
+        serialized.extend_from_slice(&self.header.checksum.to_le_bytes());
+        
+        // データを追加
+        serialized.extend_from_slice(&self.data);
+        
+        serialized
+    }
+    
+    /// バイト配列からメッセージをデシリアライズする
+    pub fn deserialize(data: &[u8]) -> Result<Self, StreamingError> {
+        if data.len() < 15 { // 最小ヘッダーサイズ
+            return Err(StreamingError::InvalidFrame("Data too short for header".to_string()));
+        }
+        
+        let mut offset = 0;
+        
+        // ヘッダーをデシリアライズ
+        let message_type = MessageType::from_u8(data[offset])
+            .ok_or_else(|| StreamingError::InvalidFrame("Invalid message type".to_string()))?;
+        offset += 1;
+        
+        let sequence_id = u16::from_le_bytes([data[offset], data[offset + 1]]);
+        offset += 2;
+        
+        let frame_id = u32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]);
+        offset += 4;
+        
+        let chunk_index = u16::from_le_bytes([data[offset], data[offset + 1]]);
+        offset += 2;
+        
+        let total_chunks = u16::from_le_bytes([data[offset], data[offset + 1]]);
+        offset += 2;
+        
+        let data_length = u16::from_le_bytes([data[offset], data[offset + 1]]);
+        offset += 2;
+        
+        let checksum = u32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]);
+        offset += 4;
+        
+        // データ部分を抽出
+        let payload = if offset < data.len() {
+            data[offset..].to_vec()
+        } else {
+            Vec::new()
+        };
+        
+        let header = StreamingHeader {
+            message_type,
+            sequence_id,
+            frame_id,
+            chunk_index,
+            total_chunks,
+            data_length,
+            checksum,
+        };
+        
+        Ok(StreamingMessage::new(header, payload))
     }
     
     pub fn start_frame(frame_id: u32, sequence_id: u16) -> Self {
@@ -171,6 +262,14 @@ pub enum StreamingError {
     ChecksumMismatch,
     MaxRetriesExceeded,
     CameraError(&'static str),
+    InvalidFrame(String),
+    EspNowError(EspNowError),
+}
+
+impl From<EspNowError> for StreamingError {
+    fn from(error: EspNowError) -> Self {
+        StreamingError::EspNowError(error)
+    }
 }
 
 /// ストリーミング送信状態
@@ -193,10 +292,25 @@ pub struct StreamingStats {
     pub errors: u32,
 }
 
+#[cfg(test)]
+#[derive(Debug)]
+struct MockEspNowSender;
+
+#[cfg(test)]
+impl MockEspNowSender {
+    fn send(&self, _data: &[u8], _timeout_ms: u32) -> Result<(), EspNowError> {
+        Ok(()) // Mock implementation always succeeds
+    }
+}
+
 /// ストリーミング送信機
 #[derive(Debug)]
 pub struct StreamingSender {
     config: StreamingCameraConfig,
+    #[cfg(not(test))]
+    esp_now_sender: EspNowSender,
+    #[cfg(test)]
+    esp_now_sender: MockEspNowSender,
     frame_id: u32,
     sequence_id: u16,
     state: StreamingState,
@@ -204,13 +318,34 @@ pub struct StreamingSender {
 }
 
 impl StreamingSender {
-    pub fn new(config: StreamingCameraConfig) -> Result<Self, StreamingError> {
+    #[cfg(not(test))]
+    pub fn new(config: StreamingCameraConfig, esp_now_sender: EspNowSender) -> Result<Self, StreamingError> {
         if config.chunk_size == 0 || config.chunk_size > 4096 {
             return Err(StreamingError::ChunkSizeInvalid);
         }
         
         Ok(Self {
             config,
+            esp_now_sender,
+            frame_id: 0,
+            sequence_id: 0,
+            state: StreamingState::Idle,
+            stats: StreamingStats::default(),
+        })
+    }
+
+    #[cfg(test)]
+    pub fn new(config: StreamingCameraConfig) -> Result<Self, StreamingError> {        
+        if config.chunk_size == 0 || config.chunk_size > 4096 {
+            return Err(StreamingError::ChunkSizeInvalid);
+        }
+        
+        // For testing purposes, create a dummy sender that won't actually send
+        let mock_sender = MockEspNowSender;
+        
+        Ok(Self {
+            config,
+            esp_now_sender: mock_sender,
             frame_id: 0,
             sequence_id: 0,
             state: StreamingState::Idle,
@@ -264,9 +399,9 @@ impl StreamingSender {
         Ok(())
     }
     
-    fn send_message(&self, _message: &StreamingMessage) -> Result<(), StreamingError> {
-        // Simulate ESP-NOW message sending
-        // In real implementation, this would use ESP-NOW APIs
+    fn send_message(&self, message: &StreamingMessage) -> Result<(), StreamingError> {
+        let serialized = message.serialize();
+        self.esp_now_sender.send(&serialized, 1000)?; // 1秒タイムアウト
         Ok(())
     }
     
@@ -292,9 +427,10 @@ impl StreamingSender {
         Err(StreamingError::MaxRetriesExceeded)
     }
     
-    fn wait_for_ack(&self, _sequence_id: u16) -> Result<bool, StreamingError> {
-        // Simulate ACK waiting
-        // In real implementation, this would wait for ACK from receiver
+    fn wait_for_ack(&self, sequence_id: u16) -> Result<bool, StreamingError> {
+        // TODO: ESP-NOWの双方向通信でACKを受信する実装
+        // 現在は常にtrueを返す（実装後に削除予定）
+        log::debug!("Waiting for ACK for sequence_id: {}", sequence_id);
         Ok(true)
     }
     

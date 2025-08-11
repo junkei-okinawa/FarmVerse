@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 const ESP_ERR_ESPNOW_NO_MEM: i32 = 12391;
 
 /// ESP-NOW送信エラー
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq)]
 pub enum EspNowError {
     #[error("ESP-IDFエラー: {0}")]
     EspError(esp_idf_sys::EspError),
@@ -28,6 +28,14 @@ pub enum EspNowError {
 pub struct EspNowSender {
     esp_now: Arc<Mutex<EspNow<'static>>>,
     peer_mac: MacAddress,
+}
+
+impl std::fmt::Debug for EspNowSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EspNowSender")
+            .field("peer_mac", &self.peer_mac)
+            .finish()
+    }
 }
 
 impl EspNowSender {

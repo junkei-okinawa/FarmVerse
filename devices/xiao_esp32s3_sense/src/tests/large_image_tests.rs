@@ -146,7 +146,9 @@ mod large_image_performance_tests {
         let reconstructed = reconstruct_image_from_chunks(&chunks);
         assert_eq!(reconstructed, large_image_data);
     }
-}/// 大容量画像送信パフォーマンステスト
+}
+
+/// 大容量画像送信パフォーマンステスト
 /// 
 /// テスト項目:
 /// 1. 送信時間計測
