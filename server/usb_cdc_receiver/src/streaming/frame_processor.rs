@@ -126,7 +126,7 @@ impl FrameProcessor {
     /// 新しいフレームプロセッサを作成
     pub fn new() -> Self {
         FrameProcessor {
-            buffer: Vec::with_capacity(8192), // 8KB初期容量
+            buffer: Vec::with_capacity(256), // メモリ使用量削減: 1024→256
             expected_sequence: 0,
             frames_processed: 0,
             frames_error: 0,

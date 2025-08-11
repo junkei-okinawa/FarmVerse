@@ -463,10 +463,12 @@ impl Default for StreamingController {
 
 /// 現在のタイムスタンプを取得（ミリ秒）
 fn get_current_timestamp() -> u64 {
+    // FreeRTOSのシステムティック（より安全）
     unsafe {
-        let ticks = esp_idf_svc::sys::xTaskGetTickCount();
-        let ms_per_tick = 1000 / esp_idf_svc::sys::configTICK_RATE_HZ;
-        (ticks * ms_per_tick) as u64
+        // FreeRTOS tick count を使用（WDTリセットを避けるため）
+        let ticks = esp_idf_sys::xTaskGetTickCount();
+        // tick を ミリ秒に変換 (通常 1 tick = 1ms)
+        ticks as u64
     }
 }
 

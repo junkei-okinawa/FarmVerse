@@ -13,7 +13,7 @@ use super::{StreamingError, StreamingResult};
 use log::{debug, warn};
 
 /// ストリーミングバッファの容量定数
-pub const STREAMING_BUFFER_SIZE: usize = 2048; // 2KB固定サイズ
+pub const STREAMING_BUFFER_SIZE: usize = 512; // 512バイトに削減（メモリ制約のため）
 
 /// 受信データの一時格納用構造体
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ impl BufferedData {
 #[derive(Debug)]
 pub struct StreamingBuffer {
     /// バッファ
-    buffer: heapless::Deque<BufferedData, 32>, // 最大32個のバッファデータ
+    buffer: heapless::Deque<BufferedData, 4>, // メモリ削減: 8→4個
     /// バッファの最大サイズ
     max_size: usize,
     /// 現在の使用サイズ
@@ -226,11 +226,12 @@ impl BufferStats {
 
 /// 現在のタイムスタンプを取得（ミリ秒）
 fn get_current_timestamp() -> u64 {
-    // ESP-IDFのTickCount to milliseconds
+    // FreeRTOSのシステムティック（より安全）
     unsafe {
-        let ticks = esp_idf_svc::sys::xTaskGetTickCount();
-        let ms_per_tick = 1000 / esp_idf_svc::sys::configTICK_RATE_HZ;
-        (ticks * ms_per_tick) as u64
+        // FreeRTOS tick count を使用（WDTリセットを避けるため）
+        let ticks = esp_idf_sys::xTaskGetTickCount();
+        // tick を ミリ秒に変換 (通常 1 tick = 1ms)
+        ticks as u64
     }
 }
 

@@ -15,10 +15,8 @@ pub mod device_manager;
 pub mod frame_processor;
 pub mod controller;
 
-pub use buffer::StreamingBuffer;
-pub use device_manager::{DeviceStreamManager, DeviceStream};
-pub use frame_processor::{FrameProcessor, FrameHeader, ProcessingResult};
-pub use controller::{StreamingController, StreamingConfig, StreamingStats};
+// 必要な型のみエクスポート
+pub use controller::{StreamingController, StreamingConfig};
 
 /// ストリーミング処理で使用する共通エラー型
 #[derive(Debug, Clone)]
