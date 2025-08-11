@@ -37,6 +37,8 @@ pub enum StreamingError {
     DeviceNotFound([u8; 6]),
     /// USB転送エラー
     UsbTransferError(String),
+    /// ESP-NOW送信エラー
+    EspNowSendError(String),
     /// その他のエラー
     Other(String),
 }
@@ -57,6 +59,7 @@ impl core::fmt::Display for StreamingError {
                 write!(f, "Device not found: {:02X?}", mac)
             }
             StreamingError::UsbTransferError(msg) => write!(f, "USB transfer error: {}", msg),
+            StreamingError::EspNowSendError(msg) => write!(f, "ESP-NOW send error: {}", msg),
             StreamingError::Other(msg) => write!(f, "Other error: {}", msg),
         }
     }

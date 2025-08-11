@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_buffer_stats() {
-        let mut buffer = StreamingBuffer::new();
+        let buffer = StreamingBuffer::new();
         let stats = buffer.stats();
         assert_eq!(stats.items, 0);
         assert_eq!(stats.bytes_used, 0);
