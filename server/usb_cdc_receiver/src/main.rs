@@ -5,6 +5,7 @@ mod mac_address;
 mod queue;
 mod usb;
 mod streaming;
+mod sleep_command_queue;
 
 use anyhow::Result;
 use command::{parse_command, Command};
@@ -21,6 +22,7 @@ use esp_idf_svc::wifi::{AuthMethod, ClientConfiguration, Configuration, EspWifi}
 use esp_now::sender::EspNowSender;
 use log::{debug, error, info, warn};
 use mac_address::format_mac_address;
+use sleep_command_queue::{init_sleep_command_queue, enqueue_sleep_command, process_sleep_command_queue};
 use streaming::controller::{StreamingController, StreamingConfig};
 use streaming::StreamingError;
 use usb::cdc::UsbCdc;
@@ -250,12 +252,13 @@ fn process_streaming_data_loop(
                     Ok(Command::SendEspNow { mac_address, sleep_seconds }) => {
                         info!("Processing ESP-NOW send command: {} -> {}s", mac_address, sleep_seconds);
                         
-                        match esp_now_sender.send_sleep_command(&mac_address, sleep_seconds) {
+                        // スリープコマンドをキューに追加（直接送信せず）
+                        match enqueue_sleep_command(mac_address.clone(), sleep_seconds) {
                             Ok(()) => {
-                                info!("✓ ESP-NOW sleep command sent successfully to {}", mac_address);
+                                info!("✓ Sleep command queued for {}: {}s", mac_address, sleep_seconds);
                             }
                             Err(e) => {
-                                error!("✗ Failed to send ESP-NOW sleep command to {}: {:?}", mac_address, e);
+                                error!("✗ Failed to queue sleep command for {}: {}", mac_address, e);
                             }
                         }
                     }
@@ -277,11 +280,14 @@ fn process_streaming_data_loop(
             }
         }
         
-        // 3. 新しいデバイス（現在は従来のキューデータを処理）
+        // 3. スリープコマンドキューの処理
+        process_sleep_command_queue(&esp_now_sender);
+        
+        // 4. 新しいデバイス（現在は従来のキューデータを処理）
         
         // ここで将来的に新しいデータソースを追加可能
         
-        // 4. データ処理がない場合は短い遅延
+        // 5. データ処理がない場合は短い遅延
         if !processed_any_data {
             FreeRtos::delay_ms(5); // 遅延を短縮してレスポンス向上
         }
@@ -299,6 +305,10 @@ fn main() -> Result<()> {
     // キューの初期化（互換性のため継続）
     queue::data_queue::initialize_data_queue();
     info!("✓ Queue initialized");
+
+    // スリープコマンドキューの初期化
+    init_sleep_command_queue();
+    info!("✓ Sleep command queue initialized");
 
     // Streaming Controllerの初期化
     let streaming_config = StreamingConfig::default();
