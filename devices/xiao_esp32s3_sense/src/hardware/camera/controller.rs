@@ -17,7 +17,7 @@ pub enum CustomFrameSize {
     /// QVGA 解像度
     Qvga = framesize_t_FRAMESIZE_QVGA as isize,
     /// CIF 解像度
-    Cif = framesize_t_FRAMESIZE_CIF as isize, // Corrected from CIF
+    Cif = framesize_t_FRAMESIZE_CIF as isize,
     /// HVGA 解像度
     Hvga = framesize_t_FRAMESIZE_HVGA as isize,
     /// VGA 解像度
