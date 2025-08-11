@@ -13,6 +13,8 @@
 use super::{StreamingError, StreamingResult, StreamingStatistics};
 use super::device_manager::{DeviceStreamManager, ProcessedFrame, StreamManagerConfig};
 use crate::usb::cdc::UsbCdc;
+use crate::esp_now::sender::EspNowSender;
+use crate::esp_now::{AckMessage, MessageType, AckStatus};
 use log::{debug, info, warn, error};
 
 /// ストリーミング設定
@@ -56,6 +58,12 @@ pub struct StreamingStats {
     /// 処理時間統計
     pub total_processing_time_ms: u64,
     pub max_processing_time_ms: u64,
+    /// ACK送信統計
+    pub acks_sent: u64,
+    pub ack_errors: u64,
+    /// スリープコマンド統計
+    pub sleep_commands_sent: u64,
+    pub sleep_command_errors: u64,
     /// 最後の統計リセット時刻
     pub last_reset: u64,
 }
@@ -98,6 +106,26 @@ impl StreamingStats {
         }
     }
     
+    /// ACK送信成功をカウント
+    pub fn count_ack_sent(&mut self) {
+        self.acks_sent += 1;
+    }
+    
+    /// ACK送信エラーをカウント
+    pub fn count_ack_error(&mut self) {
+        self.ack_errors += 1;
+    }
+    
+    /// スリープコマンド送信成功をカウント
+    pub fn count_sleep_command_sent(&mut self) {
+        self.sleep_commands_sent += 1;
+    }
+    
+    /// スリープコマンド送信エラーをカウント
+    pub fn count_sleep_command_error(&mut self) {
+        self.sleep_command_errors += 1;
+    }
+    
     /// 平均処理時間を計算
     pub fn average_processing_time_ms(&self) -> f64 {
         if self.basic.frames_processed > 0 {
@@ -116,6 +144,24 @@ impl StreamingStats {
         }
     }
     
+    /// ACK送信成功率を計算
+    pub fn ack_success_rate(&self) -> f32 {
+        if self.acks_sent + self.ack_errors > 0 {
+            (self.acks_sent as f32 / (self.acks_sent + self.ack_errors) as f32) * 100.0
+        } else {
+            0.0
+        }
+    }
+    
+    /// スリープコマンド送信成功率を計算
+    pub fn sleep_command_success_rate(&self) -> f32 {
+        if self.sleep_commands_sent + self.sleep_command_errors > 0 {
+            (self.sleep_commands_sent as f32 / (self.sleep_commands_sent + self.sleep_command_errors) as f32) * 100.0
+        } else {
+            0.0
+        }
+    }
+    
     /// 統計をリセット
     pub fn reset(&mut self) {
         *self = Self::new();
@@ -126,6 +172,8 @@ impl StreamingStats {
 pub struct StreamingController {
     /// デバイスストリーム管理者
     device_manager: DeviceStreamManager,
+    /// ESP-NOW送信機能
+    esp_now_sender: EspNowSender,
     /// 設定
     config: StreamingConfig,
     /// 統計情報
@@ -140,10 +188,12 @@ impl StreamingController {
     /// 新しいストリーミングコントローラーを作成
     pub fn new(config: StreamingConfig) -> Self {
         let device_manager = DeviceStreamManager::new(config.device_manager_config.clone());
+        let esp_now_sender = EspNowSender::new();
         let current_time = get_current_timestamp();
         
         StreamingController {
             device_manager,
+            esp_now_sender,
             config,
             stats: StreamingStats::new(),
             last_cleanup: current_time,
@@ -151,7 +201,7 @@ impl StreamingController {
         }
     }
     
-    /// ESP-NOWから受信したデータを処理
+    /// ESP-NOWから受信したデータを処理（ACK返信付き）
     pub fn process_esp_now_data(
         &mut self,
         mac_address: [u8; 6],
@@ -167,18 +217,24 @@ impl StreamingController {
         let processed_frames = self.device_manager.process_data(mac_address, data)?;
         
         // 処理されたフレームを即座にUSB CDCに転送
-        for frame in processed_frames {
+        for frame in &processed_frames {
             match self.transfer_frame_to_usb(&frame, usb_cdc) {
                 Ok(bytes_sent) => {
                     total_transferred += bytes_sent;
                     self.stats.count_usb_transfer(bytes_sent);
                     debug!("StreamingController: transferred {} bytes for frame seq {}", 
                            bytes_sent, frame.sequence);
+                    
+                    // フレーム処理成功後にACKを送信
+                    self.send_ack_for_frame(&frame, mac_address, AckStatus::Success);
                 }
                 Err(e) => {
                     self.stats.count_usb_error();
                     error!("StreamingController: USB transfer failed for frame seq {}: {}", 
                            frame.sequence, e);
+                    
+                    // USB転送失敗時もACKを送信（エラーステータス付き）
+                    self.send_ack_for_frame(&frame, mac_address, AckStatus::BufferOverflow);
                     // エラーが発生しても他のフレーム処理は継続
                 }
             }
@@ -192,6 +248,51 @@ impl StreamingController {
         self.periodic_maintenance();
         
         Ok(total_transferred)
+    }
+    
+    /// フレーム処理結果に対してACKを送信
+    fn send_ack_for_frame(&mut self, frame: &ProcessedFrame, mac_address: [u8; 6], status: AckStatus) {
+        // データフレームタイプを決定（実際のフレームタイプに基づく）
+        let acked_message_type = MessageType::DataFrame; // 現在はすべてデータフレームとして扱う
+        
+        let ack = AckMessage::new(frame.sequence, acked_message_type, status);
+        let ack_data = ack.serialize();
+        
+        match self.esp_now_sender.send_data(mac_address, &ack_data) {
+            Ok(()) => {
+                info!("✓ ACK sent successfully for frame seq {} to {:02X?} (status: {:?})", 
+                      frame.sequence, mac_address, status);
+                self.stats.count_ack_sent();
+            }
+            Err(e) => {
+                warn!("✗ Failed to send ACK for frame seq {} to {:02X?}: {:?}", 
+                      frame.sequence, mac_address, e);
+                self.stats.count_ack_error();
+            }
+        }
+    }
+    
+    /// PythonサーバーからのスリープコマンドをESP-NOWで転送
+    pub fn forward_sleep_command(&mut self, mac_address: [u8; 6], sleep_seconds: u32) -> StreamingResult<()> {
+        info!("Forwarding sleep command: {} seconds to {:02X?}", sleep_seconds, mac_address);
+        
+        match self.esp_now_sender.send_sleep_command(
+            &format!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                     mac_address[0], mac_address[1], mac_address[2],
+                     mac_address[3], mac_address[4], mac_address[5]),
+            sleep_seconds
+        ) {
+            Ok(()) => {
+                info!("✓ Sleep command forwarded successfully");
+                self.stats.count_sleep_command_sent();
+                Ok(())
+            }
+            Err(e) => {
+                error!("✗ Failed to forward sleep command: {:?}", e);
+                self.stats.count_sleep_command_error();
+                Err(StreamingError::EspNowSendError(format!("Sleep command forward failed: {:?}", e)))
+            }
+        }
     }
     
     /// フレームをUSB CDCに転送
