@@ -14,6 +14,10 @@ from datetime import datetime
 from typing import Dict, Optional, Callable
 from dataclasses import dataclass, field
 
+# 絶対インポートを使用
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from config import config
 
 
@@ -169,9 +173,10 @@ class StreamingImageProcessor:
             # 最初のチャンクでJPEGヘッダーを検証
             if stream_meta.total_chunks_received == 1:
                 if not self._validate_jpeg_header(chunk_data):
-                    logger.error(f"Invalid JPEG header in first chunk for {sender_mac}")
-                    await self.abort_stream(sender_mac, "Invalid JPEG header")
-                    return False
+                    logger.warning(f"Invalid JPEG header in first chunk for {sender_mac}")
+                    logger.debug(f"First chunk data: {chunk_data[:20].hex() if len(chunk_data) >= 20 else chunk_data.hex()}")
+                    # JPEGヘッダーが無効でも処理を続行（EOF後に検証）
+                    logger.info(f"Continuing stream processing for {sender_mac} despite invalid header")
                 else:
                     logger.info(f"✓ Valid JPEG stream started for {sender_mac}")
             

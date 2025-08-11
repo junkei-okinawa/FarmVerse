@@ -16,12 +16,18 @@ from .constants import (
     CHECKSUM_LENGTH
 )
 from .frame_parser import FrameParser
-from ..processors.streaming_image_processor import StreamingImageProcessor
-from ..processors.voltage_processor import VoltageDataProcessor
-from ..processors.sleep_controller import determine_sleep_duration, format_sleep_command_to_gateway
-from ..storage import influx_client
-from ..utils.data_parser import DataParser
-from ..config import config
+
+# 絶対インポートを使用
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from processors.streaming_image_processor import StreamingImageProcessor
+from processors.voltage_processor import VoltageDataProcessor
+from processors.sleep_controller import determine_sleep_duration, format_sleep_command_to_gateway
+from storage import influx_client
+from utils.data_parser import DataParser
+from config import config
 
 logger = logging.getLogger(__name__)
 
@@ -216,10 +222,19 @@ class StreamingSerialProtocol(asyncio.Protocol):
         except Exception as e:
             logger.error(f"InfluxDB write error for {sender_mac}: {e}")
         
-        # ストリーミング画像処理を開始
-        await self.streaming_processor.start_image_stream(
-            sender_mac, hash_data=payload_str
-        )
+        # HASHフレーム受信時は既存ストリームを強制終了しない
+        # 代わりに、画像データが既に受信されている場合はそれを保持
+        if sender_mac not in self.streaming_processor.active_streams:
+            # 新規ストリーム開始
+            await self.streaming_processor.start_image_stream(
+                sender_mac, hash_data=payload_str
+            )
+            logger.debug(f"Started new image stream for {sender_mac} after HASH")
+        else:
+            # 既存ストリームのメタデータを更新
+            stream_meta = self.streaming_processor.active_streams[sender_mac]
+            stream_meta.hash_data = payload_str
+            logger.debug(f"Updated existing stream metadata for {sender_mac}")
         
         # HASHフレーム時点でスリープコマンドを送信
         if voltage is not None:
