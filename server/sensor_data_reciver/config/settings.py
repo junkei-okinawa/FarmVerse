@@ -31,7 +31,9 @@ class Config:
     IS_TEST_ENV: bool = os.environ.get("PYTEST_CURRENT_TEST") is not None
     
     # Debug settings
-    DEBUG_FRAME_PARSING: bool = True
+    DEBUG_FRAME_PARSING: bool = os.environ.get("DEBUG_FRAME_PARSING", "true").lower() == "true"
+    LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "DEBUG")  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    SUPPRESS_SYNC_ERRORS: bool = os.environ.get("SUPPRESS_SYNC_ERRORS", "false").lower() == "true"
     
     # Sleep duration configuration
     DEFAULT_SLEEP_DURATION_S: int = 60  # Default sleep duration for ESP32-CAM in seconds

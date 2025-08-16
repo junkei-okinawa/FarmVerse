@@ -10,7 +10,7 @@ from .constants import (
     MAC_ADDRESS_LENGTH, FRAME_TYPE_LENGTH, SEQUENCE_NUM_LENGTH, LENGTH_FIELD_BYTES,
     CHECKSUM_LENGTH
 )
-from .frame_parser import FrameParser
+from .frame_parser import FrameParser, FrameSyncError
 
 # 修正: 絶対インポートまたは動的インポートを使用
 import sys
@@ -211,40 +211,53 @@ class SerialProtocol(asyncio.Protocol):
                 
                 # フレーム受信詳細をデバッグ出力
                 if config.DEBUG_FRAME_PARSING:
-                    logger.debug(f"Frame header: MAC={sender_mac}, Type={frame_type}, Seq={seq_num}, DataLen={data_len}")
+                    frame_type_name = {
+                        FRAME_TYPE_DATA: "DATA",
+                        FRAME_TYPE_HASH: "HASH", 
+                        FRAME_TYPE_EOF: "EOF"
+                    }.get(frame_type, f"UNKNOWN({frame_type})")
+                    logger.debug(f"Parsed frame header: {frame_type_name} from {sender_mac}, seq: {seq_num}, data_len: {data_len}")
+                
+                # ヘッダー長の計算
+                header_len = len(START_MARKER) + MAC_ADDRESS_LENGTH + FRAME_TYPE_LENGTH + SEQUENCE_NUM_LENGTH + LENGTH_FIELD_BYTES
+                total_frame_len = header_len + data_len + CHECKSUM_LENGTH + len(END_MARKER)
+                
+                if config.DEBUG_FRAME_PARSING:
+                    logger.debug(f"Frame calculation: header_len={header_len}, data_len={data_len}, checksum_len={CHECKSUM_LENGTH}, end_marker_len={len(END_MARKER)}, total_frame_len={total_frame_len}, buffer_len={len(self.buffer)}")
                 
                 # MACアドレス長の検証
                 header_start = len(START_MARKER)
                 mac_bytes = self.buffer[header_start : header_start + MAC_ADDRESS_LENGTH]
                 FrameParser.validate_frame_data(data_len, mac_bytes, config.MAX_DATA_LEN)
                 
+            except FrameSyncError as e:
+                # フレーム同期エラーの場合はログレベルを調整
+                if config.SUPPRESS_SYNC_ERRORS:
+                    logger.debug(f"Frame sync adjustment: {e}")
+                else:
+                    logger.warning(f"Frame sync issue: {e}")
             except (ValueError, IndexError) as e:
-                logger.error(f"Frame decode error: {e}. Discarding frame.")
+                logger.error(f"Frame decode error: {e}")
+                    
                 if config.DEBUG_FRAME_PARSING:
                     # デバッグ情報を出力
-                    header_size = len(START_MARKER) + MAC_ADDRESS_LENGTH + FRAME_TYPE_LENGTH + SEQUENCE_NUM_LENGTH + LENGTH_FIELD_BYTES
-                    if len(self.buffer) >= header_size:
-                        header_data = self.buffer[:header_size]
-                        logger.debug(f"Invalid header data: {header_data.hex()}")
+                    buffer_preview_size = min(len(self.buffer), 64)
+                    logger.debug(f"Buffer content around error: {self.buffer[:buffer_preview_size].hex()}")
                 
-                # より積極的な同期回復
-                # 1. 次のスタートマーカーを探す
-                next_start = self.buffer.find(START_MARKER, 1)
-                if next_start != -1:
+                # フレーム境界同期の修正：より保守的な同期回復
+                # 1. 現在のSTART_MARKERから最小限のバイトを削除
+                skip_bytes = min(4, len(self.buffer))  # 4バイトまたはバッファサイズの小さい方
+                logger.debug(f"Frame decode failed, skipping {skip_bytes} bytes for boundary realignment")
+                self.buffer = self.buffer[skip_bytes:]
+                
+                # 2. 次のSTART_MARKERを探す
+                next_start = self.buffer.find(START_MARKER)
+                if next_start != -1 and next_start > 0:
                     logger.debug(f"Found next START_MARKER at position {next_start}, discarding {next_start} bytes")
                     self.buffer = self.buffer[next_start:]
-                else:
-                    # 2. EOFマーカーがあるかチェック（破損したフレームの残骸を処理）
-                    for eof_pattern in [b'---EOF---\r\n', b'EOF\r\n', b'EOF']:
-                        eof_pos = self.buffer.find(eof_pattern)
-                        if eof_pos != -1:
-                            logger.debug(f"Found EOF marker at position {eof_pos}, processing and clearing")
-                            self._handle_raw_eof_markers()
-                            break
-                    else:
-                        # 3. 全て失敗した場合、バッファをクリア
-                        logger.debug("No recovery anchor found, clearing entire buffer")
-                        self.buffer.clear()
+                elif len(self.buffer) > 1000:  # バッファが大きすぎる場合のみクリア
+                    logger.debug("Buffer too large without valid frame, clearing")
+                    self.buffer.clear()
                 
                 self.frame_start_time = None
                 continue
@@ -263,6 +276,11 @@ class SerialProtocol(asyncio.Protocol):
             # データ部分の位置を計算
             data_start_index = len(START_MARKER) + MAC_ADDRESS_LENGTH + FRAME_TYPE_LENGTH + SEQUENCE_NUM_LENGTH + LENGTH_FIELD_BYTES
             chunk_data = self.buffer[data_start_index : data_start_index + data_len]
+            
+            if config.DEBUG_FRAME_PARSING:
+                logger.debug(f"Data extraction: start_index={data_start_index}, data_len={data_len}")
+                logger.debug(f"Raw chunk_data (first 20 bytes): {chunk_data[:20].hex()}")
+                logger.debug(f"Expected JPEG header check: {chunk_data[:2].hex() if len(chunk_data) >= 2 else 'insufficient data'}")
             
             # チェックサム部分の位置
             checksum_start = data_start_index + data_len
@@ -678,8 +696,18 @@ class SerialProtocol(asyncio.Protocol):
                     
                 logger.debug(f"Validated remaining buffer: MAC={sender_mac}, Type={frame_type}, DataLen={data_len}")
                 
+            except FrameSyncError as e:
+                # フレーム同期エラーの場合はログレベルを調整
+                if config.SUPPRESS_SYNC_ERRORS:
+                    logger.debug(f"Frame sync adjustment in remaining buffer: {e}")
+                else:
+                    logger.warning(f"Frame sync issue in remaining buffer: {e}")
+                # バッファの先頭部分をデバッグ出力
+                debug_data = self.buffer[:min(50, len(self.buffer))]
+                logger.debug(f"Invalid buffer data: {debug_data.hex()}")
+                self.buffer.clear()
             except (ValueError, IndexError) as e:
-                logger.warning(f"Invalid frame header in remaining buffer: {e}, clearing")
+                logger.warning(f"Invalid frame header in remaining buffer: {e}")
                 # バッファの先頭部分をデバッグ出力
                 debug_data = self.buffer[:min(50, len(self.buffer))]
                 logger.debug(f"Invalid buffer data: {debug_data.hex()}")

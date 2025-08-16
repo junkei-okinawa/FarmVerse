@@ -1,7 +1,7 @@
 use crate::mac_address::MacAddress;
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::espnow::EspNow;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::sync::{Arc, Mutex};
 
 // ESP-NOW関連定数
@@ -159,24 +159,42 @@ impl EspNowSender {
         Err(last_error)
     }
 
-    /// 画像データをチャンクに分割して送信する（アダプティブ実装）
+    /// 画像データをチャンクに分割して送信する（アダプティブ実装・sensor_data_receiver準拠）
     pub fn send_image_chunks(
         &self,
         data: Vec<u8>,
         initial_chunk_size: usize,
         delay_between_chunks_ms: u32,
     ) -> Result<(), EspNowError> {
-        // 段階的にチャンクサイズを小さくして試行
-        let chunk_sizes = [initial_chunk_size, 150, 100, 50];
+        // フレームヘッダーサイズを計算
+        const FRAME_OVERHEAD: usize = 4 + 6 + 1 + 4 + 4 + 4 + 4; // START_MARKER + MAC + TYPE + SEQ + LEN + CHECKSUM + END_MARKER = 27バイト
+        const ESP_NOW_MAX_SIZE: usize = 250; // ESP-NOWの最大サイズ
         
-        for &chunk_size in &chunk_sizes {
-            info!("画像データを{}バイトのチャンクに分割して送信開始", chunk_size);
+        // 有効なペイロードサイズを計算（フレームヘッダーを除く）
+        let max_payload_size = ESP_NOW_MAX_SIZE - FRAME_OVERHEAD; // 223バイト
+        let safe_initial_payload = if initial_chunk_size > max_payload_size {
+            max_payload_size
+        } else {
+            initial_chunk_size
+        };
+        
+        // 段階的にペイロードサイズを小さくして試行
+        let payload_sizes = [safe_initial_payload, 150, 100, 50, 30];
+        
+        for &payload_size in &payload_sizes {
+            // フレーム全体のサイズを確認
+            let total_frame_size = FRAME_OVERHEAD + payload_size;
+            if total_frame_size > ESP_NOW_MAX_SIZE {
+                continue; // スキップして次の小さなサイズを試行
+            }
+            
+            info!("画像データを{}バイトのペイロードに分割して送信開始（フレーム全体:{}バイト）", payload_size, total_frame_size);
             info!("総データサイズ: {}バイト", data.len());
-            let total_chunks = (data.len() + chunk_size - 1) / chunk_size;
+            let total_chunks = (data.len() + payload_size - 1) / payload_size;
             
             let mut success = true;
             
-            for (i, chunk) in data.chunks(chunk_size).enumerate() {
+            for (i, chunk) in data.chunks(payload_size).enumerate() {
                 if i % 20 == 0 { // 20チャンクごとに進捗表示
                     info!("チャンク送信進捗: {}/{}", i + 1, total_chunks);
                 }
@@ -185,6 +203,16 @@ impl EspNowSender {
                 if i == 0 {
                     info!("最初のチャンク詳細: サイズ={}バイト, プレビュー={:02X?}", chunk.len(), &chunk[..std::cmp::min(10, chunk.len())]);
                 }
+                
+                // sensor_data_receiver準拠のフレーム構造で送信
+                let frame = match self.create_sensor_data_frame(2, chunk) { // FRAME_TYPE_DATA = 2
+                    Ok(f) => f,
+                    Err(e) => {
+                        error!("チャンク{} フレーム作成失敗: {:?}", i + 1, e);
+                        success = false;
+                        break;
+                    }
+                };
                 
                 // 重要なチャンク（最初の3チャンク）は重複送信で信頼性向上
                 let retry_count = if i < 3 { 
@@ -196,7 +224,7 @@ impl EspNowSender {
                 
                 let mut chunk_success = false;
                 for attempt in 1..=retry_count {
-                    match self.send_with_retry(chunk, 1000, 3) {
+                    match self.send_with_retry(&frame, 1000, 3) {
                         Ok(()) => {
                             if retry_count > 1 {
                                 info!("重要チャンク{} 送信成功 (試行{}/{})", i + 1, attempt, retry_count);
@@ -206,7 +234,7 @@ impl EspNowSender {
                         }
                         Err(e) => {
                             if attempt == retry_count {
-                                error!("チャンク{} 送信失敗 (チャンクサイズ{}バイト): {:?}", i + 1, chunk_size, e);
+                                error!("チャンク{} 送信失敗 (ペイロードサイズ{}バイト): {:?}", i + 1, payload_size, e);
                             } else {
                                 warn!("重要チャンク{} 送信失敗 (試行{}/{}), 再送します", i + 1, attempt, retry_count);
                                 FreeRtos::delay_ms(100); // 重要チャンク再送間隔
@@ -225,19 +253,19 @@ impl EspNowSender {
             }
             
             if success {
-                info!("画像データ送信完了: {}チャンク送信 (チャンクサイズ: {}バイト)", total_chunks, chunk_size);
+                info!("画像データ送信完了: {}チャンク送信 (ペイロードサイズ: {}バイト)", total_chunks, payload_size);
                 return Ok(());
             } else {
-                warn!("チャンクサイズ{}バイトで送信失敗、より小さなサイズで再試行します", chunk_size);
+                warn!("ペイロードサイズ{}バイトで送信失敗、より小さなサイズで再試行します", payload_size);
                 FreeRtos::delay_ms(1000); // 再試行前の待機
             }
         }
         
-        error!("全てのチャンクサイズで送信失敗");
+        error!("全てのペイロードサイズで送信失敗");
         Err(EspNowError::SendTimeout)
     }
 
-    /// メタデータを含むハッシュフレームを送信
+    /// メタデータを含むハッシュフレームを送信（sensor_data_receiver準拠フレーム形式）
     pub fn send_hash_frame(
         &self,
         hash: &str,
@@ -247,30 +275,34 @@ impl EspNowSender {
         // M5Stack Unit Camには温度センサーがないため、ダミー値を使用
         let temp_celsius = -999.0; // TODO: ダミー値, 温度センサーばUnitCamから削除する予定なので、全ての削除が完了したらtemp_celsiusに関わる実装を削除する
         let hash_data = format!("HASH:{},VOLT:{},TEMP:{:.1},{}", hash, voltage_percentage, temp_celsius, timestamp);
-        info!("ハッシュフレーム送信: {}", hash_data);
+        info!("ハッシュフレーム送信（sensor_data_receiver準拠）: {}", hash_data);
         
-        self.send_with_retry(hash_data.as_bytes(), 1000, 3)?;
+        // sensor_data_receiver準拠のフレーム構造で送信
+        let frame = self.create_sensor_data_frame(1, hash_data.as_bytes())?; // FRAME_TYPE_HASH = 1
+        
+        self.send_with_retry(&frame, 1000, 3)?;
         Ok(())
     }
 
-    /// 画像送信終了マーカーを送信
+    /// 画像送信終了マーカーを送信（sensor_data_receiver準拠フレーム形式）
     pub fn send_eof_marker(&self) -> Result<(), EspNowError> {
-        // より明確なEOFマーカーを送信（パディングを追加して干渉を防ぐ）
-        let eof_marker = b"---EOF---\r\n"; // 前後にパディングを追加
-        info!("EOF マーカー送信開始");
+        info!("EOF フレーム送信開始（sensor_data_receiver準拠）");
+        
+        // sensor_data_receiver準拠のフレーム構造で送信
+        let frame = self.create_sensor_data_frame(3, b"EOF")?; // FRAME_TYPE_EOF = 3
         
         // 複数回送信で信頼性を向上
         for attempt in 1..=3 {
-            info!("EOF マーカー送信試行 {}/3", attempt);
+            info!("EOF フレーム送信試行 {}/3", attempt);
             
-            match self.send_with_retry(eof_marker, 1000, 3) {
+            match self.send_with_retry(&frame, 1000, 3) {
                 Ok(()) => {
-                    info!("EOF マーカー送信成功 (試行 {})", attempt);
+                    info!("EOF フレーム送信成功 (試行 {})", attempt);
                     FreeRtos::delay_ms(200);
                     break;
                 }
                 Err(e) => {
-                    error!("EOF マーカー送信失敗 (試行 {}): {:?}", attempt, e);
+                    error!("EOF フレーム送信失敗 (試行 {}): {:?}", attempt, e);
                     if attempt == 3 {
                         return Err(e);
                     }
@@ -279,7 +311,97 @@ impl EspNowSender {
             }
         }
         
-        info!("EOF マーカー送信完了");
+        info!("EOF フレーム送信完了");
         Ok(())
+    }
+    
+    /// sensor_data_receiver準拠のフレーム形式でデータを作成
+    /// 
+    /// フレーム構造: [START_MARKER][MAC][TYPE][SEQ][LEN][DATA][CHECKSUM][END_MARKER]
+    /// - START_MARKER: [0xFA, 0xCE, 0xAA, 0xBB] (4 bytes)
+    /// - MAC: 送信元MACアドレス (6 bytes)  
+    /// - TYPE: フレームタイプ (1 byte) - 1=HASH, 2=DATA, 3=EOF
+    /// - SEQ: シーケンス番号 (4 bytes, little-endian)
+    /// - LEN: データ長 (4 bytes, little-endian)
+    /// - DATA: ペイロードデータ (可変長)
+    /// - CHECKSUM: チェックサム (4 bytes, little-endian)
+    /// - END_MARKER: [0xCD, 0xEF, 0x56, 0x78] (4 bytes)
+    fn create_sensor_data_frame(&self, frame_type: u8, data: &[u8]) -> Result<Vec<u8>, EspNowError> {
+        // フレームマーカー定数（sensor_data_receiver準拠）
+        const START_MARKER: [u8; 4] = [0xFA, 0xCE, 0xAA, 0xBB];
+        const END_MARKER: [u8; 4] = [0xCD, 0xEF, 0x56, 0x78];
+        
+        let mut frame = Vec::new();
+        
+        // 1. START_MARKER
+        frame.extend_from_slice(&START_MARKER);
+        
+        // 2. MAC アドレス (6 bytes) - 実際のMAC取得
+        let mac_address = self.get_local_mac_address();
+        frame.extend_from_slice(&mac_address);
+        
+        // 3. フレームタイプ (1 byte)
+        frame.push(frame_type);
+        
+        // 4. シーケンス番号 (4 bytes, little-endian)
+        let sequence = self.get_next_sequence_number();
+        frame.extend_from_slice(&sequence.to_le_bytes());
+        
+        // 5. データ長 (4 bytes, little-endian)
+        let data_len = data.len() as u32;
+        frame.extend_from_slice(&data_len.to_le_bytes());
+        
+        // 6. データ本体
+        frame.extend_from_slice(data);
+        
+        // 7. チェックサム計算・追加 (4 bytes, little-endian)
+        let checksum = self.calculate_xor_checksum(data);
+        frame.extend_from_slice(&checksum.to_le_bytes());
+        
+        // 8. END_MARKER
+        frame.extend_from_slice(&END_MARKER);
+        
+        debug!("sensor_data_receiver準拠フレーム作成: type={}, data_len={}, checksum=0x{:08X}, total_frame_len={}", 
+               frame_type, data_len, checksum, frame.len());
+        
+        Ok(frame)
+    }
+    
+    /// ローカルMACアドレスを取得
+    fn get_local_mac_address(&self) -> [u8; 6] {
+        // ESP32のWiFi MACアドレスを取得
+        let mut mac = [0u8; 6];
+        unsafe {
+            let result = esp_idf_svc::sys::esp_wifi_get_mac(
+                esp_idf_svc::sys::wifi_interface_t_WIFI_IF_STA, 
+                mac.as_mut_ptr()
+            );
+            if result != 0 {
+                warn!("MACアドレス取得失敗、デフォルト値を使用: {:?}", result);
+                // デフォルトMAC（テスト用）
+                mac = [0x24, 0x6F, 0x28, 0x12, 0x34, 0x56];
+            }
+        }
+        mac
+    }
+    
+    /// シーケンス番号を取得・インクリメント
+    fn get_next_sequence_number(&self) -> u32 {
+        // TODO: 実際のシーケンス番号管理実装
+        // 現在は簡単な固定値
+        0x00000001
+    }
+    
+    /// XORベースのチェックサム計算（sensor_data_receiver準拠）
+    fn calculate_xor_checksum(&self, data: &[u8]) -> u32 {
+        let mut checksum: u32 = 0;
+        for chunk in data.chunks(4) {
+            let mut val: u32 = 0;
+            for (i, &b) in chunk.iter().enumerate() {
+                val |= (b as u32) << (i * 8);
+            }
+            checksum ^= val;
+        }
+        checksum
     }
 }
