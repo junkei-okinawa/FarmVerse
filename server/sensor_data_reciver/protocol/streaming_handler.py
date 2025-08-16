@@ -82,8 +82,9 @@ class StreamingSerialProtocol(asyncio.Protocol):
     
     def data_received(self, data):
         """データ受信時の処理"""
-        if config.DEBUG_FRAME_PARSING and len(data) < 100:
-            logger.debug(f"Raw data: {data.hex()}")
+        if config.DEBUG_FRAME_PARSING:
+            logger.debug(f"Received {len(data)} bytes: {data.hex() if len(data) < 100 else data[:50].hex() + '...'}")
+            logger.debug(f"Buffer size before: {len(self.buffer)}, after: {len(self.buffer) + len(data)}")
         
         self.buffer.extend(data)
         asyncio.create_task(self._process_buffer_async())
@@ -101,9 +102,16 @@ class StreamingSerialProtocol(asyncio.Protocol):
             # フレームタイムアウトチェック
             await self._check_frame_timeout()
             
+            if config.DEBUG_FRAME_PARSING:
+                logger.debug(f"Processing buffer, size: {len(self.buffer)}")
+            
             # 開始マーカーを探す
             start_index = self.buffer.find(START_MARKER)
             if start_index == -1:
+                if config.DEBUG_FRAME_PARSING and len(self.buffer) > 0:
+                    logger.debug(f"No START_MARKER found in buffer of {len(self.buffer)} bytes")
+                    if len(self.buffer) < 50:
+                        logger.debug(f"Buffer content: {self.buffer.hex()}")
                 if len(self.buffer) >= len(START_MARKER):
                     self.buffer = self.buffer[-(len(START_MARKER) - 1):]
                 break
@@ -119,16 +127,25 @@ class StreamingSerialProtocol(asyncio.Protocol):
             if self.frame_start_time is None:
                 self.frame_start_time = time.monotonic()
             
+            if config.DEBUG_FRAME_PARSING:
+                logger.debug(f"Found START_MARKER at index 0, buffer size: {len(self.buffer)}")
+            
             # ヘッダー解析に必要なデータ長チェック
             header_length = (len(START_MARKER) + MAC_ADDRESS_LENGTH + 
                            FRAME_TYPE_LENGTH + SEQUENCE_NUM_LENGTH + LENGTH_FIELD_BYTES)
             
             if len(self.buffer) < header_length:
+                if config.DEBUG_FRAME_PARSING:
+                    logger.debug(f"Insufficient data for header: {len(self.buffer)} < {header_length}")
                 break
             
             try:
                 # ヘッダーを解析
                 sender_mac, frame_type, seq_num, data_len = FrameParser.parse_header(self.buffer, 0)
+                
+                if config.DEBUG_FRAME_PARSING:
+                    frame_type_name = self._get_frame_type_name(frame_type)
+                    logger.debug(f"Parsed frame header: {frame_type_name} from {sender_mac}, seq: {seq_num}, data_len: {data_len}")
                 
                 # フレーム検証
                 header_start = len(START_MARKER)
@@ -137,6 +154,8 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 
             except (ValueError, IndexError) as e:
                 logger.error(f"Frame decode error: {e}")
+                if config.DEBUG_FRAME_PARSING:
+                    logger.debug(f"Buffer content around error: {self.buffer[:50].hex()}")
                 await self._handle_frame_error()
                 continue
             
@@ -144,7 +163,14 @@ class StreamingSerialProtocol(asyncio.Protocol):
             frame_end_index = (header_length + data_len + 
                              CHECKSUM_LENGTH + len(END_MARKER))
             
+            if config.DEBUG_FRAME_PARSING:
+                logger.debug(f"Frame calculation: header_len={header_length}, data_len={data_len}, "
+                           f"checksum_len={CHECKSUM_LENGTH}, end_marker_len={len(END_MARKER)}, "
+                           f"total_frame_len={frame_end_index}, buffer_len={len(self.buffer)}")
+            
             if len(self.buffer) < frame_end_index:
+                if config.DEBUG_FRAME_PARSING:
+                    logger.debug(f"Waiting for complete frame: {len(self.buffer)} < {frame_end_index}")
                 break  # 完全なフレームを待つ
             
             # データ部分を抽出
@@ -156,7 +182,10 @@ class StreamingSerialProtocol(asyncio.Protocol):
             footer = self.buffer[end_marker_start:frame_end_index]
             
             if footer != END_MARKER:
-                logger.warning(f"Invalid end marker for {sender_mac}")
+                logger.warning(f"Invalid end marker for {sender_mac}, expected: {END_MARKER.hex()}, got: {footer.hex()}")
+                if config.DEBUG_FRAME_PARSING:
+                    logger.debug(f"Frame details - sender_mac: {sender_mac}, frame_type: {frame_type}, seq_num: {seq_num}, data_len: {data_len}")
+                    logger.debug(f"Buffer dump around end marker (±20 bytes): {self.buffer[max(0, end_marker_start-20):end_marker_start+20].hex()}")
                 await self._handle_frame_error()
                 continue
             
@@ -171,11 +200,17 @@ class StreamingSerialProtocol(asyncio.Protocol):
             
             if config.DEBUG_FRAME_PARSING:
                 frame_type_name = self._get_frame_type_name(frame_type)
-                logger.debug(f"Processed {frame_type_name} frame from {sender_mac}")
+                logger.debug(f"Processed {frame_type_name} frame from {sender_mac} (seq: {seq_num}, data_len: {data_len})")
+                if frame_type == FRAME_TYPE_EOF:
+                    logger.info(f"✓ EOF frame successfully processed for {sender_mac}")
     
     async def _process_frame_by_type(self, sender_mac: str, frame_type: int, 
                                    seq_num: int, chunk_data: bytes):
         """フレームタイプ別処理"""
+        if config.DEBUG_FRAME_PARSING:
+            frame_type_name = self._get_frame_type_name(frame_type)
+            logger.debug(f"Processing {frame_type_name} frame from {sender_mac} (seq: {seq_num}, data_len: {len(chunk_data)})")
+        
         if frame_type == FRAME_TYPE_HASH:
             await self._process_streaming_hash_frame(sender_mac, chunk_data)
             
@@ -185,6 +220,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
             )
             
         elif frame_type == FRAME_TYPE_EOF:
+            logger.info(f"Received EOF frame for {sender_mac}")
             await self._process_streaming_eof_frame(sender_mac)
             
         else:

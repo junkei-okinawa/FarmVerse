@@ -9,11 +9,6 @@
 
 use crate::hardware::camera::StreamingCameraConfig;
 use crate::communication::esp_now::sender::{EspNowSender, EspNowError};
-use crate::mac_address::MacAddress;
-use esp_idf_svc::hal::delay::FreeRtos;
-use log::{debug, info, warn, error};
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 
 /// メッセージタイプ
 #[derive(Debug, PartialEq, Clone, Copy)]
