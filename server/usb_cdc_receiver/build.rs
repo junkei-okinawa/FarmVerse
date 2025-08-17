@@ -64,4 +64,32 @@ fn main() {
 
     // Make App_config available as a system environment variable.
     embuild::espidf::sysenv::output();
+
+    // --- Add build-time buffer size configuration ---
+    use std::env;
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    // 1. Get the value of the STREAMING_BUFFER_SIZE environment variable.
+    let buffer_size = env::var("STREAMING_BUFFER_SIZE")
+        .unwrap_or_else(|_| "1024".to_string()); // Default to 1024 if not set
+
+    // 2. Get the path to the output directory.
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    // 3. Create the buffer_config.rs file.
+    let dest_path = out_dir.join("buffer_config.rs");
+    let mut f = File::create(&dest_path).unwrap();
+
+    // 4. Write the const definition to the file.
+    write!(
+        f,
+        "pub const STREAMING_BUFFER_SIZE: usize = {};",
+        buffer_size
+    )
+    .unwrap();
+
+    println!("cargo:rerun-if-env-changed=STREAMING_BUFFER_SIZE");
+    println!("cargo:rerun-if-changed=build.rs");
 }

@@ -172,8 +172,10 @@ class StreamingImageProcessor:
             
             # 最初のチャンクでJPEGヘッダーを検証
             if stream_meta.total_chunks_received == 1:
-                if not self._validate_jpeg_header(chunk_data):
-                    logger.warning(f"Invalid JPEG header in first chunk for {sender_mac}")
+                is_valid, error_reason = self._validate_jpeg_header(chunk_data)
+                if not is_valid:
+                    # 具体的なエラー理由をログに出力
+                    logger.warning(f"Invalid JPEG header in first chunk for {sender_mac}: {error_reason}")
                     logger.debug(f"First chunk data: {chunk_data[:20].hex() if len(chunk_data) >= 20 else chunk_data.hex()}")
                     # JPEGヘッダーが無効でも処理を続行（EOF後に検証）
                     logger.info(f"Continuing stream processing for {sender_mac} despite invalid header")
@@ -340,9 +342,17 @@ class StreamingImageProcessor:
         import shutil
         shutil.move(temp_path, final_path)
     
-    def _validate_jpeg_header(self, chunk_data: bytes) -> bool:
-        """JPEGヘッダーの検証"""
-        return len(chunk_data) >= 2 and chunk_data.startswith(b'\xff\xd8')
+    def _validate_jpeg_header(self, chunk_data: bytes) -> tuple[bool, Optional[str]]:
+        """JPEGヘッダーを検証し、結果と理由を返します。
+
+        Returns:
+            tuple[bool, Optional[str]]: (検証結果, エラー理由)
+        """
+        if len(chunk_data) < 2:
+            return False, f"Header too short. Expected at least 2 bytes, got {len(chunk_data)}."
+        if not chunk_data.startswith(b'\xff\xd8'):
+            return False, f"Invalid SOI marker. Expected 0xFFD8, got {chunk_data[:2].hex()}."
+        return True, None
     
     async def _create_rotated_image(self, image_path: str, sender_mac: str) -> Optional[str]:
         """回転画像を作成（既存ロジックを維持）"""
