@@ -40,9 +40,11 @@ class FrameParser:
         
         # 異常値の早期検出（ESP-NOWペイロードの物理制限考慮）
         if data_len > 512:  # 通常のペイロード上限
-            raise FrameSyncError(f"Invalid data_len {data_len}: exceeds physical limit")
+            error_msg = f"Invalid data_len {data_len}: exceeds physical limit"
+            raise FrameSyncError(error_msg)
         if seq_num > 1000000:  # 現実的なシーケンス番号上限
-            raise FrameSyncError(f"Invalid seq_num {seq_num}: exceeds reasonable limit")
+            error_msg = f"Invalid seq_num {seq_num}: exceeds reasonable limit"
+            raise FrameSyncError(error_msg)
         
         return sender_mac, frame_type, seq_num, data_len
 
@@ -50,7 +52,8 @@ class FrameParser:
     def validate_frame_data(data_len: int, mac_bytes: bytes, max_data_len: int = 512) -> bool:
         """フレームデータの検証"""
         if data_len > max_data_len:
-            raise ValueError(f"Data length {data_len} exceeds maximum {max_data_len}")
+            error_msg = f"Data length {data_len} exceeds maximum {max_data_len}"
+            raise FrameSyncError(error_msg)
         
         if len(mac_bytes) != MAC_ADDRESS_LENGTH:
             raise ValueError(f"Invalid MAC address length: {len(mac_bytes)}")

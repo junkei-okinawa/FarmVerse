@@ -155,15 +155,27 @@ class SerialProtocol(asyncio.Protocol):
                     # 画像データ受信中でない場合は通常のタイムアウト処理
                     start_index_after_timeout = self.buffer.find(START_MARKER, 1)
                     if start_index_after_timeout != -1:
-                        logger.warning(f"Discarding {start_index_after_timeout} bytes due to frame timeout.")
+                        # SUPPRESS_DISCARD_LOGSの設定に従ってログレベルを調整
+                        if config.SUPPRESS_DISCARD_LOGS:
+                            logger.debug(f"Discarding {start_index_after_timeout} bytes due to frame timeout.")
+                        else:
+                            logger.warning(f"Discarding {start_index_after_timeout} bytes due to frame timeout.")
                         self.buffer = self.buffer[start_index_after_timeout:]
                     else:
                         first_start_marker = self.buffer.find(START_MARKER)
                         if first_start_marker > 0:
-                            logger.warning(f"Removing {first_start_marker} bytes before first START_MARKER")
+                            # SUPPRESS_DISCARD_LOGSの設定に従ってログレベルを調整
+                            if config.SUPPRESS_DISCARD_LOGS:
+                                logger.debug(f"Removing {first_start_marker} bytes before first START_MARKER")
+                            else:
+                                logger.warning(f"Removing {first_start_marker} bytes before first START_MARKER")
                             self.buffer = self.buffer[first_start_marker:]
                         elif first_start_marker == -1:
-                            logger.warning("No START_MARKER found after frame timeout. Clearing buffer.")
+                            # SUPPRESS_DISCARD_LOGSの設定に従ってログレベルを調整
+                            if config.SUPPRESS_DISCARD_LOGS:
+                                logger.debug("No START_MARKER found after frame timeout. Clearing buffer.")
+                            else:
+                                logger.warning("No START_MARKER found after frame timeout. Clearing buffer.")
                             self.buffer.clear()
                         else:
                             logger.info("Buffer already starts with START_MARKER, keeping existing data.")
@@ -184,9 +196,11 @@ class SerialProtocol(asyncio.Protocol):
 
             if start_index > 0:
                 discarded_data = self.buffer[:start_index]
-                logger.warning(
-                    f"Discarding {start_index} bytes before start marker: {discarded_data.hex()}"
-                )
+                # SUPPRESS_DISCARD_LOGSの設定に従ってログレベルを調整
+                if config.SUPPRESS_DISCARD_LOGS:
+                    logger.debug(f"Discarding {start_index} bytes before start marker: {discarded_data.hex()}")
+                else:
+                    logger.warning(f"Discarding {start_index} bytes before start marker: {discarded_data.hex()}")
                 if config.DEBUG_FRAME_PARSING:
                     # 破棄されたデータの詳細解析
                     ascii_data = discarded_data.decode('ascii', errors='ignore')
@@ -235,9 +249,37 @@ class SerialProtocol(asyncio.Protocol):
                 if config.SUPPRESS_SYNC_ERRORS:
                     logger.debug(f"Frame sync adjustment: {e}")
                 else:
-                    logger.warning(f"Frame sync issue: {e}")
+                    logger.error(f"Frame decode error: {e}")
+                
+                # フレーム境界同期の修正：より保守的な同期回復
+                # 1. 現在のSTART_MARKERから最小限のバイトを削除
+                skip_bytes = min(4, len(self.buffer))  # 4バイトまたはバッファサイズの小さい方
+                logger.debug(f"Frame sync failed, skipping {skip_bytes} bytes for boundary realignment")
+                self.buffer = self.buffer[skip_bytes:]
+                
+                # 2. 次のSTART_MARKERを探す
+                next_start = self.buffer.find(START_MARKER)
+                if next_start != -1 and next_start > 0:
+                    logger.debug(f"Found next START_MARKER at position {next_start}, discarding {next_start} bytes")
+                    self.buffer = self.buffer[next_start:]
+                elif len(self.buffer) > 1000:  # バッファが大きすぎる場合のみクリア
+                    logger.debug("Buffer too large without valid frame, clearing")
+                    self.buffer.clear()
+                
+                self.frame_start_time = None
+                continue
             except (ValueError, IndexError) as e:
-                logger.error(f"Frame decode error: {e}")
+                # FrameSyncErrorはValueErrorを継承しているので、ここには来ないはず
+                if "exceeds physical limit" in str(e):
+                    if config.SUPPRESS_SYNC_ERRORS:
+                        logger.debug(f"Frame decode error: {e}")
+                    else:
+                        logger.error(f"Frame decode error: {e}")
+                else:
+                    if config.SUPPRESS_SYNC_ERRORS:
+                        logger.debug(f"Frame decode error: {e}")
+                    else:
+                        logger.error(f"Frame decode error: {e}")
                     
                 if config.DEBUG_FRAME_PARSING:
                     # デバッグ情報を出力
