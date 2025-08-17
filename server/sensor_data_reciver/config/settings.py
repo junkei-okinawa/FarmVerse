@@ -34,6 +34,7 @@ class Config:
     DEBUG_FRAME_PARSING: bool = os.environ.get("DEBUG_FRAME_PARSING", "true").lower() == "true"
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "DEBUG")  # DEBUG, INFO, WARNING, ERROR, CRITICAL
     SUPPRESS_SYNC_ERRORS: bool = os.environ.get("SUPPRESS_SYNC_ERRORS", "false").lower() == "true"
+    SUPPRESS_DISCARD_LOGS: bool = os.environ.get("SUPPRESS_DISCARD_LOGS", "false").lower() == "true"
     
     # Sleep duration configuration
     DEFAULT_SLEEP_DURATION_S: int = 60  # Default sleep duration for ESP32-CAM in seconds

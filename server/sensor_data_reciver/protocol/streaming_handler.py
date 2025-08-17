@@ -118,7 +118,11 @@ class StreamingSerialProtocol(asyncio.Protocol):
             
             if start_index > 0:
                 discarded_data = self.buffer[:start_index]
-                logger.warning(f"Discarding {start_index} bytes: {discarded_data.hex()}")
+                # SUPPRESS_DISCARD_LOGSの設定に従ってログレベルを調整
+                if config.SUPPRESS_DISCARD_LOGS:
+                    logger.debug(f"Discarding {start_index} bytes: {discarded_data.hex()}")
+                else:
+                    logger.warning(f"Discarding {start_index} bytes: {discarded_data.hex()}")
                 self.buffer = self.buffer[start_index:]
                 self.frame_start_time = time.monotonic()
                 continue
@@ -153,7 +157,17 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 FrameParser.validate_frame_data(data_len, mac_bytes, config.MAX_DATA_LEN)
                 
             except (ValueError, IndexError) as e:
-                logger.error(f"Frame decode error: {e}")
+                # FrameSyncErrorの場合はSUPPRESS_SYNC_ERRORSの設定に従う
+                if "exceeds physical limit" in str(e):
+                    if config.SUPPRESS_SYNC_ERRORS:
+                        logger.debug(f"Frame decode error: {e}")
+                    else:
+                        logger.error(f"Frame decode error: {e}")
+                else:
+                    if config.SUPPRESS_SYNC_ERRORS:
+                        logger.debug(f"Frame decode error: {e}")
+                    else:
+                        logger.error(f"Frame decode error: {e}")
                 if config.DEBUG_FRAME_PARSING:
                     logger.debug(f"Buffer content around error: {self.buffer[:50].hex()}")
                 await self._handle_frame_error()
