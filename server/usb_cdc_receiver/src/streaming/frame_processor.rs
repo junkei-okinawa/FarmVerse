@@ -80,7 +80,7 @@ pub enum ProcessingResult {
         payload: Vec<u8>,
         total_bytes: usize,
     },
-    /// フレームが不完全（更多データが必要）
+    /// フレームが不完全（更なるデータが必要）
     IncompleteFrame {
         needed_bytes: usize,
     },
@@ -122,11 +122,19 @@ pub struct FrameProcessor {
     last_sequence_error: Option<u16>,
 }
 
+// ビルド時に生成されるバッファサイズ設定をインクルード
+include!(concat!(env!("OUT_DIR"), "/buffer_config.rs"));
+
 impl FrameProcessor {
-    /// 新しいフレームプロセッサを作成
+    /// 新しいフレームプロセッサを作成（デフォルトバッファサイズ）
     pub fn new() -> Self {
+        Self::with_capacity(STREAMING_BUFFER_SIZE) // ビルド時に設定された定数を使用
+    }
+
+    /// バッファサイズを指定してフレームプロセッサを作成
+    pub fn with_capacity(capacity: usize) -> Self {
         FrameProcessor {
-            buffer: Vec::with_capacity(256), // メモリ使用量削減: 1024→256
+            buffer: Vec::with_capacity(capacity),
             expected_sequence: 0,
             frames_processed: 0,
             frames_error: 0,
@@ -179,11 +187,16 @@ impl FrameProcessor {
         // バッファサイズ制限（メモリ保護）
         const MAX_BUFFER_SIZE: usize = 32768; // 32KB
         if self.buffer.len() > MAX_BUFFER_SIZE {
-            warn!("Buffer size exceeded limit, clearing: {} bytes", self.buffer.len());
-            self.buffer.clear();
+            let drain_len = self.buffer.len() - MAX_BUFFER_SIZE;
+            warn!(
+                "Buffer size exceeded limit ({} bytes), dropping oldest {} bytes to preserve recent data.",
+                self.buffer.len(),
+                drain_len
+            );
+            self.buffer.drain(0..drain_len);
             results.push(ProcessingResult::FrameError {
                 error: StreamingError::Other("Buffer overflow".to_string()),
-                consumed_bytes: 0,
+                consumed_bytes: drain_len, // 破棄したバイト数を記録
             });
         }
         

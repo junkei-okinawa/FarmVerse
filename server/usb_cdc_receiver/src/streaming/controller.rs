@@ -26,6 +26,8 @@ pub struct StreamingConfig {
     pub usb_max_retries: u32,
     /// USB転送リトライの基本遅延時間（ミリ秒）
     pub usb_retry_base_delay_ms: u32,
+    /// USB転送リトライの最大遅延時間（ミリ秒）
+    pub usb_retry_max_delay_ms: u32,
     /// バッファクリーンアップ間隔（ミリ秒）
     pub cleanup_interval_ms: u64,
     /// 統計レポート間隔（ミリ秒）
@@ -40,6 +42,7 @@ impl Default for StreamingConfig {
             usb_timeout_ms: 100,              // 100ms timeout
             usb_max_retries: 3,               // 最大3回リトライ
             usb_retry_base_delay_ms: 10,      // 基本遅延10ms
+            usb_retry_max_delay_ms: 1000,     // 最大遅延1000ms
             cleanup_interval_ms: 10_000,      // 10秒ごとにクリーンアップ
             stats_report_interval_ms: 30_000, // 30秒ごとに統計レポート
             device_manager_config: StreamManagerConfig::default(),
@@ -329,9 +332,9 @@ impl StreamingController {
                     
                     // 指数バックオフによる遅延後にリトライ
                     let base_delay = self.config.usb_retry_base_delay_ms;
-                    // Exponential backoff: base_delay * 2^(retry_count - 1), capped at 1000ms
+                    // Exponential backoff: base_delay * 2^(retry_count - 1), capped at config.usb_retry_max_delay_ms
                     let backoff = (base_delay as u32).saturating_mul(1 << (retry_count - 1));
-                    let delay_ms = backoff.min(1000);
+                    let delay_ms = backoff.min(self.config.usb_retry_max_delay_ms);
                     esp_idf_svc::hal::delay::FreeRtos::delay_ms(delay_ms);
                 }
             }
