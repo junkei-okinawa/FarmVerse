@@ -333,7 +333,9 @@ impl StreamingController {
                     // 指数バックオフによる遅延後にリトライ
                     let base_delay = self.config.usb_retry_base_delay_ms;
                     // Exponential backoff: base_delay * 2^(retry_count - 1), capped at config.usb_retry_max_delay_ms
-                    let backoff = (base_delay as u32).saturating_mul(1 << (retry_count - 1));
+                    // オーバーフロー防止のためシフト量を制限
+                    let shift = ((retry_count - 1).min(31)) as u32;
+                    let backoff = (base_delay as u32).saturating_mul(1 << shift);
                     let delay_ms = backoff.min(self.config.usb_retry_max_delay_ms);
                     esp_idf_svc::hal::delay::FreeRtos::delay_ms(delay_ms);
                 }

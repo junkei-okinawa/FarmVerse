@@ -346,10 +346,10 @@ fn main() -> Result<()> {
                 info!("Registering camera {} ({}/{})", camera.name, index + 1, cameras.len());
                 match controller.register_device(device_id, device_name) {
                     Ok(()) => {
-                        // info!("✓ Registered camera: {}", camera.name);  // 一時的に無効化
+                        info!("✓ Registered camera: {}", camera.name);
                     }
                     Err(e) => {
-                        // warn!("Failed to register camera {}: {:?}", camera.name, e);  // 一時的に無効化
+                        warn!("Failed to register camera {}: {:?}", camera.name, e);
                     }
                 }
             }

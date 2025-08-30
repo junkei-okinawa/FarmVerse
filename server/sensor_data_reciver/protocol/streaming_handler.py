@@ -379,14 +379,10 @@ class StreamingSerialProtocol(asyncio.Protocol):
         
         # 古い送信履歴をクリーンアップ（1時間以上前のものを削除）
         cleanup_threshold = current_time - 3600  # 1時間
-        to_remove = [mac for mac, timestamp in self.sleep_command_sent.items() if timestamp < cleanup_threshold]
-        for mac in to_remove:
-            del self.sleep_command_sent[mac]
+        self.sleep_command_sent = {mac: timestamp for mac, timestamp in self.sleep_command_sent.items() if timestamp >= cleanup_threshold}
         
         # EOF処理済みフラグもクリーンアップ（1時間以上前のものを削除）
-        eof_to_remove = [mac for mac, timestamp in self.eof_processed.items() if timestamp < cleanup_threshold]
-        for mac in eof_to_remove:
-            del self.eof_processed[mac]
+        self.eof_processed = {mac: timestamp for mac, timestamp in self.eof_processed.items() if timestamp >= cleanup_threshold}
         
         # 重複送信チェック（10秒以内の重複を防止）
         if sender_mac in self.sleep_command_sent:
