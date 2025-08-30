@@ -12,7 +12,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 5.1.6
+    version: 5.1.3
 direct_dependencies:
 - espressif/onewire_bus
 manifest_hash: 88b9dfe9cea488201a4cfe7f14984fd23dc0634f7569dc28758f56dd4a845675

@@ -10,7 +10,7 @@ from .constants import (
     MAC_ADDRESS_LENGTH, FRAME_TYPE_LENGTH, SEQUENCE_NUM_LENGTH, LENGTH_FIELD_BYTES,
     CHECKSUM_LENGTH
 )
-from .frame_parser import FrameParser
+from .frame_parser import FrameParser, FrameSyncError
 
 # 修正: 絶対インポートまたは動的インポートを使用
 import sys
@@ -56,6 +56,15 @@ class SerialProtocol(asyncio.Protocol):
         
         # 電圧情報を一時保存（EOFフレーム時のスリープコマンド送信用）
         self.voltage_cache = {}  # {sender_mac: voltage}
+        
+        # スリープコマンド送信履歴を追跡（重複送信防止用）
+        self.sleep_command_sent = {}  # {sender_mac: timestamp}
+        
+        # EOF処理済みフラグ（重複EOF処理防止用）
+        self.eof_processed = {}  # {sender_mac: timestamp}
+        
+        # 画像データの有無を記録（HASHフレーム時に設定、EOF時に参照）
+        self.has_image_data_cache = {}  # {sender_mac: bool}
         
         # シーケンス番号追跡（データフレームの順序確認用）
         self.sequence_tracking = {}  # {sender_mac: last_sequence_number}
@@ -155,15 +164,27 @@ class SerialProtocol(asyncio.Protocol):
                     # 画像データ受信中でない場合は通常のタイムアウト処理
                     start_index_after_timeout = self.buffer.find(START_MARKER, 1)
                     if start_index_after_timeout != -1:
-                        logger.warning(f"Discarding {start_index_after_timeout} bytes due to frame timeout.")
+                        # SUPPRESS_DISCARD_LOGSの設定に従ってログレベルを調整
+                        if config.SUPPRESS_DISCARD_LOGS:
+                            logger.debug(f"Discarding {start_index_after_timeout} bytes due to frame timeout.")
+                        else:
+                            logger.warning(f"Discarding {start_index_after_timeout} bytes due to frame timeout.")
                         self.buffer = self.buffer[start_index_after_timeout:]
                     else:
                         first_start_marker = self.buffer.find(START_MARKER)
                         if first_start_marker > 0:
-                            logger.warning(f"Removing {first_start_marker} bytes before first START_MARKER")
+                            # SUPPRESS_DISCARD_LOGSの設定に従ってログレベルを調整
+                            if config.SUPPRESS_DISCARD_LOGS:
+                                logger.debug(f"Removing {first_start_marker} bytes before first START_MARKER")
+                            else:
+                                logger.warning(f"Removing {first_start_marker} bytes before first START_MARKER")
                             self.buffer = self.buffer[first_start_marker:]
                         elif first_start_marker == -1:
-                            logger.warning("No START_MARKER found after frame timeout. Clearing buffer.")
+                            # SUPPRESS_DISCARD_LOGSの設定に従ってログレベルを調整
+                            if config.SUPPRESS_DISCARD_LOGS:
+                                logger.debug("No START_MARKER found after frame timeout. Clearing buffer.")
+                            else:
+                                logger.warning("No START_MARKER found after frame timeout. Clearing buffer.")
                             self.buffer.clear()
                         else:
                             logger.info("Buffer already starts with START_MARKER, keeping existing data.")
@@ -184,9 +205,11 @@ class SerialProtocol(asyncio.Protocol):
 
             if start_index > 0:
                 discarded_data = self.buffer[:start_index]
-                logger.warning(
-                    f"Discarding {start_index} bytes before start marker: {discarded_data.hex()}"
-                )
+                # SUPPRESS_DISCARD_LOGSの設定に従ってログレベルを調整
+                if config.SUPPRESS_DISCARD_LOGS:
+                    logger.debug(f"Discarding {start_index} bytes before start marker: {discarded_data.hex()}")
+                else:
+                    logger.warning(f"Discarding {start_index} bytes before start marker: {discarded_data.hex()}")
                 if config.DEBUG_FRAME_PARSING:
                     # 破棄されたデータの詳細解析
                     ascii_data = discarded_data.decode('ascii', errors='ignore')
@@ -211,40 +234,81 @@ class SerialProtocol(asyncio.Protocol):
                 
                 # フレーム受信詳細をデバッグ出力
                 if config.DEBUG_FRAME_PARSING:
-                    logger.debug(f"Frame header: MAC={sender_mac}, Type={frame_type}, Seq={seq_num}, DataLen={data_len}")
+                    frame_type_name = {
+                        FRAME_TYPE_DATA: "DATA",
+                        FRAME_TYPE_HASH: "HASH", 
+                        FRAME_TYPE_EOF: "EOF"
+                    }.get(frame_type, f"UNKNOWN({frame_type})")
+                    logger.debug(f"Parsed frame header: {frame_type_name} from {sender_mac}, seq: {seq_num}, data_len: {data_len}")
+                
+                # ヘッダー長の計算
+                header_len = len(START_MARKER) + MAC_ADDRESS_LENGTH + FRAME_TYPE_LENGTH + SEQUENCE_NUM_LENGTH + LENGTH_FIELD_BYTES
+                total_frame_len = header_len + data_len + CHECKSUM_LENGTH + len(END_MARKER)
+                
+                if config.DEBUG_FRAME_PARSING:
+                    logger.debug(f"Frame calculation: header_len={header_len}, data_len={data_len}, checksum_len={CHECKSUM_LENGTH}, end_marker_len={len(END_MARKER)}, total_frame_len={total_frame_len}, buffer_len={len(self.buffer)}")
                 
                 # MACアドレス長の検証
                 header_start = len(START_MARKER)
                 mac_bytes = self.buffer[header_start : header_start + MAC_ADDRESS_LENGTH]
                 FrameParser.validate_frame_data(data_len, mac_bytes, config.MAX_DATA_LEN)
                 
-            except (ValueError, IndexError) as e:
-                logger.error(f"Frame decode error: {e}. Discarding frame.")
-                if config.DEBUG_FRAME_PARSING:
-                    # デバッグ情報を出力
-                    header_size = len(START_MARKER) + MAC_ADDRESS_LENGTH + FRAME_TYPE_LENGTH + SEQUENCE_NUM_LENGTH + LENGTH_FIELD_BYTES
-                    if len(self.buffer) >= header_size:
-                        header_data = self.buffer[:header_size]
-                        logger.debug(f"Invalid header data: {header_data.hex()}")
+            except FrameSyncError as e:
+                # フレーム同期エラーの場合はログレベルを調整
+                if config.SUPPRESS_SYNC_ERRORS:
+                    logger.debug(f"Frame sync adjustment: {e}")
+                else:
+                    logger.error(f"Frame decode error: {e}")
                 
-                # より積極的な同期回復
-                # 1. 次のスタートマーカーを探す
-                next_start = self.buffer.find(START_MARKER, 1)
-                if next_start != -1:
+                # フレーム境界同期の修正：より保守的な同期回復
+                # 1. 現在のSTART_MARKERから最小限のバイトを削除
+                skip_bytes = min(4, len(self.buffer))  # 4バイトまたはバッファサイズの小さい方
+                logger.debug(f"Frame sync failed, skipping {skip_bytes} bytes for boundary realignment")
+                self.buffer = self.buffer[skip_bytes:]
+                
+                # 2. 次のSTART_MARKERを探す
+                next_start = self.buffer.find(START_MARKER)
+                if next_start != -1 and next_start > 0:
                     logger.debug(f"Found next START_MARKER at position {next_start}, discarding {next_start} bytes")
                     self.buffer = self.buffer[next_start:]
-                else:
-                    # 2. EOFマーカーがあるかチェック（破損したフレームの残骸を処理）
-                    for eof_pattern in [b'---EOF---\r\n', b'EOF\r\n', b'EOF']:
-                        eof_pos = self.buffer.find(eof_pattern)
-                        if eof_pos != -1:
-                            logger.debug(f"Found EOF marker at position {eof_pos}, processing and clearing")
-                            self._handle_raw_eof_markers()
-                            break
+                elif len(self.buffer) > 1000:  # バッファが大きすぎる場合のみクリア
+                    logger.debug("Buffer too large without valid frame, clearing")
+                    self.buffer.clear()
+                
+                self.frame_start_time = None
+                continue
+            except (ValueError, IndexError) as e:
+                # FrameSyncErrorはValueErrorを継承しているので、ここには来ないはず
+                if "exceeds physical limit" in str(e):
+                    if config.SUPPRESS_SYNC_ERRORS:
+                        logger.debug(f"Frame decode error: {e}")
                     else:
-                        # 3. 全て失敗した場合、バッファをクリア
-                        logger.debug("No recovery anchor found, clearing entire buffer")
-                        self.buffer.clear()
+                        logger.error(f"Frame decode error: {e}")
+                else:
+                    if config.SUPPRESS_SYNC_ERRORS:
+                        logger.debug(f"Frame decode error: {e}")
+                    else:
+                        logger.error(f"Frame decode error: {e}")
+                    
+                if config.DEBUG_FRAME_PARSING:
+                    # デバッグ情報を出力
+                    buffer_preview_size = min(len(self.buffer), 64)
+                    logger.debug(f"Buffer content around error: {self.buffer[:buffer_preview_size].hex()}")
+                
+                # フレーム境界同期の修正：より保守的な同期回復
+                # 1. 現在のSTART_MARKERから最小限のバイトを削除
+                skip_bytes = min(4, len(self.buffer))  # 4バイトまたはバッファサイズの小さい方
+                logger.debug(f"Frame decode failed, skipping {skip_bytes} bytes for boundary realignment")
+                self.buffer = self.buffer[skip_bytes:]
+                
+                # 2. 次のSTART_MARKERを探す
+                next_start = self.buffer.find(START_MARKER)
+                if next_start != -1 and next_start > 0:
+                    logger.debug(f"Found next START_MARKER at position {next_start}, discarding {next_start} bytes")
+                    self.buffer = self.buffer[next_start:]
+                elif len(self.buffer) > 1000:  # バッファが大きすぎる場合のみクリア
+                    logger.debug("Buffer too large without valid frame, clearing")
+                    self.buffer.clear()
                 
                 self.frame_start_time = None
                 continue
@@ -263,6 +327,11 @@ class SerialProtocol(asyncio.Protocol):
             # データ部分の位置を計算
             data_start_index = len(START_MARKER) + MAC_ADDRESS_LENGTH + FRAME_TYPE_LENGTH + SEQUENCE_NUM_LENGTH + LENGTH_FIELD_BYTES
             chunk_data = self.buffer[data_start_index : data_start_index + data_len]
+            
+            if config.DEBUG_FRAME_PARSING:
+                logger.debug(f"Data extraction: start_index={data_start_index}, data_len={data_len}")
+                logger.debug(f"Raw chunk_data (first 20 bytes): {chunk_data[:20].hex()}")
+                logger.debug(f"Expected JPEG header check: {chunk_data[:2].hex() if len(chunk_data) >= 2 else 'insufficient data'}")
             
             # チェックサム部分の位置
             checksum_start = data_start_index + data_len
@@ -345,15 +414,30 @@ class SerialProtocol(asyncio.Protocol):
             logger.warning(f"Invalid HASH payload format from {sender_mac}: {payload_str}")
             return
 
+        hash_value = payload_split[0]
         volt_log_entry = payload_split[1]
         temp_log_entry = payload_split[2] if len(payload_split) > 2 else ""
 
         # 電圧・温度情報を抽出
         voltage = DataParser.extract_voltage_with_validation(volt_log_entry, sender_mac)
         temperature = DataParser.extract_temperature_with_validation(temp_log_entry, sender_mac)
+        
+        logger.info(f"Extracted voltage for {sender_mac}: {voltage}% from '{volt_log_entry}'")
 
         # 電圧情報をキャッシュに保存（EOFフレーム時のスリープコマンド送信用）
         self.voltage_cache[sender_mac] = voltage
+
+        # ダミーハッシュを検出して画像データの有無を判定
+        DUMMY_HASH = "0000000000000000000000000000000000000000000000000000000000000000"
+        has_image_data = hash_value != DUMMY_HASH
+        
+        # 画像データの有無をキャッシュに記録（EOF時の判定用）
+        self.has_image_data_cache[sender_mac] = has_image_data
+        
+        if has_image_data:
+            logger.info(f"Image data expected for {sender_mac} (hash: {hash_value[:16]}...)")
+        else:
+            logger.info(f"No image data expected for {sender_mac} (dummy hash detected)")
 
         # InfluxDBに書き込み（非同期・エラー耐性付き）
         # デバイス検証案件のため、100%電圧も含めて全ての電圧データを記録
@@ -363,24 +447,48 @@ class SerialProtocol(asyncio.Protocol):
         except Exception as e:
             logger.error(f"Error initiating InfluxDB write for {sender_mac}: {e} (continuing with other operations)")
 
-        # HASHフレーム受信時にスリープコマンドを送信（EOFフレーム問題の回避策）
-        # EOFフレームが正常に受信されない問題があるため、HASHフレーム時点でスリープコマンドを送信
-        if voltage is not None:
-            logger.info(f"Sending sleep command after HASH frame for {sender_mac} (voltage: {voltage})")
-            self._send_sleep_command(sender_mac, voltage)
+        # 画像データの有無に関わらず、スリープコマンドは常にEOF処理後に送信
+        # （xiaの受信体制が整ってから）
+        if has_image_data:
+            logger.info(f"Image data expected for {sender_mac} (hash: {hash_value[:16]}...), will send sleep command after EOF")
         else:
-            logger.warning(f"No voltage data available for sleep command for {sender_mac}")
+            logger.info(f"No image data expected for {sender_mac} (dummy hash detected), will send sleep command after EOF")
 
     def _send_sleep_command(self, sender_mac: str, voltage: float):
-        """スリープコマンドを送信"""
+        """スリープコマンドを送信（重複送信防止機能付き）"""
+        current_time = time.time()
+        
+        # 古い送信履歴をクリーンアップ（1時間以上前のものを削除）
+        cleanup_threshold = current_time - 3600  # 1時間
+        to_remove = [mac for mac, timestamp in self.sleep_command_sent.items() if timestamp < cleanup_threshold]
+        for mac in to_remove:
+            del self.sleep_command_sent[mac]
+        
+        # EOF処理済みフラグもクリーンアップ（1時間以上前のものを削除）
+        eof_to_remove = [mac for mac, timestamp in self.eof_processed.items() if timestamp < cleanup_threshold]
+        for mac in eof_to_remove:
+            del self.eof_processed[mac]
+        
+        # 重複送信チェック（10秒以内の重複を防止）
+        if sender_mac in self.sleep_command_sent:
+            last_sent_time = self.sleep_command_sent[sender_mac]
+            time_diff = current_time - last_sent_time
+            if time_diff < 10.0:
+                logger.info(f"Sleep command already sent to {sender_mac} {time_diff:.1f}s ago, skipping duplicate")
+                return
+        
         sleep_duration_s = determine_sleep_duration(voltage)
         command_to_gateway = format_sleep_command_to_gateway(sender_mac, sleep_duration_s)
         command_bytes = command_to_gateway.encode('utf-8')
+        
+        logger.info(f"Sending sleep command for {sender_mac} with voltage {voltage}% -> {sleep_duration_s}s sleep")
 
         if self.transport:
             try:
                 self.transport.write(command_bytes)
-                logger.info(f"Sent sleep command to gateway for {sender_mac}: {command_to_gateway.strip()}")
+                logger.info(f"Sent sleep command for {sender_mac}: {command_to_gateway.strip()}")
+                # 送信履歴を記録
+                self.sleep_command_sent[sender_mac] = current_time
             except Exception as e:
                 logger.error(f"Error writing sleep command to serial for {sender_mac}: {e}")
         else:
@@ -388,6 +496,18 @@ class SerialProtocol(asyncio.Protocol):
 
     def _process_eof_frame(self, sender_mac: str):
         """EOF フレームの処理"""
+        current_time = time.time()
+        
+        # EOF重複処理防止チェック（5秒以内の重複EOFをスキップ）
+        if sender_mac in self.eof_processed:
+            time_since_last_eof = current_time - self.eof_processed[sender_mac]
+            if time_since_last_eof < 5:  # 5秒以内の重複はスキップ
+                logger.warning(f"Skipping duplicate EOF for {sender_mac} (last processed {time_since_last_eof:.1f}s ago)")
+                return
+        
+        # EOF処理済みフラグを設定
+        self.eof_processed[sender_mac] = current_time
+        
         if sender_mac in self.image_buffers:
             image_data = bytes(self.image_buffers[sender_mac])
             image_size = len(image_data)
@@ -436,19 +556,53 @@ class SerialProtocol(asyncio.Protocol):
         self._send_sleep_command_after_eof(sender_mac)
 
     def _send_sleep_command_after_eof(self, sender_mac: str):
-        """EOF処理完了後にスリープコマンドを送信"""
-        # 電圧キャッシュからデータを取得
-        if sender_mac in self.voltage_cache:
-            voltage = self.voltage_cache[sender_mac]
-            if isinstance(voltage, float):
-                logger.info(f"Sending sleep command after EOF for {sender_mac} (voltage: {voltage})")
-                self._send_sleep_command(sender_mac, voltage)
-                # キャッシュから削除
-                del self.voltage_cache[sender_mac]
-            else:
-                logger.warning(f"Invalid voltage value for {sender_mac}: {voltage}. Cannot send sleep command.")
-        else:
+        """EOF処理完了後にスリープコマンドを送信（xiaの受信体制が整った後）"""
+        # 電圧キャッシュからデータを取得（存在チェック）
+        if sender_mac not in self.voltage_cache:
             logger.warning(f"No voltage cache found for {sender_mac}, cannot send sleep command")
+            return
+            
+        voltage = self.voltage_cache[sender_mac]
+        if not isinstance(voltage, float):
+            logger.warning(f"Invalid voltage value for {sender_mac}: {voltage}. Cannot send sleep command.")
+            return
+        
+        logger.info(f"Retrieved voltage from cache for {sender_mac}: {voltage}% (type: {type(voltage)})")
+        
+        # HASHフレーム時にキャッシュされた画像データの有無を確認（ログ用）
+        has_image_data = self.has_image_data_cache.get(sender_mac, True)
+        
+        if has_image_data:
+            logger.info(f"Will send sleep command after EOF for {sender_mac} (with image data, voltage: {voltage}%)")
+        else:
+            logger.info(f"Will send sleep command after EOF for {sender_mac} (no image data - dummy hash, voltage: {voltage}%)")
+        
+        # xiaがスリープコマンド待機状態に入るまで待機（2秒で安定動作確認済み）
+        delay_seconds = 2
+        logger.info(f"Waiting {delay_seconds} seconds for {sender_mac} to enter sleep command reception mode...")
+        
+        # 非同期待機を同期的に実行
+        import asyncio
+        try:
+            # イベントループが実行中かチェック
+            asyncio.get_running_loop()
+            # 既存のイベントループがある場合は非同期タスクとして実行
+            asyncio.create_task(self._delayed_sleep_command_send(sender_mac, voltage))
+        except RuntimeError:
+            # イベントループがない場合は同期的に待機
+            import time
+            time.sleep(delay_seconds)
+            self._send_sleep_command(sender_mac, voltage)
+            # キャッシュクリーンアップ
+            self._cleanup_device_cache(sender_mac)
+    
+    async def _delayed_sleep_command_send(self, sender_mac: str, voltage: float):
+        """遅延スリープコマンド送信（非同期版）"""
+        delay_seconds = 2  # 2秒で安定動作確認済み
+        await asyncio.sleep(delay_seconds)
+        self._send_sleep_command(sender_mac, voltage)
+        # キャッシュクリーンアップ
+        self._cleanup_device_cache(sender_mac)
 
     def _process_data_frame(self, sender_mac: str, chunk_data: bytes, seq_num: int):
         """DATA フレームの処理"""
@@ -485,6 +639,14 @@ class SerialProtocol(asyncio.Protocol):
         current_time = time.monotonic()
         self.last_receive_time[sender_mac] = current_time
         self.last_data_frame_time[sender_mac] = current_time
+
+    def _cleanup_device_cache(self, sender_mac: str):
+        """デバイス固有のキャッシュをクリーンアップ"""
+        if sender_mac in self.voltage_cache:
+            del self.voltage_cache[sender_mac]
+        if sender_mac in self.has_image_data_cache:
+            del self.has_image_data_cache[sender_mac]
+        logger.debug(f"Cleaned up cache for {sender_mac}")
 
     def connection_lost(self, exc):
         log_prefix = f"connection_lost ({id(self)}):"
@@ -678,8 +840,18 @@ class SerialProtocol(asyncio.Protocol):
                     
                 logger.debug(f"Validated remaining buffer: MAC={sender_mac}, Type={frame_type}, DataLen={data_len}")
                 
+            except FrameSyncError as e:
+                # フレーム同期エラーの場合はログレベルを調整
+                if config.SUPPRESS_SYNC_ERRORS:
+                    logger.debug(f"Frame sync adjustment in remaining buffer: {e}")
+                else:
+                    logger.warning(f"Frame sync issue in remaining buffer: {e}")
+                # バッファの先頭部分をデバッグ出力
+                debug_data = self.buffer[:min(50, len(self.buffer))]
+                logger.debug(f"Invalid buffer data: {debug_data.hex()}")
+                self.buffer.clear()
             except (ValueError, IndexError) as e:
-                logger.warning(f"Invalid frame header in remaining buffer: {e}, clearing")
+                logger.warning(f"Invalid frame header in remaining buffer: {e}")
                 # バッファの先頭部分をデバッグ出力
                 debug_data = self.buffer[:min(50, len(self.buffer))]
                 logger.debug(f"Invalid buffer data: {debug_data.hex()}")

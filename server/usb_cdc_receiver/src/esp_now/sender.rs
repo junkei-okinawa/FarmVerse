@@ -1,5 +1,5 @@
 use esp_idf_svc::sys::esp_now_send;
-use log::{error, info};
+use log::{error, info, warn};
 
 /// ESP-NOW送信エラー
 #[derive(Debug)]
@@ -54,10 +54,15 @@ impl EspNowSender {
     /// # 戻り値
     /// * `Result<(), EspNowSendError>` - 成功時はOk(())、失敗時はエラー
     pub fn send_data(&self, mac_address: [u8; 6], data: &[u8]) -> Result<(), EspNowSendError> {
+        use esp_idf_svc::hal::delay::FreeRtos;
+        
         // ピアは register_esp_now_peers() で登録済みなので、直接送信
         info!("ESP-NOW low-level send: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}, {} bytes",
               mac_address[0], mac_address[1], mac_address[2],
               mac_address[3], mac_address[4], mac_address[5], data.len());
+        
+        // ESP-NOWの送信前に遅延を追加（チャンネル競合防止）
+        FreeRtos::delay_ms(300);
         
         let result = unsafe {
             esp_now_send(
@@ -76,7 +81,7 @@ impl EspNowSender {
         }
     }
 
-    /// スリープコマンドを送信
+    /// スリープコマンドを送信（リトライ機構付き）
     /// 
     /// # 引数
     /// * `mac_str` - 送信先のMACアドレス文字列 ("XX:XX:XX:XX:XX:XX")
@@ -85,6 +90,8 @@ impl EspNowSender {
     /// # 戻り値
     /// * `Result<(), EspNowSendError>` - 成功時はOk(())、失敗時はエラー
     pub fn send_sleep_command(&self, mac_str: &str, sleep_seconds: u32) -> Result<(), EspNowSendError> {
+        use esp_idf_svc::hal::delay::FreeRtos;
+        
         info!("=== ESP-NOW Sleep Command Sending ===");
         info!("Target MAC: {}", mac_str);
         info!("Sleep Duration: {} seconds", sleep_seconds);
@@ -99,18 +106,31 @@ impl EspNowSender {
         info!("Sleep data bytes: {:02X} {:02X} {:02X} {:02X}",
               sleep_data[0], sleep_data[1], sleep_data[2], sleep_data[3]);
         
-        info!("Attempting ESP-NOW send...");
-        let result = self.send_data(mac_address, &sleep_data);
+        // リトライ機構付きで送信
+        const MAX_RETRIES: u32 = 3;
+        const RETRY_DELAY_MS: u32 = 200;
         
-        match &result {
-            Ok(()) => {
-                info!("✓ Sleep command sent successfully via ESP-NOW");
-            }
-            Err(e) => {
-                error!("✗ ESP-NOW send failed: {:?}", e);
+        for attempt in 1..=MAX_RETRIES {
+            info!("Attempting ESP-NOW send (attempt {}/{})", attempt, MAX_RETRIES);
+            
+            let result = self.send_data(mac_address, &sleep_data);
+            
+            match &result {
+                Ok(()) => {
+                    info!("✓ Sleep command sent successfully via ESP-NOW (attempt {})", attempt);
+                    return Ok(());
+                }
+                Err(e) => {
+                    warn!("✗ ESP-NOW send attempt {} failed: {:?}", attempt, e);
+                    if attempt < MAX_RETRIES {
+                        info!("Waiting {}ms before retry...", RETRY_DELAY_MS);
+                        FreeRtos::delay_ms(RETRY_DELAY_MS);
+                    }
+                }
             }
         }
         
-        result
+        error!("✗ All {} ESP-NOW send attempts failed for {}", MAX_RETRIES, mac_str);
+        Err(EspNowSendError::SendFailed(-1)) // All retries failed
     }
 }

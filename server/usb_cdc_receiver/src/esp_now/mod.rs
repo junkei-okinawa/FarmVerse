@@ -1,6 +1,9 @@
 pub mod frame;
 pub mod receiver;
 pub mod sender;
+pub mod message;
+
+pub use message::*;
 
 /// ESP-NOWフレームタイプを定義する列挙型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
