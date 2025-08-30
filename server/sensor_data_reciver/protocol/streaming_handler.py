@@ -59,6 +59,15 @@ class StreamingSerialProtocol(asyncio.Protocol):
         # 電圧情報キャッシュ（スリープコマンド送信用）
         self.voltage_cache = {}  # {sender_mac: voltage}
         
+        # スリープコマンド送信履歴を追跡（重複送信防止用）
+        self.sleep_command_sent = {}  # {sender_mac: timestamp}
+        
+        # 画像データの有無を記録（HASHフレーム時に設定、EOF時に参照）
+        self.has_image_data_cache = {}  # {sender_mac: bool}
+        
+        # EOF処理済みフラグ（重複EOF処理を防止）
+        self.eof_processed = {}  # {sender_mac: timestamp}
+        
         # 最後のデータフレーム受信時間
         self.last_data_frame_time = {}  # {sender_mac: timestamp}
         
@@ -255,6 +264,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
             logger.warning(f"Invalid HASH payload format: {payload_str}")
             return
         
+        hash_value = payload_split[0]
         volt_log_entry = payload_split[1]
         temp_log_entry = payload_split[2] if len(payload_split) > 2 else ""
         
@@ -262,8 +272,22 @@ class StreamingSerialProtocol(asyncio.Protocol):
         voltage = DataParser.extract_voltage_with_validation(volt_log_entry, sender_mac)
         temperature = DataParser.extract_temperature_with_validation(temp_log_entry, sender_mac)
         
+        logger.info(f"Extracted voltage for {sender_mac}: {voltage}% from '{volt_log_entry}'")
+        
         # 電圧情報をキャッシュ
         self.voltage_cache[sender_mac] = voltage
+        
+        # ダミーハッシュを検出して画像データの有無を判定
+        DUMMY_HASH = "0000000000000000000000000000000000000000000000000000000000000000"
+        has_image_data = hash_value != DUMMY_HASH
+        
+        # 画像データの有無をキャッシュに記録（EOF時の判定用）
+        self.has_image_data_cache[sender_mac] = has_image_data
+        
+        if has_image_data:
+            logger.info(f"Image data expected for {sender_mac} (hash: {hash_value[:16]}...)")
+        else:
+            logger.info(f"No image data expected for {sender_mac} (dummy hash detected)")
         
         # InfluxDBに書き込み
         try:
@@ -272,23 +296,26 @@ class StreamingSerialProtocol(asyncio.Protocol):
         except Exception as e:
             logger.error(f"InfluxDB write error for {sender_mac}: {e}")
         
-        # HASHフレーム受信時は既存ストリームを強制終了しない
-        # 代わりに、画像データが既に受信されている場合はそれを保持
-        if sender_mac not in self.streaming_processor.active_streams:
-            # 新規ストリーム開始
-            await self.streaming_processor.start_image_stream(
-                sender_mac, hash_data=payload_str
-            )
-            logger.debug(f"Started new image stream for {sender_mac} after HASH")
+        # 画像データがある場合のみストリーム管理を行う
+        # スリープコマンドはEOF処理後に送信（xiaの受信体制が整ってから）
+        if has_image_data:
+            # HASHフレーム受信時は既存ストリームを強制終了しない
+            # 代わりに、画像データが既に受信されている場合はそれを保持
+            if sender_mac not in self.streaming_processor.active_streams:
+                # 新規ストリーム開始
+                await self.streaming_processor.start_image_stream(
+                    sender_mac, hash_data=payload_str
+                )
+                logger.debug(f"Started new image stream for {sender_mac} after HASH")
+            else:
+                # 既存ストリームのメタデータを更新
+                stream_meta = self.streaming_processor.active_streams[sender_mac]
+                stream_meta.hash_data = payload_str
+                logger.debug(f"Updated existing stream metadata for {sender_mac}")
+            
+            logger.info(f"Will send sleep command after EOF for {sender_mac} (image data expected)")
         else:
-            # 既存ストリームのメタデータを更新
-            stream_meta = self.streaming_processor.active_streams[sender_mac]
-            stream_meta.hash_data = payload_str
-            logger.debug(f"Updated existing stream metadata for {sender_mac}")
-        
-        # HASHフレーム時点でスリープコマンドを送信
-        if voltage is not None:
-            await self._send_sleep_command(sender_mac, voltage)
+            logger.info(f"Will send sleep command after EOF for {sender_mac} (no image data - dummy hash)")
     
     async def _process_streaming_data_frame(self, sender_mac: str, 
                                           chunk_data: bytes, seq_num: int):
@@ -310,7 +337,20 @@ class StreamingSerialProtocol(asyncio.Protocol):
     
     async def _process_streaming_eof_frame(self, sender_mac: str):
         """EOFフレーム処理（ストリーミング対応）"""
+        current_time = time.time()
+        
+        # 重複EOF処理チェック（5秒以内の重複を防止）
+        if sender_mac in self.eof_processed:
+            last_processed_time = self.eof_processed[sender_mac]
+            time_diff = current_time - last_processed_time
+            if time_diff < 5.0:
+                logger.info(f"EOF already processed for {sender_mac} {time_diff:.1f}s ago, skipping duplicate")
+                return
+        
         logger.info(f"Processing EOF frame for {sender_mac}")
+        
+        # EOF処理済みとしてマーク
+        self.eof_processed[sender_mac] = current_time
         
         # ストリーミング画像を完成・保存
         final_path = await self.streaming_processor.finalize_image_stream(
@@ -334,31 +374,81 @@ class StreamingSerialProtocol(asyncio.Protocol):
         pass
     
     async def _send_sleep_command(self, sender_mac: str, voltage: float):
-        """スリープコマンド送信"""
+        """スリープコマンド送信（重複送信防止機能付き）"""
+        current_time = time.time()
+        
+        # 古い送信履歴をクリーンアップ（1時間以上前のものを削除）
+        cleanup_threshold = current_time - 3600  # 1時間
+        to_remove = [mac for mac, timestamp in self.sleep_command_sent.items() if timestamp < cleanup_threshold]
+        for mac in to_remove:
+            del self.sleep_command_sent[mac]
+        
+        # EOF処理済みフラグもクリーンアップ（1時間以上前のものを削除）
+        eof_to_remove = [mac for mac, timestamp in self.eof_processed.items() if timestamp < cleanup_threshold]
+        for mac in eof_to_remove:
+            del self.eof_processed[mac]
+        
+        # 重複送信チェック（10秒以内の重複を防止）
+        if sender_mac in self.sleep_command_sent:
+            last_sent_time = self.sleep_command_sent[sender_mac]
+            time_diff = current_time - last_sent_time
+            if time_diff < 10.0:
+                logger.info(f"Sleep command already sent to {sender_mac} {time_diff:.1f}s ago, skipping duplicate")
+                return
+        
         sleep_duration_s = determine_sleep_duration(voltage)
         command_to_gateway = format_sleep_command_to_gateway(sender_mac, sleep_duration_s)
         command_bytes = command_to_gateway.encode('utf-8')
+        
+        logger.info(f"Sending sleep command for {sender_mac} with voltage {voltage}% -> {sleep_duration_s}s sleep")
         
         if self.transport:
             try:
                 self.transport.write(command_bytes)
                 logger.info(f"Sent sleep command for {sender_mac}: {command_to_gateway.strip()}")
+                # 送信履歴を記録
+                self.sleep_command_sent[sender_mac] = current_time
             except Exception as e:
                 logger.error(f"Error sending sleep command for {sender_mac}: {e}")
         else:
             logger.warning(f"No transport available for sleep command to {sender_mac}")
     
     async def _send_sleep_command_after_eof(self, sender_mac: str):
-        """EOF処理後のスリープコマンド送信"""
-        if sender_mac in self.voltage_cache:
-            voltage = self.voltage_cache[sender_mac]
-            if isinstance(voltage, float):
-                await self._send_sleep_command(sender_mac, voltage)
-                del self.voltage_cache[sender_mac]
-            else:
-                logger.warning(f"Invalid voltage for {sender_mac}: {voltage}")
+        """EOF処理後のスリープコマンド送信（xiaの受信体制が整った後）"""
+        if sender_mac not in self.voltage_cache:
+            logger.warning(f"No voltage cache for {sender_mac}, cannot send sleep command")
+            return
+            
+        voltage = self.voltage_cache[sender_mac]
+        if not isinstance(voltage, float):
+            logger.warning(f"Invalid voltage for {sender_mac}: {voltage}")
+            return
+        
+        logger.info(f"Retrieved voltage from cache for {sender_mac}: {voltage}% (type: {type(voltage)})")
+        
+        # HASHフレーム時にキャッシュされた画像データの有無を確認（ログ用）
+        has_image_data = self.has_image_data_cache.get(sender_mac, True)
+        
+        if has_image_data:
+            logger.info(f"Will send sleep command after EOF for {sender_mac} (with image data, voltage: {voltage}%)")
         else:
-            logger.warning(f"No voltage cache for {sender_mac}")
+            logger.info(f"Will send sleep command after EOF for {sender_mac} (no image data - dummy hash, voltage: {voltage}%)")
+        
+        # xiaがスリープコマンド待機状態に入るまで待機
+        delay_seconds = 2
+        logger.info(f"Waiting {delay_seconds} seconds for {sender_mac} to enter sleep command reception mode...")
+        await asyncio.sleep(delay_seconds)
+        
+        # xiaの受信体制が整ったタイミングでスリープコマンドを送信
+        await self._send_sleep_command(sender_mac, voltage)
+        
+        # キャッシュから削除
+        try:
+            del self.voltage_cache[sender_mac]
+            if sender_mac in self.has_image_data_cache:
+                del self.has_image_data_cache[sender_mac]
+        except KeyError as e:
+            logger.warning(f"Cache cleanup error for {sender_mac}: {e}")
     
     async def _check_frame_timeout(self):
         """フレームタイムアウトチェック"""
