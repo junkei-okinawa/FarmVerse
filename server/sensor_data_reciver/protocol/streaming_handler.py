@@ -267,12 +267,18 @@ class StreamingSerialProtocol(asyncio.Protocol):
         hash_value = payload_split[0]
         volt_log_entry = payload_split[1]
         temp_log_entry = payload_split[2] if len(payload_split) > 2 else ""
+        tds_log_entry = payload_split[3] if len(payload_split) > 3 else ""
         
         # 電圧・温度情報を抽出
         voltage = DataParser.extract_voltage_with_validation(volt_log_entry, sender_mac)
         temperature = DataParser.extract_temperature_with_validation(temp_log_entry, sender_mac)
+        tds_voltage = DataParser.extract_tds_voltage_with_validation(tds_log_entry, sender_mac)
         
         logger.info(f"Extracted voltage for {sender_mac}: {voltage}% from '{volt_log_entry}'")
+        if tds_voltage is not None:
+            logger.info(f"Extracted TDS voltage for {sender_mac}: {tds_voltage}V")
+        else:
+            logger.debug(f"No TDS voltage data for {sender_mac}")
         
         # 電圧情報をキャッシュ
         self.voltage_cache[sender_mac] = voltage
@@ -291,7 +297,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
         
         # InfluxDBに書き込み
         try:
-            influx_client.write_sensor_data(sender_mac, voltage, temperature)
+            influx_client.write_sensor_data(sender_mac, voltage, temperature, tds_voltage)
             logger.info(f"Initiated InfluxDB write for {sender_mac}")
         except Exception as e:
             logger.error(f"InfluxDB write error for {sender_mac}: {e}")

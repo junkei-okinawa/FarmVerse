@@ -417,12 +417,18 @@ class SerialProtocol(asyncio.Protocol):
         hash_value = payload_split[0]
         volt_log_entry = payload_split[1]
         temp_log_entry = payload_split[2] if len(payload_split) > 2 else ""
+        tds_log_entry = payload_split[3] if len(payload_split) > 3 else ""
 
-        # 電圧・温度情報を抽出
+        # 電圧・温度・TDS電圧情報を抽出
         voltage = DataParser.extract_voltage_with_validation(volt_log_entry, sender_mac)
         temperature = DataParser.extract_temperature_with_validation(temp_log_entry, sender_mac)
+        tds_voltage = DataParser.extract_tds_voltage_with_validation(tds_log_entry, sender_mac)
         
         logger.info(f"Extracted voltage for {sender_mac}: {voltage}% from '{volt_log_entry}'")
+        if tds_voltage is not None:
+            logger.info(f"Extracted TDS voltage for {sender_mac}: {tds_voltage}V")
+        else:
+            logger.debug(f"No TDS voltage data for {sender_mac}")
 
         # 電圧情報をキャッシュに保存（EOFフレーム時のスリープコマンド送信用）
         self.voltage_cache[sender_mac] = voltage
@@ -442,7 +448,7 @@ class SerialProtocol(asyncio.Protocol):
         # InfluxDBに書き込み（非同期・エラー耐性付き）
         # デバイス検証案件のため、100%電圧も含めて全ての電圧データを記録
         try:
-            influx_client.write_sensor_data(sender_mac, voltage, temperature)
+            influx_client.write_sensor_data(sender_mac, voltage, temperature, tds_voltage)
             logger.info(f"Initiated InfluxDB write for {sender_mac}")
         except Exception as e:
             logger.error(f"Error initiating InfluxDB write for {sender_mac}: {e} (continuing with other operations)")

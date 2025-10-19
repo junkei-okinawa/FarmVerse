@@ -25,3 +25,8 @@ class VoltageDataProcessor:
     def parse_temperature_data(payload: str) -> Optional[float]:
         """温度データの解析（後方互換性メソッド）"""
         return DataParser.parse_temperature_data(payload)
+
+    @staticmethod
+    def parse_tds_voltage_data(payload: str) -> Optional[float]:
+        """TDS電圧データの解析（後方互換性メソッド）"""
+        return DataParser.parse_tds_voltage_data(payload)

@@ -62,7 +62,7 @@ class InfluxDBClient:
         self.client = None
         self.write_api = None
     
-    def write_sensor_data(self, sender_mac: str, voltage: float = None, temperature: float = None) -> bool:
+    def write_sensor_data(self, sender_mac: str, voltage: float = None, temperature: float = None, tds_voltage: float = None) -> bool:
         """センサーデータをInfluxDBに書き込み（非同期実行・エラー耐性付き）"""
         # テスト環境ではInfluxDB書き込みをスキップ
         if config.IS_TEST_ENV:
@@ -83,7 +83,7 @@ class InfluxDBClient:
             
         # InfluxDBへの書き込みを非同期で実行し、エラーが発生しても処理を継続する
         # asyncio.gatherを使用した構造化タスク管理
-        write_task = self._write_sensor_data_async(sender_mac, voltage, temperature)
+        write_task = self._write_sensor_data_async(sender_mac, voltage, temperature, tds_voltage)
         cleanup_task = self._cleanup_completed_tasks()
         
         # 両方のタスクを同時実行し、例外を適切に処理
@@ -100,7 +100,7 @@ class InfluxDBClient:
             logger.error(f"Error creating InfluxDB write task for {sender_mac}: {e}")
             return False
     
-    async def _write_sensor_data_async(self, sender_mac: str, voltage: float = None, temperature: float = None):
+    async def _write_sensor_data_async(self, sender_mac: str, voltage: float = None, temperature: float = None, tds_voltage: float = None):
         """非同期でInfluxDBにデータを書き込み"""
         try:
             # クライアントが初期化されていない場合はスキップ
@@ -116,8 +116,11 @@ class InfluxDBClient:
             if temperature is not None:
                 point.field("temperature", float(temperature))
             
-            if voltage is not None or temperature is not None:
-                logger.info(f"Writing data to InfluxDB for {sender_mac}: voltage={voltage}, temperature={temperature}")
+            if tds_voltage is not None:
+                point.field("tds_voltage", float(tds_voltage))
+            
+            if voltage is not None or temperature is not None or tds_voltage is not None:
+                logger.info(f"Writing data to InfluxDB for {sender_mac}: voltage={voltage}, temperature={temperature}, tds_voltage={tds_voltage}")
                 # タイムアウトを設定して書き込み実行
                 await asyncio.wait_for(
                     asyncio.to_thread(
