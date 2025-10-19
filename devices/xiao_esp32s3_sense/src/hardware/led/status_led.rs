@@ -39,7 +39,7 @@ impl StatusLed {
     /// LED制御に失敗した場合にエラーを返します
     pub fn turn_on(&mut self) -> Result<(), LedError> {
         self.led
-            .set_high()
+            .set_low()
             .map_err(|e| LedError::ControlFailed(format!("{:?}", e)))
     }
 
@@ -50,7 +50,7 @@ impl StatusLed {
     /// LED制御に失敗した場合にエラーを返します
     pub fn turn_off(&mut self) -> Result<(), LedError> {
         self.led
-            .set_low()
+            .set_high()
             .map_err(|e| LedError::ControlFailed(format!("{:?}", e)))
     }
 
