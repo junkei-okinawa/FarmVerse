@@ -1,6 +1,6 @@
 use esp_idf_svc::hal::{
     adc::{
-        attenuation::DB_12,
+        attenuation::DB_11,
         oneshot::{
             config::{AdcChannelConfig, Calibration},
             AdcChannelDriver, AdcDriver,
@@ -16,19 +16,21 @@ use crate::config::CONFIG;
 pub struct VoltageSensor;
 
 impl VoltageSensor {
-    /// ADC2を使用してGPIO PINからADC電圧を測定し、パーセンテージに変換
+    /// ADC1を使用してGPIO PINからADC電圧を測定し、パーセンテージに変換
+    /// WiFi競合を避けるため、WiFi初期化前に実行する必要があります
     /// 
     /// # Returns
+    /// - (電圧パーセンテージ, ADC1): 測定結果とADC1の所有権
     /// - 0-100: 正常な電圧パーセンテージ
     /// - 255: 測定エラー
     pub fn measure_voltage_percentage(
-        adc: ADC1,
+        mut adc: ADC1,
         gpio_pin: Gpio6,
-    ) -> anyhow::Result<u8> {
-        info!("ADC1を初期化しています (GPIO6)");
-        let adc_driver = AdcDriver::new(adc)?;
+    ) -> anyhow::Result<(u8, ADC1)> {
+        info!("ADC1を初期化しています (GPIO6, WiFi競合回避)");
+        let adc_driver = AdcDriver::new(&mut adc)?;
         let adc_config = AdcChannelConfig {
-            attenuation: DB_12,
+            attenuation: DB_11,
             calibration: Calibration::Curve,
             ..Default::default()
         };
@@ -62,10 +64,10 @@ impl VoltageSensor {
             }
         };
 
-        // リソースを明示的に解放
+        // ADCチャンネルを解放してADCドライバーからADC1を取り戻す
         drop(adc_channel);
         drop(adc_driver);
 
-        Ok(voltage_percent)
+        Ok((voltage_percent, adc)) // ADC1の所有権を返す
     }
 }
