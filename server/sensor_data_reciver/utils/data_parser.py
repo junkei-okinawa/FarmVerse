@@ -75,6 +75,25 @@ class DataParser:
             return None
     
     @staticmethod
+    def parse_tds_voltage_data(payload: str) -> Optional[float]:
+        """
+        TDS電圧データの解析
+        
+        Args:
+            payload: 解析対象のペイロード文字列
+            
+        Returns:
+            TDS電圧値（float）、解析できない場合はNone
+        """
+        try:
+            tds_volt_str = DataParser.extract_value_from_payload(payload, "TDS_VOLT:")
+            if tds_volt_str is not None:
+                return float(tds_volt_str)
+            return None
+        except (ValueError, TypeError):
+            return None
+    
+    @staticmethod
     def extract_voltage_with_validation(payload: str, sender_mac: str) -> Optional[float]:
         """
         電圧情報を抽出（バリデーション付き）
@@ -122,4 +141,28 @@ class DataParser:
             return None  # -999の場合は無効値
         elif payload:  # 空文字列でない場合のみ警告
             logger.warning(f"TEMP not found in HASH payload from {sender_mac}")
+        return None
+
+    @staticmethod
+    def extract_tds_voltage_with_validation(payload: str, sender_mac: str) -> Optional[float]:
+        """
+        TDS電圧情報を抽出（バリデーション付き）
+        
+        Args:
+            payload: 解析対象のペイロード文字列
+            sender_mac: 送信元MACアドレス（ログ用）
+            
+        Returns:
+            TDS電圧値（float）、無効な場合はNone
+        """
+        tds_volt_str = DataParser.extract_value_from_payload(payload, "TDS_VOLT:")
+        if tds_volt_str is not None:
+            try:
+                tds_voltage_value = float(tds_volt_str)
+                return tds_voltage_value
+            except ValueError:
+                logger.warning(f"Invalid TDS_VOLT value from {sender_mac}: {tds_volt_str}")
+                return None
+        else:
+            logger.debug(f"TDS_VOLT not found in HASH payload from {sender_mac}")
         return None
