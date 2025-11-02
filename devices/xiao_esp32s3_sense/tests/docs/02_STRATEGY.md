@@ -298,7 +298,7 @@ probe-rsとembedded-testを使用した実機での自動テスト。
 
 ```yaml
 # .github/workflows/esp32_test.yml
-name = "ESP32 Tests
+name: "ESP32 Tests"
 
 on: [push, pull_request]
 
