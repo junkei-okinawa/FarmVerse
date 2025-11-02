@@ -14,7 +14,7 @@ dependencies = [
     "asyncio>=3.4.3",
 ]
 
-# [build-system] セクションを削除
+# [build-system] section intentionally omitted; using uv for dependency management
 
 [dependency-groups]
 # uv run just dev
