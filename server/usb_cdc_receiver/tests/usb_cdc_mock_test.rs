@@ -5,7 +5,7 @@
 /// 
 /// Frame::new()とFrame::to_bytes()を使用して、実際の実装と同じロジックでテストします。
 
-use usb_cdc_receiver::esp_now::frame::Frame;
+use usb_cdc_receiver::esp_now::frame::{Frame, END_MARKER};
 use usb_cdc_receiver::esp_now::FrameType;
 use usb_cdc_receiver::usb::mock::MockUsbCdc;
 use usb_cdc_receiver::usb::UsbInterface;
@@ -167,7 +167,7 @@ fn test_frame_creation_helper() {
 
     // END MARKER位置を計算
     let end_pos = frame_bytes.len() - 4;
-    assert_eq!(&frame_bytes[end_pos..], &0xCDEF5678u32.to_be_bytes());
+    assert_eq!(&frame_bytes[end_pos..], &END_MARKER.to_be_bytes());
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use super::{UsbError, UsbInterface, UsbResult};
+use super::{UsbError, UsbInterface, UsbResult, COMMAND_BUFFER_SIZE};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -129,7 +129,7 @@ impl UsbInterface for MockUsbCdc {
         }
         
         // キューが空の場合、readを呼び出してタイムアウト処理を行う
-        let mut buffer = [0u8; 256];
+        let mut buffer = [0u8; COMMAND_BUFFER_SIZE];
         match self.read(&mut buffer, timeout_ms) {
             Ok(bytes_read) if bytes_read > 0 => {
                 let command_str = String::from_utf8_lossy(&buffer[..bytes_read])

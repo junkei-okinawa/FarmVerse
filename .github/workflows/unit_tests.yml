@@ -155,7 +155,7 @@ jobs:
           ./run_tests.sh | tee test_output.txt
           
           # テスト結果からテスト数を抽出（すべての結果を合計）
-          TOTAL_PASSED=$(grep "test result:" test_output.txt | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{sum+=$1} END {print (sum ? sum : 0)}')
+          TOTAL_PASSED=$(grep "test result:" test_output.txt | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{sum+=$1} END {print sum+0}')
           if [ -n "$TOTAL_PASSED" ] && [ "$TOTAL_PASSED" != "0" ]; then
             echo "tests_passed=$TOTAL_PASSED" >> "$GITHUB_OUTPUT"
           else
