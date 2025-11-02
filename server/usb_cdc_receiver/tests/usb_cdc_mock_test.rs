@@ -5,7 +5,7 @@
 /// 
 /// Frame::new()とFrame::to_bytes()を使用して、実際の実装と同じロジックでテストします。
 
-use usb_cdc_receiver::esp_now::frame::{Frame, END_MARKER};
+use usb_cdc_receiver::esp_now::frame::{Frame, START_MARKER, END_MARKER};
 use usb_cdc_receiver::esp_now::FrameType;
 use usb_cdc_receiver::usb::mock::MockUsbCdc;
 use usb_cdc_receiver::usb::UsbInterface;
@@ -159,7 +159,7 @@ fn test_frame_creation_helper() {
     let frame_bytes = frame.to_bytes();
 
     // フレーム構造を検証
-    assert_eq!(&frame_bytes[0..4], &0xFACEAABBu32.to_be_bytes()); // START
+    assert_eq!(&frame_bytes[0..4], &START_MARKER.to_be_bytes()); // START
     assert_eq!(&frame_bytes[4..10], &mac); // MAC
     assert_eq!(frame_bytes[10], FrameType::Data as u8); // Type
     assert_eq!(&frame_bytes[11..15], &1u32.to_le_bytes()); // Sequence
