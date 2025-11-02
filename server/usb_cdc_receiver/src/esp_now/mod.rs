@@ -1,7 +1,11 @@
 pub mod frame;
-pub mod receiver;
-pub mod sender;
 pub mod message;
+
+#[cfg(feature = "esp")]
+pub mod receiver;
+
+#[cfg(feature = "esp")]
+pub mod sender;
 
 pub use message::*;
 

@@ -1,4 +1,10 @@
+#[cfg(target_os = "espidf")]
 use log::debug;
+#[cfg(not(target_os = "espidf"))]
+macro_rules! debug {
+    ($($arg:tt)*) => {};
+}
+
 use super::FrameType;
 
 /// フレーム処理のための定数

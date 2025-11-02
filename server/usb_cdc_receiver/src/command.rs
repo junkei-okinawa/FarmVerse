@@ -1,6 +1,15 @@
 /// USBコマンド解析機能
 
+#[cfg(target_os = "espidf")]
 use log::{debug, warn};
+#[cfg(not(target_os = "espidf"))]
+macro_rules! debug {
+    ($($arg:tt)*) => {};
+}
+#[cfg(not(target_os = "espidf"))]
+macro_rules! warn {
+    ($($arg:tt)*) => {};
+}
 
 // ESP-NOWコマンド解析の定数
 /// ESP-NOWコマンドの期待パーツ数
