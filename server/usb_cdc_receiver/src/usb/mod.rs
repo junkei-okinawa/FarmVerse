@@ -8,6 +8,9 @@ pub mod mock;
 /// USB通信での結果の型
 pub type UsbResult<T> = Result<T, UsbError>;
 
+/// USBコマンド読み取り用のバッファサイズ
+pub const COMMAND_BUFFER_SIZE: usize = 256;
+
 /// USB通信のエラーを表す列挙型
 #[derive(Debug, Clone, PartialEq)]
 pub enum UsbError {
