@@ -41,10 +41,20 @@ jobs:
           cargo --version
           
       - name: Run unit tests
+        id: xiao_tests
         run: |
           cd devices/xiao_esp32s3_sense
           chmod +x run_tests.sh
-          ./run_tests.sh
+          ./run_tests.sh | tee test_output.txt
+          
+          # テスト結果からテスト数を抽出
+          TEST_RESULT=$(grep "test result:" test_output.txt || echo "")
+          if [ -n "$TEST_RESULT" ]; then
+            PASSED=$(echo "$TEST_RESULT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo "0")
+            echo "tests_passed=$PASSED" >> $GITHUB_OUTPUT
+          else
+            echo "tests_passed=unknown" >> $GITHUB_OUTPUT
+          fi
           
       - name: Verify test execution
         run: |
@@ -61,8 +71,18 @@ jobs:
             echo "Checking if tests ran successfully..."
           fi
           
-          # run_tests.shの終了コードで判定（すでに実行済み）
           echo "✅ Unit tests completed successfully"
+          
+          # サマリーに追加
+          echo "### XIAO ESP32S3 Test Summary 📊" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Unit tests completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.xiao_tests.outputs.tests_passed }}" != "unknown" ]; then
+            echo "**Total: ${{ steps.xiao_tests.outputs.tests_passed }} tests passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**All tests passed**" >> $GITHUB_STEP_SUMMARY
+          fi
           
       - name: Upload test artifacts
         if: always()
@@ -103,14 +123,9 @@ jobs:
         
       - name: Summary
         run: |
-          echo "### Test Summary 📊" >> $GITHUB_STEP_SUMMARY
+          echo "### Code Quality Summary 📊" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Unit tests completed successfully" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Test Coverage:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Voltage calculation: 10 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- MAC address processing: 13 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- **Total: 23 tests passed**" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Code quality checks completed" >> $GITHUB_STEP_SUMMARY
           
   usb-cdc-receiver-test:
     name: USB CDC Receiver Unit Tests
@@ -132,10 +147,20 @@ jobs:
           cargo --version
           
       - name: Run USB CDC Receiver unit tests
+        id: usb_tests
         run: |
           cd server/usb_cdc_receiver
           chmod +x run_tests.sh
-          ./run_tests.sh
+          ./run_tests.sh | tee test_output.txt
+          
+          # テスト結果からテスト数を抽出
+          TEST_RESULT=$(grep "test result:" test_output.txt || echo "")
+          if [ -n "$TEST_RESULT" ]; then
+            PASSED=$(echo "$TEST_RESULT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo "0")
+            echo "tests_passed=$PASSED" >> $GITHUB_OUTPUT
+          else
+            echo "tests_passed=unknown" >> $GITHUB_OUTPUT
+          fi
           
       - name: Summary
         run: |
@@ -143,9 +168,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ USB CDC Receiver unit tests completed successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Test Coverage:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ESP-NOW frame parsing: 13 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- MAC address handling: 26 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- Command parsing: 3 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- USB CDC mock integration: 9 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- **Total: 51 tests passed**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.usb_tests.outputs.tests_passed }}" != "unknown" ]; then
+            echo "**Total: ${{ steps.usb_tests.outputs.tests_passed }} tests passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**All tests passed**" >> $GITHUB_STEP_SUMMARY
+          fi
