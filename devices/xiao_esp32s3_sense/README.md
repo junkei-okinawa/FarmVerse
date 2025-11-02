@@ -21,6 +21,68 @@ I sensor_data_sender: ハッシュフレーム送信: HASH:000033eb00117b94,VOLT
 I sensor_data_sender: EOF マーカー送信完了
 ```
 
+## 📡 システムアーキテクチャとデータフロー
+
+### データフロー全体図
+```
+┌─────────────────────┐
+│ xiao_esp32s3_sense  │ ← このデバイス
+│   (ESP32-S3)        │
+└──────────┬──────────┘
+           │ ESP-NOW Frame Protocol
+           │ (START: 0xFACEAABB, END: 0xCDEF5678)
+           │ big-endian markers / little-endian data
+           ▼
+┌─────────────────────┐
+│ usb_cdc_receiver    │
+│  (ESP32-C3)         │
+│  1. ESP-NOW受信     │
+│  2. バッファリング  │
+│  3. USB CDC転送     │
+└──────────┬──────────┘
+           │ USB CDC (透過転送)
+           │ ESP-NOW Frameをそのまま転送
+           ▼
+┌─────────────────────┐
+│sensor_data_receiver │
+│   (Python/PC)       │
+│  Frame Parser       │
+└─────────────────────┘
+```
+
+### ESP-NOW Frame Protocol 仕様
+
+**実装場所**:
+- 送信: `src/communication/esp_now/sender.rs` - `create_sensor_data_frame()`
+- 受信: `server/usb_cdc_receiver/src/esp_now/frame.rs` - `Frame::from_bytes()`
+- 解析: `server/sensor_data_reciver/protocol/frame_parser.py` - `FrameParser`
+
+**フレーム構造** (27+ バイト):
+```
+Offset  Size  Field           Value/Format        Endian
+------  ----  --------------  ------------------  -------
+0       4     START_MARKER    0xFACEAABB          big
+4       6     MAC_ADDRESS     送信元MAC           -
+10      1     FRAME_TYPE      1=HASH,2=DATA,3=EOF -
+11      4     SEQUENCE_NUM    シーケンス番号       little
+15      4     DATA_LEN        データ長             little
+19      N     DATA            実データ             -
+19+N    4     CHECKSUM        XORチェックサム      little
+23+N    4     END_MARKER      0xCDEF5678          big
+```
+
+**チェックサム計算** (XOR):
+```rust
+fn calculate_xor_checksum(data: &[u8]) -> u32 {
+    data.iter().fold(0u32, |acc, &byte| acc ^ (byte as u32))
+}
+```
+
+**重要**: 
+- USB CDC Receiverは**透過転送**のみ（フレーム変換なし）
+- sensor_data_receiver (Python)がESP-NOW Frameを直接解析
+- マーカーはbig-endian、データフィールドはlittle-endian
+
 ## 🎯 主要機能
 
 ### ✅ 実装済み機能
