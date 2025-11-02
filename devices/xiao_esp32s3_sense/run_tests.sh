@@ -11,6 +11,7 @@ echo ""
 
 echo "📝 テスト対象:"
 echo "  - utils::voltage_calc (電圧計算)"
+echo "  - utils::tds_calc (TDS計算)"
 echo "  - mac_address (MACアドレス処理)"
 echo "  - core::measured_data (測定データ)"
 echo ""
@@ -25,6 +26,14 @@ echo "Compiling voltage_calc tests..."
 rustc +stable --test voltage_calc.rs --edition 2021 -o ../../target/voltage_tests
 echo "Running voltage_calc tests..."
 ../../target/voltage_tests
+echo ""
+
+# TDS計算ロジックのテスト
+echo "🧪 TDS計算ロジックのテスト..."
+echo "Compiling tds_calc tests..."
+rustc +stable --test tds_calc.rs --edition 2021 -o ../../target/tds_tests
+echo "Running tds_calc tests..."
+../../target/tds_tests
 echo ""
 
 # MACアドレスモジュールのテスト
