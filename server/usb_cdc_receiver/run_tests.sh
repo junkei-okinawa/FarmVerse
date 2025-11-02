@@ -1,52 +1,32 @@
 #!/bin/bash
-# USB CDC Receiver Unit Tests Runner
-# This script runs unit tests on the host machine without ESP32 hardware
 
-set -e  # Exit on error
+# USB CDC Receiver ホストマシンユニットテスト実行スクリプト
+# Before first use, make this script executable with: chmod +x run_tests.sh
+set -e  # エラーで停止
 
-echo "🧪 Running USB CDC Receiver Unit Tests on Host Machine..."
+echo "================================"
+echo "USB CDC Receiver ユニットテスト実行"
+echo "================================"
 echo ""
 
-# Save original cargo config
-if [ -f .cargo/config.toml ]; then
-    echo "📦 Backing up .cargo/config.toml..."
-    mv .cargo/config.toml .cargo/config.toml.backup
-fi
-
-# Detect host architecture
-HOST_ARCH=$(rustc --version --verbose | grep host | awk '{print $2}')
-echo "🖥️  Detected host architecture: $HOST_ARCH"
-
-# Create host-specific cargo config
-echo "⚙️  Creating host-specific Cargo configuration..."
-mkdir -p .cargo
-cat > .cargo/config.toml << EOF
-[build]
-target = "$HOST_ARCH"
-
-[env]
-# Disable ESP-IDF specific environment variables for host tests
-EOF
-
-# Function to cleanup on exit
-cleanup() {
-    echo ""
-    echo "🧹 Cleaning up..."
-    if [ -f .cargo/config.toml.backup ]; then
-        mv .cargo/config.toml.backup .cargo/config.toml
-        echo "✅ Restored .cargo/config.toml"
-    fi
-}
-
-# Set trap to cleanup on exit
-trap cleanup EXIT
-
-echo ""
-echo "🔨 Building and running tests..."
+echo "📝 テスト対象:"
+echo "  - esp_now::frame (ESP-NOWフレームパーサー)"
+echo "  - esp_now::mac_address (MACアドレス処理)"
+echo "  - command::parser (コマンドパーサー)"
+echo "  - usb::mock (USB CDCモック統合テスト)"
 echo ""
 
-# Run tests without ESP features
-RUST_BACKTRACE=1 cargo test --lib --tests --no-default-features
+# ホストアーキテクチャを検出
+HOST_TARGET=$(rustc --version --verbose | grep host | awk '{print $2}')
+echo "🖥️  ホストターゲット: $HOST_TARGET"
+echo ""
+
+# stable toolchainでテストを実行（.cargo/config.tomlを変更せずに実行）
+# --targetオプションでホストターゲットを明示的に指定
+echo "🧪 すべてのユニットテスト実行..."
+RUST_BACKTRACE=1 cargo +stable test --lib --tests --target "$HOST_TARGET" --no-default-features
 
 echo ""
-echo "✅ All tests passed!"
+echo "================================"
+echo "✅ すべてのテスト完了"
+echo "================================"
