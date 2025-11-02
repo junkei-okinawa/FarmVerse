@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP Image Viewer</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 20px; background-color: #f4f4f9; color: #333; }
+        h1 { color: #444; border-bottom: 2px solid #666; padding-bottom: 10px; }
+        .controls { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 8px; background-color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-wrap: wrap; align-items: center; gap: 15px; }
+        .controls div { display: flex; flex-direction: column; }
+        .controls label { font-size: 0.9em; margin-bottom: 3px; color: #555; }
+        .controls select, .controls input[type="date"], .controls input[type="number"], .controls button {
+            padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em;
+        }
+        .controls input[type="number"] { width: 70px; }
+        .controls button { background-color: #007bff; color: white; border: none; cursor: pointer; transition: background-color 0.2s; }
+        .controls button:hover { background-color: #0056b3; }
+        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+        .image-item {
+            border: 1px solid #ddd; border-radius: 8px; background-color: #fff; padding: 10px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: box-shadow 0.2s; overflow: hidden;
+            position: relative; /* For positioning rotate buttons */
+            display: flex; /* Use flexbox for layout */
+            flex-direction: column; /* Stack items vertically */
+            justify-content: space-between; /* Distribute space */
+            height: 280px; /* Fixed height for the card */
+        }
+        .image-item:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .image-item a { 
+            display: flex; /* Use flexbox for centering image */
+            align-items: center; /* Center vertically */
+            justify-content: center; /* Center horizontally */
+            height: 180px; /* Increased height for the image container part */
+            margin-bottom: 5px; 
+            flex-shrink: 0; 
+            overflow: hidden; /* Ensure rotated image doesn't overflow its container */
+        }
+        .image-item img {
+            max-width: 100%; 
+            max-height: 100%; /* Ensure image fits within the anchor tag's height */
+            height: auto; /* Adjust height automatically to maintain aspect ratio */
+            object-fit: contain; /* Show entire image, scaled down if necessary, with letterboxing */
+            display: block; 
+            border-radius: 4px; 
+            background-color: #eee;
+            transition: transform 0.3s ease-in-out; /* Smooth rotation */
+        }
+        .image-item .image-details {
+            margin-top: auto; /* Push details to the bottom if image is small */
+            flex-grow: 1; /* Allow details to take available space */
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end; /* Align text to the bottom of this container */
+            min-height: 70px; /* Ensure enough space for text details */
+        }
+        .image-item p { font-size: 0.85em; margin: 2px 0; color: #555; word-wrap: break-word; }
+        .image-item p strong { color: #333; }
+        .image-item .filename { font-size: 0.75em; color: #888; margin-top: 5px; }
+
+        /* Rotation Controls for Grid Items */
+        .image-controls {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            display: none; /* Hidden by default */
+            background-color: rgba(0,0,0,0.5);
+            padding: 5px;
+            border-radius: 4px;
+            z-index: 10; /* Ensure buttons are on top of the image link area */
+        }
+        .image-item:hover .image-controls {
+            display: flex; /* Show on hover */
+            gap: 5px;
+        }
+        .rotate-btn {
+            background-color: #fff;
+            color: #333;
+            border: 1px solid #ccc;
+            padding: 3px 6px;
+            font-size: 0.8em;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        .rotate-btn:hover {
+            background-color: #eee;
+        }
+
+        .pagination { margin-top: 30px; text-align: center; }
+        .pagination a, .pagination span { margin: 0 3px; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; text-decoration: none; color: #007bff; background-color: #fff; transition: background-color 0.2s, color 0.2s; }
+        .pagination a:hover { background-color: #eee; }
+        .pagination .current { font-weight: bold; background-color: #007bff; color: white; border-color: #007bff; }
+        .pagination .disabled { color: #ccc; background-color: #f9f9f9; border-color: #eee; pointer-events: none; }
+        .pagination .ellipsis { padding: 8px 5px; border: none; background: none; color: #888; }
+        .info-bar { margin-bottom: 15px; font-size: 0.9em; color: #666; }
+        .error { color: #dc3545; border: 1px solid #f5c6cb; background-color: #f8d7da; padding: 10px 15px; margin-bottom: 15px; border-radius: 4px; }
+        .no-images { text-align: center; color: #888; margin-top: 30px; }
+
+        /* Modal Styles */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 1000; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgba(0,0,0,0.7); /* Black w/ opacity */
+            padding-top: 50px;
+        }
+        .modal-content {
+            margin: auto;
+            display: block;
+            width: auto;
+            max-width: 90%;
+            max-height: 90vh; /* Limit height to viewport height */
+        }
+        .modal-content img {
+            display: block;
+            margin: auto;
+            max-width: 100%;
+            max-height: 85vh; /* Slightly less than modal content for padding */
+            transition: transform 0.3s ease-in-out; /* Smooth rotation for modal image */
+        }
+        /* Modal Rotation Controls */
+        #modalControls {
+            text-align: center;
+            margin-top: 10px;
+            padding-bottom: 10px; /* Space for buttons */
+        }
+        #modalControls .rotate-btn { /* Style for modal rotate buttons */
+            padding: 8px 12px;
+            font-size: 0.9em;
+            background-color: #007bff;
+            color: white;
+            border: none;
+        }
+        #modalControls .rotate-btn:hover {
+            background-color: #0056b3;
+        }
+        .close-modal {
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            transition: 0.3s;
+            cursor: pointer;
+        }
+        .close-modal:hover,
+        .close-modal:focus {
+            color: #bbb;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ESP Image Viewer</h1>
+
+    {% if error_message %}
+        <div class="error">{{ error_message }}</div>
+    {% endif %}
+
+    <div class="controls">
+        <form method="get" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 15px; width: 100%;">
+            <div>
+                <label for="filter_mac">MAC Address:</label>
+                <select id="filter_mac" name="filter_mac">
+                    <option value="">All</option>
+                    {# available_macs リストをループしてオプションを生成 #}
+                    {% for mac in available_macs %}
+                        <option value="{{ mac }}" {% if mac == filter_mac %}selected{% endif %}>{{ mac }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label for="filter_date">Date:</label>
+                <input type="date" id="filter_date" name="filter_date" value="{{ filter_date or '' }}">
+            </div>
+
+            <div>
+                <label for="sort_by">Sort By:</label>
+                <select id="sort_by" name="sort_by">
+                    <option value="timestamp" {% if sort_by == 'timestamp' %}selected{% endif %}>Timestamp</option>
+                    <option value="mac" {% if sort_by == 'mac' %}selected{% endif %}>MAC Address</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="sort_order">Order:</label>
+                <select id="sort_order" name="sort_order">
+                    <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>Descending</option>
+                    <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>Ascending</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="limit">Images/Page:</label>
+                <input type="number" id="limit" name="limit" value="{{ limit }}" min="1" max="200">
+            </div>
+
+            <input type="hidden" name="page" value="1"> <!-- フィルタ変更時は1ページ目に戻る -->
+            <button type="submit">Apply</button>
+        </form>
+    </div>
+
+    <div class="info-bar">
+        Showing {{ images|length }} images on this page (Total: {{ total_images }} images found matching criteria).
+    </div>
+
+    {% if images %}
+        <div class="image-grid">
+            {% for filename, mac, dt in images %}
+                <div class="image-item" data-mac="{{ mac }}">
+                    <a href="#" 
+                       data-filename="{{ filename }}" 
+                       data-mac="{{ mac }}" 
+                       data-gridid="img-grid-{{ loop.index0 }}" 
+                       onclick="setupAndOpenModal(this); return false;" 
+                       title="Click to view full size">
+                        <img id="img-grid-{{ loop.index0 }}" src="/images/{{ filename }}" alt="Image from {{ mac }}" loading="lazy">
+                    </a>
+                    <div class="image-controls">
+                        <button class="rotate-btn" title="Rotate Left" onclick="event.stopPropagation(); rotateGridImage('img-grid-{{ loop.index0 }}', '{{ mac }}', -90)">↺</button>
+                        <button class="rotate-btn" title="Rotate Right" onclick="event.stopPropagation(); rotateGridImage('img-grid-{{ loop.index0 }}', '{{ mac }}', 90)">↻</button>
+                    </div>
+                    <div class="image-details"> {# Wrapper for text details #}
+                        <p><strong>MAC:</strong> {{ mac }}</p>
+                        <p><strong>Time:</strong> {{ dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3] }}</p> {# ミリ秒まで表示 #}
+                        <p class="filename">{{ filename }}</p>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        {% if not error_message %} {# エラーがない場合のみ「画像なし」メッセージを表示 #}
+            <p class="no-images">No images found matching the criteria.</p>
+        {% endif %}
+    {% endif %}
+
+    {% if total_pages > 1 %}
+        <div class="pagination">
+            {# Previous Page Link #}
+            {% if page > 1 %}
+                <a id="prevPageLink" href="?page={{ page - 1 }}&limit={{ limit }}&filter_mac={{ filter_mac or '' }}&filter_date={{ filter_date or '' }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">&laquo; Prev</a>
+            {% else %}
+                <span class="disabled">&laquo; Prev</span>
+            {% endif %}
+
+            {# Page Number Links #}
+            {% set page_window = 2 %} {# 現在ページの前後何ページ表示するか #}
+            {% set start_page = [1, page - page_window] | max %}
+            {% set end_page = [total_pages, page + page_window] | min %}
+
+            {% if start_page > 1 %}
+                <a href="?page=1&limit={{ limit }}&filter_mac={{ filter_mac or '' }}&filter_date={{ filter_date or '' }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">1</a>
+                {% if start_page > 2 %}<span class="ellipsis">...</span>{% endif %}
+            {% endif %}
+
+            {% for p in range(start_page, end_page + 1) %}
+                {% if p == page %}
+                    <span class="current">{{ p }}</span>
+                {% else %}
+                    <a href="?page={{ p }}&limit={{ limit }}&filter_mac={{ filter_mac or '' }}&filter_date={{ filter_date or '' }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">{{ p }}</a>
+                {% endif %}
+            {% endfor %}
+
+            {% if end_page < total_pages %}
+                {% if end_page < total_pages - 1 %}<span class="ellipsis">...</span>{% endif %}
+                <a href="?page={{ total_pages }}&limit={{ limit }}&filter_mac={{ filter_mac or '' }}&filter_date={{ filter_date or '' }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">{{ total_pages }}</a>
+            {% endif %}
+
+            {# Next Page Link #}
+            {% if page < total_pages %}
+                <a id="nextPageLink" href="?page={{ page + 1 }}&limit={{ limit }}&filter_mac={{ filter_mac or '' }}&filter_date={{ filter_date or '' }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">Next &raquo;</a>
+            {% else %}
+                <span class="disabled">Next &raquo;</span>
+            {% endif %}
+            <span style="margin-left: 15px; color: #666; font-size: 0.9em;">(Page {{ page }} of {{ total_pages }})</span>
+        </div>
+    {% endif %}
+
+    <!-- Modal Structure -->
+    <div id="imageModal" class="modal">
+        <span class="close-modal" onclick="closeImageModal()">&times;</span>
+        <img class="modal-content" id="modalImageSrc">
+        <div id="modalControls">
+            <button class="rotate-btn" title="Rotate Left" onclick="rotateModalImage(-90)">↺ 90°</button>
+            <button class="rotate-btn" title="Rotate Right" onclick="rotateModalImage(90)">↻ 90°</button>
+        </div>
+    </div>
+
+    <script>
+        // Modal JavaScript
+        const modal = document.getElementById('imageModal');
+        const modalImg = document.getElementById('modalImageSrc');
+        let currentImageUrls = [];
+        let currentImageMacs = []; // Added to store MACs for current view
+        let currentImageIndexInModal = -1;
+        let currentModalMac = null; // MAC of the image currently in modal
+        let currentModalGridImageId = null; // ID of the grid image corresponding to the modal image
+
+        // Populate currentImageUrls and currentImageMacs from Jinja context
+        {% if images %}
+        currentImageUrls = [
+            {% for filename, _, _ in images %}
+            "/images/{{ filename }}"{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+        currentImageMacs = [
+            {% for _, mac, _ in images %}
+            "{{ mac }}"{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+        {% else %}
+        currentImageUrls = [];
+        currentImageMacs = [];
+        {% endif %}
+
+        function setupAndOpenModal(anchorElement) {
+            const filename = anchorElement.dataset.filename;
+            const mac = anchorElement.dataset.mac;
+            const gridId = anchorElement.dataset.gridid;
+            const imageUrl = '/images/' + filename; // Construct imageUrl here
+            openImageModal(imageUrl, mac, gridId);
+        }
+
+        // --- Rotation Logic ---
+        const getRotationSetting = (macAddress) => {
+            if (!macAddress) return 0;
+            return parseInt(localStorage.getItem(`rotation_${macAddress}`) || '0', 10);
+        };
+
+        const saveRotationSetting = (macAddress, angle) => {
+            if (!macAddress) return;
+            localStorage.setItem(`rotation_${macAddress}`, angle % 360);
+        };
+
+        const applyRotationToElement = (element, angle) => {
+            if (element) {
+                element.style.transform = `rotate(${angle}deg)`;
+            }
+        };
+
+        // Rotate image in the grid
+        function rotateGridImage(imgId, macAddress, degrees) {
+            const imgElement = document.getElementById(imgId);
+            if (!imgElement || !macAddress) return;
+
+            let currentAngle = getRotationSetting(macAddress);
+            let newAngle = (currentAngle + degrees);
+            saveRotationSetting(macAddress, newAngle);
+            applyRotationToElement(imgElement, newAngle);
+        }
+
+        // Rotate image in the modal
+        function rotateModalImage(degrees) {
+            if (!currentModalMac || !modalImg) return;
+
+            let currentAngle = getRotationSetting(currentModalMac);
+            let newAngle = (currentAngle + degrees);
+            saveRotationSetting(currentModalMac, newAngle);
+            applyRotationToElement(modalImg, newAngle);
+
+            // Also update the underlying grid image if it's linked
+            if (currentModalGridImageId) {
+                const gridImgElement = document.getElementById(currentModalGridImageId);
+                // Ensure the grid image is updated only if it exists
+                if (gridImgElement) {
+                    applyRotationToElement(gridImgElement, newAngle);
+                }
+            }
+        }
+        
+        // Updated openImageModal to handle MAC and rotation
+        function openImageModal(imageUrl, macAddress, gridImageId) {
+            if (modal && modalImg) {
+                currentModalMac = macAddress;
+                currentModalGridImageId = gridImageId; 
+
+                modal.style.display = "block";
+                modalImg.src = imageUrl;
+                currentImageIndexInModal = currentImageUrls.indexOf(imageUrl);
+
+                const rotation = getRotationSetting(macAddress);
+                applyRotationToElement(modalImg, rotation);
+            }
+        }
+
+        function closeImageModal() {
+            if (modal) {
+                modal.style.display = "none";
+                modalImg.src = ""; 
+                applyRotationToElement(modalImg, 0); // Reset rotation for the modal image
+                currentImageIndexInModal = -1; 
+                currentModalMac = null;
+                currentModalGridImageId = null;
+            }
+        }
+
+        // Close modal if user clicks outside the image content
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                closeImageModal();
+            }
+        }
+
+        // Unified Keyboard Navigation
+        document.addEventListener('keydown', function(event) {
+            if (modal && modal.style.display === 'block') {
+                if (event.key === "Escape") {
+                    closeImageModal();
+                    return; 
+                }
+
+                if (currentImageUrls.length === 0) return;
+
+                let newIndex = currentImageIndexInModal;
+                if (event.key === "ArrowLeft") {
+                    newIndex = (currentImageIndexInModal - 1 + currentImageUrls.length) % currentImageUrls.length;
+                } else if (event.key === "ArrowRight") {
+                    newIndex = (currentImageIndexInModal + 1) % currentImageUrls.length;
+                }
+
+                if (newIndex !== currentImageIndexInModal && currentImageUrls[newIndex]) {
+                    currentImageIndexInModal = newIndex;
+                    modalImg.src = currentImageUrls[currentImageIndexInModal];
+                    
+                    // Update MAC and grid image ID for the new modal image
+                    currentModalMac = currentImageMacs[currentImageIndexInModal];
+                    // Assuming grid images are indexed starting from 0 and match loop.index0
+                    currentModalGridImageId = `img-grid-${currentImageIndexInModal}`; 
+
+                    if (currentModalMac) {
+                        const rotation = getRotationSetting(currentModalMac);
+                        applyRotationToElement(modalImg, rotation);
+                    } else {
+                        applyRotationToElement(modalImg, 0); // Reset if no MAC (should not happen if data is consistent)
+                    }
+                }
+            } else {
+                // Modal is not active, navigate pages
+                const prevLink = document.getElementById('prevPageLink');
+                const nextLink = document.getElementById('nextPageLink');
+
+                if (event.key === "ArrowLeft") {
+                    if (prevLink && prevLink.href) { // Check if the link exists and is active
+                        prevLink.click();
+                    }
+                } else if (event.key === "ArrowRight") {
+                    if (nextLink && nextLink.href) { // Check if the link exists and is active
+                        nextLink.click();
+                    }
+                }
+            }
+        });
+
+        // Apply initial rotation to grid images on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            {% if images %}
+                {% for filename, mac, dt in images %}
+                (function() { // IIFE to capture mac and loop.index0 correctly in this loop
+                    const macAddress = "{{ mac }}";
+                    const imgId = "img-grid-{{ loop.index0 }}";
+                    const imgElement = document.getElementById(imgId);
+                    if (imgElement && macAddress) {
+                        const rotation = getRotationSetting(macAddress);
+                        applyRotationToElement(imgElement, rotation);
+                    }
+                })();
+                {% endfor %}
+            {% endif %}
+        });
+    </script>
+</body>
+</html>
