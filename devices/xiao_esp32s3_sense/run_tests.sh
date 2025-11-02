@@ -12,6 +12,7 @@ echo ""
 echo "📝 テスト対象:"
 echo "  - utils::voltage_calc (電圧計算)"
 echo "  - utils::tds_calc (TDS計算)"
+echo "  - utils::streaming_protocol (通信プロトコル)"
 echo "  - mac_address (MACアドレス処理)"
 echo "  - core::measured_data (測定データ)"
 echo ""
@@ -34,6 +35,14 @@ echo "Compiling tds_calc tests..."
 rustc +stable --test tds_calc.rs --edition 2021 -o ../../target/tds_tests
 echo "Running tds_calc tests..."
 ../../target/tds_tests
+echo ""
+
+# ストリーミングプロトコルのテスト
+echo "🧪 ストリーミングプロトコルのテスト..."
+echo "Compiling streaming_protocol tests..."
+rustc +stable --test streaming_protocol.rs --edition 2021 -o ../../target/streaming_tests
+echo "Running streaming_protocol tests..."
+../../target/streaming_tests
 echo ""
 
 # MACアドレスモジュールのテスト
