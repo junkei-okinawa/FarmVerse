@@ -21,10 +21,10 @@ HOST_TARGET=$(rustc --version --verbose | grep host | awk '{print $2}')
 echo "🖥️  ホストターゲット: $HOST_TARGET"
 echo ""
 
-# stable toolchainでテストを実行（.cargo/config.tomlを変更せずに実行）
 # --targetオプションでホストターゲットを明示的に指定
+# これにより.cargo/config.tomlのESP32-C3設定を上書きできます
 echo "🧪 すべてのユニットテスト実行..."
-RUST_BACKTRACE=1 cargo +stable test --lib --tests --target "$HOST_TARGET" --no-default-features
+RUST_BACKTRACE=1 cargo test --lib --tests --target "$HOST_TARGET" --no-default-features
 
 echo ""
 echo "================================"

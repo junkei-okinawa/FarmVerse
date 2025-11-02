@@ -2,6 +2,8 @@
 /// 
 /// このテストは、USB CDCインターフェースのMock実装を使用して、
 /// ESP-NOWフレーム受信からUSB送信までのデータフローをテストします。
+/// 
+/// Frame::new()とFrame::to_bytes()を使用して、実際の実装と同じロジックでテストします。
 
 use usb_cdc_receiver::esp_now::frame::Frame;
 use usb_cdc_receiver::esp_now::FrameType;
@@ -111,7 +113,7 @@ fn test_usb_multiple_frames() {
     
     for i in 0..5 {
         let payload = vec![i as u8; 100];
-        let frame = Frame::new(mac, FrameType::Data, i, payload);
+        let frame = Frame::new(mac, FrameType::Data, i as u32, payload);
         let frame_bytes = frame.to_bytes();
         let result = mock_usb.send_frame(&frame_bytes, "AA:BB:CC:DD:EE:FF");
         assert!(result.is_ok());
