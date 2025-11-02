@@ -42,19 +42,3 @@ pub use utils::calculate_voltage_percentage;
 
 /// ライブラリのバージョン情報
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-// テストモジュール
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-
-    #[test]
-    fn test_version_is_set() {
-        assert!(!VERSION.is_empty());
-    }
-}
