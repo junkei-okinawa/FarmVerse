@@ -4,6 +4,7 @@ env:
   # Expected test counts (update when adding new tests)
   EXPECTED_VOLTAGE_TESTS: 10
   EXPECTED_TDS_TESTS: 23
+  EXPECTED_STREAMING_TESTS: 18
   EXPECTED_MAC_TESTS: 13
   EXPECTED_MEASURED_DATA_TESTS: 18
 
@@ -40,12 +41,14 @@ jobs:
           # 結果を解析（より堅牢なパターンマッチング）
           VOLTAGE_TESTS=$(grep 'voltage_calc.*running.*tests' test_output.txt | awk '{print $2}' || echo "${{ env.EXPECTED_VOLTAGE_TESTS }}")
           TDS_TESTS=$(grep 'tds_calc.*running.*tests' test_output.txt | awk '{print $2}' || echo "${{ env.EXPECTED_TDS_TESTS }}")
+          STREAMING_TESTS=$(grep 'streaming_protocol.*running.*tests' test_output.txt | awk '{print $2}' || echo "${{ env.EXPECTED_STREAMING_TESTS }}")
           MAC_TESTS=$(grep 'mac_address.*running.*tests' test_output.txt | awk '{print $2}' || echo "${{ env.EXPECTED_MAC_TESTS }}")
           MEASURED_DATA_TESTS=$(grep 'measured_data.*running.*tests' test_output.txt | awk '{print $2}' || echo "${{ env.EXPECTED_MEASURED_DATA_TESTS }}")
-          TOTAL_TESTS=$((VOLTAGE_TESTS + TDS_TESTS + MAC_TESTS + MEASURED_DATA_TESTS))
+          TOTAL_TESTS=$((VOLTAGE_TESTS + TDS_TESTS + STREAMING_TESTS + MAC_TESTS + MEASURED_DATA_TESTS))
           
           echo "voltage_tests=$VOLTAGE_TESTS" >> $GITHUB_OUTPUT
           echo "tds_tests=$TDS_TESTS" >> $GITHUB_OUTPUT
+          echo "streaming_tests=$STREAMING_TESTS" >> $GITHUB_OUTPUT
           echo "mac_tests=$MAC_TESTS" >> $GITHUB_OUTPUT
           echo "measured_data_tests=$MEASURED_DATA_TESTS" >> $GITHUB_OUTPUT
           echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
@@ -80,6 +83,7 @@ jobs:
           |-----------|-------|--------|
           | Voltage Calculation | ${{ steps.test_metrics.outputs.voltage_tests }} | ✅ Passing |
           | TDS Calculation | ${{ steps.test_metrics.outputs.tds_tests }} | ✅ Passing |
+          | Streaming Protocol | ${{ steps.test_metrics.outputs.streaming_tests }} | ✅ Passing |
           | MAC Address Processing | ${{ steps.test_metrics.outputs.mac_tests }} | ✅ Passing |
           | Measured Data | ${{ steps.test_metrics.outputs.measured_data_tests }} | ✅ Passing |
           | **Total** | **${{ steps.test_metrics.outputs.total_tests }}** | ✅ **All Passing** |
@@ -88,6 +92,7 @@ jobs:
           
           - **utils::voltage_calc**: ~95% (10/10 test cases)
           - **utils::tds_calc**: ~95% (23/23 test cases)
+          - **utils::streaming_protocol**: ~95% (18/18 test cases)
           - **mac_address**: ~95% (13/13 test cases)
           - **core::measured_data**: ~95% (18/18 test cases)
           
