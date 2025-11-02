@@ -12,6 +12,7 @@ echo ""
 echo "📝 テスト対象:"
 echo "  - utils::voltage_calc (電圧計算)"
 echo "  - mac_address (MACアドレス処理)"
+echo "  - core::measured_data (測定データ)"
 echo ""
 
 # targetディレクトリを作成
@@ -33,6 +34,15 @@ echo "Compiling mac_address tests..."
 rustc +stable --test mac_address.rs --edition 2021 -o ../target/mac_tests
 echo "Running mac_address tests..."
 ../target/mac_tests
+echo ""
+
+# MeasuredDataモジュールのテスト
+echo "🧪 測定データ構造のテスト..."
+cd core
+echo "Compiling measured_data tests..."
+rustc +stable --test measured_data.rs --edition 2021 -o ../../target/measured_data_tests
+echo "Running measured_data tests..."
+../../target/measured_data_tests
 echo ""
 
 echo "================================"

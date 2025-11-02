@@ -14,6 +14,7 @@ ESP32-S3実機を使用せず、ホストマシン（Mac）でユニットテス
 |----------|---------|-----------|---------|
 | utils::voltage_calc | `src/utils/voltage_calc.rs` | 電圧パーセンテージ計算 | 10 |
 | mac_address | `src/mac_address.rs` | MACアドレス処理 | 13 |
+| core::measured_data | `src/core/measured_data.rs` | 測定データ構造 | 18 |
 
 ---
 
@@ -36,6 +37,9 @@ test result: ok. 10 passed; 0 failed; 0 ignored
 
 🧪 MACアドレス処理のテスト...
 test result: ok. 13 passed; 0 failed; 0 ignored
+
+🧪 測定データ構造のテスト...
+test result: ok. 18 passed; 0 failed; 0 ignored
 
 ================================
 ✅ テスト完了
@@ -119,6 +123,33 @@ pub fn calculate_voltage_percentage(voltage_mv: f32, min_mv: f32, max_mv: f32) -
 
 ---
 
+### 3. 測定データ構造（`core::measured_data`）
+
+#### テストケース一覧
+
+| テスト名 | 説明 | 期待結果 |
+|---------|------|---------|
+| test_new_creates_minimal_data | 最小データ生成 | デフォルト値確認 |
+| test_new_with_image_data | 画像データ付き生成 | 画像データ保持 |
+| test_builder_pattern_with_temperature | 温度データ追加 | ビルダーパターン |
+| test_builder_pattern_with_tds_voltage | TDS電圧追加 | ビルダーパターン |
+| test_builder_pattern_with_tds | TDS値追加 | ビルダーパターン |
+| test_builder_pattern_chaining | メソッドチェーン | 全データ設定 |
+| test_add_warning | 警告追加 | 警告リスト更新 |
+| test_get_summary_minimal | 最小サマリ | 電圧のみ表示 |
+| test_get_summary_with_temperature | 温度付きサマリ | 温度表示 |
+| test_get_summary_with_tds_voltage | TDS電圧付きサマリ | 電圧表示 |
+| test_get_summary_with_tds | TDS付きサマリ | TDS表示 |
+| test_get_summary_with_image | 画像付きサマリ | バイト数表示 |
+| test_get_summary_with_warnings | 警告付きサマリ | 警告件数表示 |
+| test_get_summary_full | 完全サマリ | 全項目表示 |
+| test_voltage_boundary_values | 電圧境界値 | 0%, 100%正常 |
+| test_temperature_negative | 負の温度 | マイナス温度対応 |
+| test_empty_image_data | 空画像データ | 0bytes表示 |
+| test_clone | クローン機能 | データコピー |
+
+---
+
 ## CI/CD統合
 
 ### GitHub Actions設定例
@@ -196,6 +227,6 @@ jobs:
 
 ---
 
-**最終更新**: 2025-11-02  
-**テスト数**: 23  
-**カバレッジ**: 基礎ユーティリティ 95%+
+**最終更新**: 2024-11-02  
+**テスト数**: 41 (Phase 2)  
+**カバレッジ**: 基礎ユーティリティ・データ構造 95%+
