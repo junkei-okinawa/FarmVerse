@@ -15,6 +15,13 @@ pub struct Config {
 }
 
 fn main() {
+    // ESP-IDF関連のビルド設定は"esp"フィーチャーが有効の時のみ実行
+    #[cfg(feature = "esp")]
+    build_esp_config();
+}
+
+#[cfg(feature = "esp")]
+fn build_esp_config() {
     // Check if the `cfg.toml` file exists
     if !std::path::Path::new("cfg.toml").exists() {
         panic!("You need to create a `cfg.toml` file with camera MAC addresses! Use `cfg.toml.template` as a template.");
