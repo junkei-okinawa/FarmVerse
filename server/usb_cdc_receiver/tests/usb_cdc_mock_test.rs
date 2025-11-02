@@ -3,7 +3,7 @@
 /// このテストは、USB CDCインターフェースのMock実装を使用して、
 /// ESP-NOWフレーム受信からUSB送信までのデータフローをテストします。
 
-use usb_cdc_receiver::esp_now::frame::Frame;
+use usb_cdc_receiver::esp_now::frame::{Frame, START_MARKER, END_MARKER};
 use usb_cdc_receiver::esp_now::FrameType;
 use usb_cdc_receiver::usb::mock::MockUsbCdc;
 use usb_cdc_receiver::usb::UsbInterface;
@@ -158,8 +158,6 @@ fn create_test_frame(
     sequence: u32,
     payload: &[u8],
 ) -> Vec<u8> {
-    const START_MARKER: u32 = 0xFACEAABB;
-    const END_MARKER: u32 = 0xCDEF5678;
 
     let mut frame = Vec::new();
 
