@@ -4,6 +4,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 
 use crate::communication::esp_now::EspNowSender;
 use crate::config::AppConfig;
+use crate::core::MeasuredData;
 use crate::hardware::camera::{CameraController, CamConfig};
 use crate::hardware::led::StatusLed;
 
@@ -12,80 +13,6 @@ const LOW_VOLTAGE_THRESHOLD_PERCENT: u8 = 8;
 
 /// ダミーハッシュ（SHA256の64文字）
 const DUMMY_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-
-/// 測定データ構造体
-#[derive(Debug)]
-pub struct MeasuredData {
-    pub voltage_percent: u8,
-    pub image_data: Option<Vec<u8>>,
-    pub temperature_celsius: Option<f32>,
-    pub tds_voltage: Option<f32>,
-    pub tds_ppm: Option<f32>,
-    pub sensor_warnings: Vec<String>,
-}
-
-impl MeasuredData {
-    pub fn new(voltage_percent: u8, image_data: Option<Vec<u8>>) -> Self {
-        Self {
-            voltage_percent,
-            image_data,
-            temperature_celsius: None,
-            tds_voltage: None,
-            tds_ppm: None,
-            sensor_warnings: Vec::new(),
-        }
-    }
-
-    /// 温度データを追加
-    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
-        self.temperature_celsius = temperature;
-        self
-    }
-
-    /// TDS電圧データを追加
-    pub fn with_tds_voltage(mut self, voltage: Option<f32>) -> Self {
-        self.tds_voltage = voltage;
-        self
-    }
-    
-    /// TDSデータを追加
-    pub fn with_tds(mut self, tds: Option<f32>) -> Self {
-        self.tds_ppm = tds;
-        self
-    }
-
-    /// 警告メッセージを追加
-    pub fn add_warning(&mut self, warning: String) {
-        self.sensor_warnings.push(warning);
-    }
-
-    /// 測定データのサマリを取得
-    pub fn get_summary(&self) -> String {
-        let mut parts = vec![format!("電圧:{}%", self.voltage_percent)];
-
-        if let Some(temp) = self.temperature_celsius {
-            parts.push(format!("温度:{:.1}°C", temp));
-        }
-
-        if let Some(voltage) = self.tds_voltage {
-            parts.push(format!("TDS電圧:{:.2}V", voltage));
-        }
-
-        if let Some(tds) = self.tds_ppm {
-            parts.push(format!("TDS:{:.1}ppm", tds));
-        }
-
-        if let Some(ref image_data) = self.image_data {
-            parts.push(format!("画像:{}bytes", image_data.len()));
-        }
-
-        if !self.sensor_warnings.is_empty() {
-            parts.push(format!("警告:{}件", self.sensor_warnings.len()));
-        }
-
-        parts.join(", ")
-    }
-}
 
 /// データサービス - データ収集と送信を管理
 pub struct DataService;
