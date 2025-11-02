@@ -46,12 +46,22 @@ impl Frame {
     }
 
     /// フレームを生のバイトに変換します
+    /// 
+    /// フォーマット（xiao_esp32s3_sense送信側と互換）:
+    /// - START_MARKER: 4 bytes (big-endian: 0xFACEAABB)
+    /// - MAC: 6 bytes
+    /// - FRAME_TYPE: 1 byte
+    /// - SEQUENCE: 4 bytes (little-endian)
+    /// - DATA_LEN: 4 bytes (little-endian)
+    /// - DATA: variable length
+    /// - CHECKSUM: 4 bytes (little-endian)
+    /// - END_MARKER: 4 bytes (big-endian: 0xCDEF5678)
     pub fn to_bytes(&self) -> Vec<u8> {
         let start_marker_bytes = START_MARKER.to_be_bytes();
         let end_marker_bytes = END_MARKER.to_be_bytes();
-        let data_len_bytes = (self.data.len() as u32).to_be_bytes();
-        let seq_bytes = self.sequence_number.to_be_bytes();
-        let checksum_bytes = calculate_checksum(&self.data).to_be_bytes();
+        let data_len_bytes = (self.data.len() as u32).to_le_bytes(); // little-endian
+        let seq_bytes = self.sequence_number.to_le_bytes(); // little-endian
+        let checksum_bytes = calculate_checksum(&self.data).to_le_bytes(); // little-endian
 
         // フレームの合計長を計算
         let total_frame_len = start_marker_bytes.len() + // 開始マーカー: 4バイト
@@ -66,14 +76,14 @@ impl Frame {
         let mut framed_data = Vec::with_capacity(total_frame_len);
 
         // フレームを構築
-        framed_data.extend_from_slice(&start_marker_bytes); // 開始マーカー
+        framed_data.extend_from_slice(&start_marker_bytes); // 開始マーカー (big-endian)
         framed_data.extend_from_slice(&self.mac_address); // MACアドレス
         framed_data.push(self.frame_type.to_byte()); // フレームタイプ
-        framed_data.extend_from_slice(&seq_bytes); // シーケンス番号
-        framed_data.extend_from_slice(&data_len_bytes); // データ長
+        framed_data.extend_from_slice(&seq_bytes); // シーケンス番号 (little-endian)
+        framed_data.extend_from_slice(&data_len_bytes); // データ長 (little-endian)
         framed_data.extend_from_slice(&self.data); // データ本体
-        framed_data.extend_from_slice(&checksum_bytes); // チェックサム
-        framed_data.extend_from_slice(&end_marker_bytes); // 終了マーカー
+        framed_data.extend_from_slice(&checksum_bytes); // チェックサム (little-endian)
+        framed_data.extend_from_slice(&end_marker_bytes); // 終了マーカー (big-endian)
 
         framed_data
     }
@@ -115,8 +125,8 @@ impl Frame {
         };
         offset += 1;
 
-        // シーケンス番号の解析
-        let sequence_number = u32::from_be_bytes([
+        // シーケンス番号の解析 (little-endian)
+        let sequence_number = u32::from_le_bytes([
             data[offset],
             data[offset + 1],
             data[offset + 2],
@@ -124,8 +134,8 @@ impl Frame {
         ]);
         offset += 4;
 
-        // データ長の解析
-        let data_len = u32::from_be_bytes([
+        // データ長の解析 (little-endian)
+        let data_len = u32::from_le_bytes([
             data[offset],
             data[offset + 1],
             data[offset + 2],
@@ -148,8 +158,8 @@ impl Frame {
         let payload_data = data[offset..offset + data_len].to_vec();
         offset += data_len;
 
-        // チェックサムの検証
-        let expected_checksum = u32::from_be_bytes([
+        // チェックサムの検証 (little-endian)
+        let expected_checksum = u32::from_le_bytes([
             data[offset],
             data[offset + 1],
             data[offset + 2],
