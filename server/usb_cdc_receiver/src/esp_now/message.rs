@@ -95,7 +95,7 @@ impl AckMessage {
     /// ACKメッセージをバイナリ形式にシリアライズ
     /// 
     /// フォーマット:
-    /// ```
+    /// ```text
     /// [MSG_TYPE(1)] [SEQ_NUM(2)] [ACKED_TYPE(1)] [STATUS(1)]
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
@@ -147,7 +147,7 @@ impl SleepCommandMessage {
     /// スリープコマンドをバイナリ形式にシリアライズ
     /// 
     /// フォーマット:
-    /// ```
+    /// ```text
     /// [MSG_TYPE(1)] [SLEEP_SECONDS(4)]
     /// ```
     pub fn serialize(&self) -> Vec<u8> {

@@ -1,10 +1,15 @@
+#[cfg(feature = "esp")]
 pub mod cdc;
+
+// Mock実装（テストとnon-espビルドで使用可能）
+#[cfg(not(feature = "esp"))]
+pub mod mock;
 
 /// USB通信での結果の型
 pub type UsbResult<T> = Result<T, UsbError>;
 
 /// USB通信のエラーを表す列挙型
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UsbError {
     /// 初期化エラー
     InitError(String),
@@ -29,6 +34,7 @@ impl std::fmt::Display for UsbError {
 
 impl std::error::Error for UsbError {}
 
+#[cfg(feature = "esp")]
 impl From<esp_idf_svc::sys::EspError> for UsbError {
     fn from(error: esp_idf_svc::sys::EspError) -> Self {
         if error.code() == esp_idf_svc::sys::ESP_ERR_TIMEOUT {
@@ -37,4 +43,22 @@ impl From<esp_idf_svc::sys::EspError> for UsbError {
             UsbError::Other(format!("ESP-IDF error: {}", error))
         }
     }
+}
+
+/// USB通信インターフェースのトレイト
+/// 
+/// このトレイトを実装することで、実機用とテスト用(Mock)の
+/// 実装を切り替えることができます。
+pub trait UsbInterface {
+    /// データをUSB経由で書き込む
+    fn write(&mut self, data: &[u8], timeout_ms: u32) -> UsbResult<usize>;
+
+    /// USB経由でデータを読み取る
+    fn read(&mut self, buffer: &mut [u8], timeout_ms: u32) -> UsbResult<usize>;
+
+    /// USBからコマンドを読み取り、解析する
+    fn read_command(&mut self, timeout_ms: u32) -> UsbResult<Option<String>>;
+
+    /// フレームデータをUSB経由で送信する
+    fn send_frame(&mut self, data: &[u8], mac_str: &str) -> UsbResult<usize>;
 }
