@@ -85,7 +85,7 @@ def parse_filename(filename: str) -> Optional[Tuple[str, datetime]]:
     except (ValueError, IndexError) as e:
         # ValueErrorはstrptimeでも発生しうる
         logger.error(f"Could not parse filename '{filename}': {e}", exc_info=True)
-        return None
+    return None
 
 async def list_image_files(image_dir: str) -> List[str]:
     """指定されたディレクトリ内の .jpg ファイルのリストを非同期で取得する"""
