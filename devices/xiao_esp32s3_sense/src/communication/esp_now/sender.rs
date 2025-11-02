@@ -270,11 +270,15 @@ impl EspNowSender {
         &self,
         hash: &str,
         voltage_percentage: u8,
+        temperature_celsius: Option<f32>,
+        tds_voltage: Option<f32>,
         timestamp: &str,
     ) -> Result<(), EspNowError> {
-        // M5Stack Unit Camには温度センサーがないため、ダミー値を使用
-        let temp_celsius = -999.0; // TODO: ダミー値, 温度センサーばUnitCamから削除する予定なので、全ての削除が完了したらtemp_celsiusに関わる実装を削除する
-        let hash_data = format!("HASH:{},VOLT:{},TEMP:{:.1},{}", hash, voltage_percentage, temp_celsius, timestamp);
+        // 温度データがない場合はダミー値-999.0を使用
+        let temp_data = temperature_celsius.unwrap_or(-999.0);
+        // TDS電圧データがない場合はダミー値-999.0を使用
+        let tds_data = tds_voltage.unwrap_or(-999.0);
+        let hash_data = format!("HASH:{},VOLT:{},TEMP:{:.1},TDS_VOLT:{:.1},{}", hash, voltage_percentage, temp_data, tds_data, timestamp);
         info!("ハッシュフレーム送信（sensor_data_receiver準拠）: {}", hash_data);
         
         // sensor_data_receiver準拠のフレーム構造で送信

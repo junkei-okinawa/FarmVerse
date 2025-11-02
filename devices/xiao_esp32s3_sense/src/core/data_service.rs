@@ -1,5 +1,6 @@
 use esp_idf_svc::hal::delay::FreeRtos;
 use log::{error, info, warn};
+use chrono::{DateTime, NaiveDateTime, Utc};
 
 use crate::communication::esp_now::EspNowSender;
 use crate::config::AppConfig;
@@ -17,6 +18,10 @@ const DUMMY_HASH: &str = "000000000000000000000000000000000000000000000000000000
 pub struct MeasuredData {
     pub voltage_percent: u8,
     pub image_data: Option<Vec<u8>>,
+    pub temperature_celsius: Option<f32>,
+    pub tds_voltage: Option<f32>,
+    pub tds_ppm: Option<f32>,
+    pub sensor_warnings: Vec<String>,
 }
 
 impl MeasuredData {
@@ -24,7 +29,61 @@ impl MeasuredData {
         Self {
             voltage_percent,
             image_data,
+            temperature_celsius: None,
+            tds_voltage: None,
+            tds_ppm: None,
+            sensor_warnings: Vec::new(),
         }
+    }
+
+    /// 温度データを追加
+    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
+        self.temperature_celsius = temperature;
+        self
+    }
+
+    /// TDS電圧データを追加
+    pub fn with_tds_voltage(mut self, voltage: Option<f32>) -> Self {
+        self.tds_voltage = voltage;
+        self
+    }
+    
+    /// TDSデータを追加
+    pub fn with_tds(mut self, tds: Option<f32>) -> Self {
+        self.tds_ppm = tds;
+        self
+    }
+
+    /// 警告メッセージを追加
+    pub fn add_warning(&mut self, warning: String) {
+        self.sensor_warnings.push(warning);
+    }
+
+    /// 測定データのサマリを取得
+    pub fn get_summary(&self) -> String {
+        let mut parts = vec![format!("電圧:{}%", self.voltage_percent)];
+
+        if let Some(temp) = self.temperature_celsius {
+            parts.push(format!("温度:{:.1}°C", temp));
+        }
+
+        if let Some(voltage) = self.tds_voltage {
+            parts.push(format!("TDS電圧:{:.2}V", voltage));
+        }
+
+        if let Some(tds) = self.tds_ppm {
+            parts.push(format!("TDS:{:.1}ppm", tds));
+        }
+
+        if let Some(ref image_data) = self.image_data {
+            parts.push(format!("画像:{}bytes", image_data.len()));
+        }
+
+        if !self.sensor_warnings.is_empty() {
+            parts.push(format!("警告:{}件", self.sensor_warnings.len()));
+        }
+
+        parts.join(", ")
     }
 }
 
@@ -167,8 +226,18 @@ impl DataService {
         }
 
         // HASHフレームを送信（サーバーがスリープコマンドを送信するために必要）
-        let current_time = "2025/06/22 12:00:00.000"; // 簡易タイムスタンプ
-        match esp_now_sender.send_hash_frame(&_hash, measured_data.voltage_percent, current_time) {
+        // 取得失敗の場合はダミー値 1900/01/01 00:00:00.000 を使用
+        let current_time = chrono::Utc::now().timestamp();
+        let datetime: DateTime<Utc> = chrono::DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(current_time, 0), Utc);
+        let formatted_time = datetime.format("%Y/%m/%d %H:%M:%S%.3f").to_string();
+
+        match esp_now_sender.send_hash_frame(
+            &_hash, 
+            measured_data.voltage_percent, 
+            measured_data.temperature_celsius,
+            measured_data.tds_voltage,
+            &formatted_time
+        ) {
             Ok(_) => {
                 info!("HASHフレームの送信が完了しました");
             }
@@ -199,5 +268,116 @@ impl DataService {
 
         led.turn_off()?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_measured_data_new() {
+        let data = MeasuredData::new(50, None);
+        assert_eq!(data.voltage_percent, 50);
+        assert!(data.image_data.is_none());
+        assert!(data.temperature_celsius.is_none());
+        assert!(data.tds_voltage.is_none());
+        assert!(data.tds_ppm.is_none());
+        assert!(data.sensor_warnings.is_empty());
+    }
+
+    #[test]
+    fn test_measured_data_with_temperature() {
+        let data = MeasuredData::new(75, None)
+            .with_temperature(Some(25.5));
+        
+        assert_eq!(data.voltage_percent, 75);
+        assert_eq!(data.temperature_celsius, Some(25.5));
+    }
+
+    #[test]
+    fn test_measured_data_with_tds() {
+        let data = MeasuredData::new(80, None)
+            .with_tds_voltage(Some(1.5))
+            .with_tds(Some(450.0));
+        
+        assert_eq!(data.tds_voltage, Some(1.5));
+        assert_eq!(data.tds_ppm, Some(450.0));
+    }
+
+    #[test]
+    fn test_measured_data_add_warning() {
+        let mut data = MeasuredData::new(30, None);
+        data.add_warning("Low voltage detected".to_string());
+        data.add_warning("Sensor timeout".to_string());
+        
+        assert_eq!(data.sensor_warnings.len(), 2);
+        assert_eq!(data.sensor_warnings[0], "Low voltage detected");
+        assert_eq!(data.sensor_warnings[1], "Sensor timeout");
+    }
+
+    #[test]
+    fn test_get_summary_voltage_only() {
+        let data = MeasuredData::new(85, None);
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:85%");
+    }
+
+    #[test]
+    fn test_get_summary_with_temperature() {
+        let data = MeasuredData::new(70, None)
+            .with_temperature(Some(23.7));
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:70%, 温度:23.7°C");
+    }
+
+    #[test]
+    fn test_get_summary_with_tds() {
+        let data = MeasuredData::new(60, None)
+            .with_tds_voltage(Some(1.23))
+            .with_tds(Some(567.8));
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:60%, TDS電圧:1.23V, TDS:567.8ppm");
+    }
+
+    #[test]
+    fn test_get_summary_with_image() {
+        let image_data = vec![1, 2, 3, 4, 5];
+        let data = MeasuredData::new(90, Some(image_data));
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:90%, 画像:5bytes");
+    }
+
+    #[test]
+    fn test_get_summary_with_warnings() {
+        let mut data = MeasuredData::new(40, None);
+        data.add_warning("Warning 1".to_string());
+        data.add_warning("Warning 2".to_string());
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:40%, 警告:2件");
+    }
+
+    #[test]
+    fn test_get_summary_full_data() {
+        let image_data = vec![0; 1024];
+        let mut data = MeasuredData::new(95, Some(image_data))
+            .with_temperature(Some(26.3))
+            .with_tds_voltage(Some(2.15))
+            .with_tds(Some(890.5));
+        data.add_warning("Test warning".to_string());
+        
+        let summary = data.get_summary();
+        
+        assert!(summary.contains("電圧:95%"));
+        assert!(summary.contains("温度:26.3°C"));
+        assert!(summary.contains("TDS電圧:2.15V"));
+        assert!(summary.contains("TDS:890.5ppm"));
+        assert!(summary.contains("画像:1024bytes"));
+        assert!(summary.contains("警告:1件"));
     }
 }

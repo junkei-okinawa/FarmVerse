@@ -10,6 +10,10 @@ rust-version = "1.85"
 name = "sensor_data_sender"
 path = "src/main.rs"
 
+[lib]
+name = "sensor_data_sender"
+path = "src/lib.rs"
+
 [profile.release]
 opt-level = "s"
 # opt-level = "z"      # "s" から "z" に変更 (サイズをさらに積極的に最適化)
@@ -36,6 +40,14 @@ chrono-tz = "0.10.3"
 
 # esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git" }
 esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git", branch = "feature/devices/esp32s3-sense" }
+
+# センサーライブラリの追加
+# esp-ec-sensor = { path = "../../sensors/esp-ec-sensor" }
+esp-ec-sensor = { git = "https://github.com/junkei-okinawa/esp-ec-sensor" }
+# simple_ds18b20_temp_sensor = { path = "../../sensors/esp-temp-sensor" }
+simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor" }
+esp-idf-hal = "0.45.2"
+serde = { version = "1.0", features = ["derive"] }
 
 [build-dependencies]
 embuild = "0.33"
