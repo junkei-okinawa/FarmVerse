@@ -6,13 +6,18 @@ use std::sync::{Arc, Mutex};
 /// 
 /// 実際のUSBハードウェアを使わずにUSB CDC通信をシミュレートします。
 /// 送信されたデータと受信コマンドを記録し、テストで検証できます。
+/// 
+/// # Clone動作について
+/// `MockUsbCdc`は`Clone`を実装していますが、これは各フィールド（`sent_data`, `command_queue`など）の
+/// `Arc<Mutex<...>>`を浅くコピーします。つまり、クローンしたインスタンス同士は同じ内部状態を共有します。
+/// どちらか一方で状態を変更すると、他方にも反映されます。
 #[derive(Debug, Clone)]
 pub struct MockUsbCdc {
     /// 送信されたデータの記録
     pub sent_data: Arc<Mutex<Vec<Vec<u8>>>>,
-    /// 読み取り用のコマンドキュー（先頭から取り出される）
+    /// 読み取り用のコマンドキュー（FIFOで取り出される）
     pub command_queue: Arc<Mutex<VecDeque<String>>>,
-    /// 読み取り用のデータキュー（先頭から取り出される）
+    /// 読み取り用のデータキュー（FIFOで取り出される）
     pub read_data_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
     /// エラーシミュレーション用のフラグ
     pub simulate_write_error: Arc<Mutex<bool>>,
