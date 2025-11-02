@@ -1,4 +1,5 @@
 use super::{UsbError, UsbInterface, UsbResult};
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 /// テスト用のUSB CDCモック実装
@@ -10,9 +11,9 @@ pub struct MockUsbCdc {
     /// 送信されたデータの記録
     pub sent_data: Arc<Mutex<Vec<Vec<u8>>>>,
     /// 読み取り用のコマンドキュー（先頭から取り出される）
-    pub command_queue: Arc<Mutex<Vec<String>>>,
+    pub command_queue: Arc<Mutex<VecDeque<String>>>,
     /// 読み取り用のデータキュー（先頭から取り出される）
-    pub read_data_queue: Arc<Mutex<Vec<Vec<u8>>>>,
+    pub read_data_queue: Arc<Mutex<VecDeque<Vec<u8>>>>,
     /// エラーシミュレーション用のフラグ
     pub simulate_write_error: Arc<Mutex<bool>>,
     pub simulate_read_error: Arc<Mutex<bool>>,
@@ -30,8 +31,8 @@ impl MockUsbCdc {
     pub fn new() -> Self {
         Self {
             sent_data: Arc::new(Mutex::new(Vec::new())),
-            command_queue: Arc::new(Mutex::new(Vec::new())),
-            read_data_queue: Arc::new(Mutex::new(Vec::new())),
+            command_queue: Arc::new(Mutex::new(VecDeque::new())),
+            read_data_queue: Arc::new(Mutex::new(VecDeque::new())),
             simulate_write_error: Arc::new(Mutex::new(false)),
             simulate_read_error: Arc::new(Mutex::new(false)),
             simulate_timeout: Arc::new(Mutex::new(false)),
@@ -40,12 +41,12 @@ impl MockUsbCdc {
 
     /// テスト用: 読み取り用コマンドをキューに追加
     pub fn queue_command(&self, command: String) {
-        self.command_queue.lock().unwrap().push(command);
+        self.command_queue.lock().unwrap().push_back(command);
     }
 
     /// テスト用: 読み取り用データをキューに追加
     pub fn queue_read_data(&self, data: Vec<u8>) {
-        self.read_data_queue.lock().unwrap().push(data);
+        self.read_data_queue.lock().unwrap().push_back(data);
     }
 
     /// テスト用: 送信されたデータを取得
@@ -100,10 +101,10 @@ impl UsbInterface for MockUsbCdc {
 
         // キューからデータを取り出す
         let mut queue = self.read_data_queue.lock().unwrap();
-        if let Some(data) = queue.first() {
+        if let Some(data) = queue.front() {
             let len = data.len().min(buffer.len());
             buffer[..len].copy_from_slice(&data[..len]);
-            queue.remove(0); // 取り出したデータを削除
+            queue.pop_front();
             Ok(len)
         } else {
             // データがない場合はタイムアウト
@@ -115,9 +116,9 @@ impl UsbInterface for MockUsbCdc {
         // コマンドキューから取り出す
         {
             let mut queue = self.command_queue.lock().unwrap();
-            if let Some(cmd) = queue.first() {
+            if let Some(cmd) = queue.front() {
                 let result = cmd.clone();
-                queue.remove(0);
+                queue.pop_front();
                 return Ok(Some(result));
             }
         }

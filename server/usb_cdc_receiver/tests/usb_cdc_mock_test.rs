@@ -3,7 +3,7 @@
 /// このテストは、USB CDCインターフェースのMock実装を使用して、
 /// ESP-NOWフレーム受信からUSB送信までのデータフローをテストします。
 
-use usb_cdc_receiver::esp_now::frame::{Frame, START_MARKER, END_MARKER};
+use usb_cdc_receiver::esp_now::frame::Frame;
 use usb_cdc_receiver::esp_now::FrameType;
 use usb_cdc_receiver::usb::mock::MockUsbCdc;
 use usb_cdc_receiver::usb::UsbInterface;
@@ -19,8 +19,9 @@ fn test_usb_send_esp_now_frame() {
     let frame_type = FrameType::Data;
     let payload = vec![0x01, 0x02, 0x03, 0x04, 0x05];
 
-    // フレームをバイト列に変換（実際の送信側と同じロジック）
-    let frame_bytes = create_test_frame(&mac_address, frame_type, sequence_num, &payload);
+    // フレームをバイト列に変換（Frame::to_bytes()を使用）
+    let frame = Frame::new(mac_address, frame_type, sequence_num, payload.clone());
+    let frame_bytes = frame.to_bytes();
 
     // USB経由でフレームを送信
     let result = mock_usb.send_frame(&frame_bytes, "AA:BB:CC:DD:EE:FF");
@@ -58,7 +59,8 @@ fn test_usb_send_large_frame() {
     // 大きなペイロード（画像データをシミュレート）
     let large_payload = vec![0xAB; 10000]; // 10KB
     let mac_address = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
-    let frame_bytes = create_test_frame(&mac_address, FrameType::Data, 1, &large_payload);
+    let frame = Frame::new(mac_address, FrameType::Data, 1, large_payload.clone());
+    let frame_bytes = frame.to_bytes();
 
     // USB経由で送信
     let result = mock_usb.send_frame(&frame_bytes, "11:22:33:44:55:66");
@@ -109,8 +111,9 @@ fn test_usb_multiple_frames() {
     
     for i in 0..5 {
         let payload = vec![i as u8; 100];
-        let frame = create_test_frame(&mac, FrameType::Data, i, &payload);
-        let result = mock_usb.send_frame(&frame, "AA:BB:CC:DD:EE:FF");
+        let frame = Frame::new(mac, FrameType::Data, i, payload);
+        let frame_bytes = frame.to_bytes();
+        let result = mock_usb.send_frame(&frame_bytes, "AA:BB:CC:DD:EE:FF");
         assert!(result.is_ok());
     }
 
@@ -145,80 +148,24 @@ fn test_usb_read_write_sequence() {
     assert_eq!(sent[0], write_data);
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// テスト用のESP-NOWフレームを作成
-/// 
-/// 実際のxiao_esp32s3_senseプロジェクトのフォーマットに準拠
-fn create_test_frame(
-    mac: &[u8; 6],
-    frame_type: FrameType,
-    sequence: u32,
-    payload: &[u8],
-) -> Vec<u8> {
-
-    let mut frame = Vec::new();
-
-    // START_MARKER (big-endian)
-    frame.extend_from_slice(&START_MARKER.to_be_bytes());
-
-    // MAC Address (6 bytes)
-    frame.extend_from_slice(mac);
-
-    // Frame Type (1 byte)
-    frame.push(frame_type as u8);
-
-    // Sequence Number (4 bytes, little-endian)
-    frame.extend_from_slice(&sequence.to_le_bytes());
-
-    // Data Length (4 bytes, little-endian)
-    frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-
-    // Payload
-    frame.extend_from_slice(payload);
-
-    // Checksum (XOR, 4 bytes, little-endian)
-    let checksum = calculate_xor_checksum(payload);
-    frame.extend_from_slice(&checksum.to_le_bytes());
-
-    // END_MARKER (big-endian)
-    frame.extend_from_slice(&END_MARKER.to_be_bytes());
-
-    frame
-}
-
-/// XORチェックサムを計算（frame.rs::calculate_checksum()と同じロジック）
-fn calculate_xor_checksum(data: &[u8]) -> u32 {
-    let mut checksum: u32 = 0;
-    for chunk in data.chunks(4) {
-        let mut val: u32 = 0;
-        for (i, &b) in chunk.iter().enumerate() {
-            val |= (b as u32) << (i * 8);
-        }
-        checksum ^= val;
-    }
-    checksum
-}
-
 #[test]
 fn test_frame_creation_helper() {
-    // ヘルパー関数自体のテスト
+    // Frame::to_bytes()を使用したテスト
     let mac = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
     let payload = vec![0xAA, 0xBB, 0xCC];
-    let frame = create_test_frame(&mac, FrameType::Data, 1, &payload);
+    let frame = Frame::new(mac, FrameType::Data, 1, payload.clone());
+    let frame_bytes = frame.to_bytes();
 
     // フレーム構造を検証
-    assert_eq!(&frame[0..4], &0xFACEAABBu32.to_be_bytes()); // START
-    assert_eq!(&frame[4..10], &mac); // MAC
-    assert_eq!(frame[10], FrameType::Data as u8); // Type
-    assert_eq!(&frame[11..15], &1u32.to_le_bytes()); // Sequence
-    assert_eq!(&frame[15..19], &3u32.to_le_bytes()); // Data Length
+    assert_eq!(&frame_bytes[0..4], &0xFACEAABBu32.to_be_bytes()); // START
+    assert_eq!(&frame_bytes[4..10], &mac); // MAC
+    assert_eq!(frame_bytes[10], FrameType::Data as u8); // Type
+    assert_eq!(&frame_bytes[11..15], &1u32.to_le_bytes()); // Sequence
+    assert_eq!(&frame_bytes[15..19], &3u32.to_le_bytes()); // Data Length
 
     // END MARKER位置を計算
-    let end_pos = frame.len() - 4;
-    assert_eq!(&frame[end_pos..], &0xCDEF5678u32.to_be_bytes());
+    let end_pos = frame_bytes.len() - 4;
+    assert_eq!(&frame_bytes[end_pos..], &0xCDEF5678u32.to_be_bytes());
 }
 
 #[test]
@@ -233,10 +180,11 @@ fn test_usb_data_flow_integration() {
         0x56, 0x78, // 湿度データ
         0x9A, 0xBC, // 電圧データ
     ];
-    let frame = create_test_frame(&mac, FrameType::Data, 10, &sensor_data);
+    let frame = Frame::new(mac, FrameType::Data, 10, sensor_data.clone());
+    let frame_bytes = frame.to_bytes();
 
     // 2. フレームを解析（esp_now/frame.rsの機能を使用）
-    let parsed_frame = Frame::from_bytes(&frame);
+    let parsed_frame = Frame::from_bytes(&frame_bytes);
     assert!(parsed_frame.is_some(), "Frame parsing should succeed");
 
     let (parsed, _consumed_bytes) = parsed_frame.unwrap();
@@ -245,11 +193,11 @@ fn test_usb_data_flow_integration() {
     assert_eq!(parsed.data(), &sensor_data[..]);
 
     // 3. USB経由でPCに送信
-    let result = mock_usb.send_frame(&frame, "AA:BB:CC:DD:EE:FF");
+    let result = mock_usb.send_frame(&frame_bytes, "AA:BB:CC:DD:EE:FF");
     assert!(result.is_ok());
 
     // 4. 送信されたデータを検証
     let sent = mock_usb.get_sent_data();
     assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0], frame);
+    assert_eq!(sent[0], frame_bytes);
 }
