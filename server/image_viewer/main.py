@@ -6,9 +6,8 @@ from dotenv import load_dotenv
 import logging
 
 import asyncio
-import aiofiles
-from fastapi import FastAPI, Request, Query, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, Request, Query
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
@@ -86,12 +85,11 @@ def parse_filename(filename: str) -> Optional[Tuple[str, datetime]]:
     except (ValueError, IndexError) as e:
         # ValueErrorはstrptimeでも発生しうる
         logger.error(f"Could not parse filename '{filename}': {e}", exc_info=True)
-        return None # return None を明示
-    return None
+        return None
 
 async def list_image_files(image_dir: str) -> List[str]:
     """指定されたディレクトリ内の .jpg ファイルのリストを非同期で取得する"""
-    if not image_dir_exists:
+    if not os.path.exists(image_dir) or not os.path.isdir(image_dir):
         return []
     try:
         # os.listdir はブロッキング I/O なので run_in_executor を使う
@@ -141,7 +139,6 @@ async def get_image_files_details(
             filtered_files = [f for f in filtered_files if f[2].date() == filter_dt]
         except ValueError:
             logger.warning(f"Invalid date format received: {filter_date}. Ignoring filter.")
-            pass # 日付形式が不正な場合は無視
 
     # ソート
     reverse_order = sort_order == "desc"
