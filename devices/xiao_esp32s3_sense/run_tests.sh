@@ -20,7 +20,7 @@ mkdir -p target
 echo "🧪 電圧計算ロジックのテスト..."
 cd src/utils
 echo "Compiling voltage_calc tests..."
-rustc --test voltage_calc.rs --edition 2021 -o ../../target/voltage_tests
+rustc +stable --test voltage_calc.rs --edition 2021 -o ../../target/voltage_tests
 if [ $? -eq 0 ]; then
     echo "Running voltage_calc tests..."
     ../../target/voltage_tests
@@ -35,7 +35,7 @@ fi
 echo "🧪 MACアドレス処理のテスト..."
 cd ../
 echo "Compiling mac_address tests..."
-rustc --test mac_address.rs --edition 2021 -o ../target/mac_tests
+rustc +stable --test mac_address.rs --edition 2021 -o ../target/mac_tests
 if [ $? -eq 0 ]; then
     echo "Running mac_address tests..."
     ../target/mac_tests
