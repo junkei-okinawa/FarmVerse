@@ -1,4 +1,5 @@
 #!/bin/bash
+# Before first use, make this script executable with: chmod +x run_tests.sh
 
 # ホストマシンでのユニットテスト実行スクリプト
 set -e  # エラーで停止

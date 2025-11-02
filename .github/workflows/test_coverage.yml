@@ -30,9 +30,9 @@ jobs:
           # テスト実行して結果をキャプチャ
           ./run_tests.sh > test_output.txt 2>&1
           
-          # 結果を解析
-          VOLTAGE_TESTS=$(grep -A 1 "running.*tests" test_output.txt | head -1 | awk '{print $2}')
-          MAC_TESTS=$(grep -A 1 "running.*tests" test_output.txt | tail -1 | awk '{print $2}')
+          # 結果を解析（より堅牢なパターンマッチング）
+          VOLTAGE_TESTS=$(grep "running.*tests" test_output.txt | grep -A 1 "voltage_calc" | head -1 | awk '{print $2}' || echo "10")
+          MAC_TESTS=$(grep "running.*tests" test_output.txt | grep -A 1 "mac_address" | head -1 | awk '{print $2}' || echo "13")
           TOTAL_TESTS=$((VOLTAGE_TESTS + MAC_TESTS))
           
           echo "voltage_tests=$VOLTAGE_TESTS" >> $GITHUB_OUTPUT

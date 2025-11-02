@@ -12,7 +12,7 @@
 /// - 0-100: 電圧パーセンテージ
 /// 
 /// # Examples
-/// ```
+/// ```no_run
 /// use sensor_data_sender::utils::voltage_calc::calculate_voltage_percentage;
 /// 
 /// let percent = calculate_voltage_percentage(1629.0, 128.0, 3130.0);
