@@ -6,12 +6,18 @@ on:
     paths:
       - 'devices/xiao_esp32s3_sense/src/**'
       - 'devices/xiao_esp32s3_sense/run_tests.sh'
+      - 'server/usb_cdc_receiver/src/**'
+      - 'server/usb_cdc_receiver/tests/**'
+      - 'server/usb_cdc_receiver/run_tests.sh'
       - '.github/workflows/unit_tests.yml'
   pull_request:
     branches: [ main, develop ]
     paths:
       - 'devices/xiao_esp32s3_sense/src/**'
       - 'devices/xiao_esp32s3_sense/run_tests.sh'
+      - 'server/usb_cdc_receiver/src/**'
+      - 'server/usb_cdc_receiver/tests/**'
+      - 'server/usb_cdc_receiver/run_tests.sh'
   workflow_dispatch: # 手動実行を許可
 
 jobs:
@@ -105,3 +111,41 @@ jobs:
           echo "- Voltage calculation: 10 tests" >> $GITHUB_STEP_SUMMARY
           echo "- MAC address processing: 13 tests" >> $GITHUB_STEP_SUMMARY
           echo "- **Total: 23 tests passed**" >> $GITHUB_STEP_SUMMARY
+          
+  usb-cdc-receiver-test:
+    name: USB CDC Receiver Unit Tests
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          
+      - name: Display Rust version
+        run: |
+          rustc --version
+          cargo --version
+          
+      - name: Run USB CDC Receiver unit tests
+        run: |
+          cd server/usb_cdc_receiver
+          chmod +x run_tests.sh
+          ./run_tests.sh
+          
+      - name: Summary
+        run: |
+          echo "### USB CDC Receiver Test Summary 📊" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ USB CDC Receiver unit tests completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Test Coverage:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ESP-NOW frame parsing: 13 tests" >> $GITHUB_STEP_SUMMARY
+          echo "- MAC address handling: 26 tests" >> $GITHUB_STEP_SUMMARY
+          echo "- Command parsing: 3 tests" >> $GITHUB_STEP_SUMMARY
+          echo "- USB CDC mock integration: 9 tests" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total: 51 tests passed**" >> $GITHUB_STEP_SUMMARY
