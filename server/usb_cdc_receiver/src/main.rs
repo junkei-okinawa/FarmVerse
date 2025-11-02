@@ -23,54 +23,18 @@ use esp_now::sender::EspNowSender;
 use log::{debug, error, info, warn};
 use mac_address::format_mac_address;
 use sleep_command_queue::{init_sleep_command_queue, enqueue_sleep_command, process_sleep_command_queue};
-use streaming::controller::{StreamingController, StreamingConfig};
-use streaming::StreamingError;
 use usb::cdc::UsbCdc;
-use std::sync::Mutex;
 
-/// 静的なStreamingControllerインスタンス
-static STREAMING_CONTROLLER: Mutex<Option<StreamingController>> = Mutex::new(None);
-
-/// ESP-NOWの受信コールバック関数（Streaming Architecture対応）
+/// ESP-NOWの受信コールバック関数
 ///
-/// ESP-NOWからのデータを受け取り、StreamingControllerに渡します。
+/// ESP-NOWからのデータを受け取り、キューに追加します。
 extern "C" fn esp_now_recv_cb(
     info: *const esp_idf_svc::sys::esp_now_recv_info_t,
     data: *const u8,
     data_len: i32,
 ) {
     let mut callback = |received_data: queue::ReceivedData| {
-        // StreamingControllerでデータを処理（ノンブロッキング）
-        match STREAMING_CONTROLLER.try_lock() {
-            Ok(mut controller_guard) => {
-                if let Some(_controller) = controller_guard.as_mut() {
-                    // 注: USB CDC参照が必要だが、ここでは処理をキューに追加する方式を採用
-                    // 実際のUSB転送はメインループで行う
-                    match streaming::buffer::BufferedData::new(&received_data.data, received_data.mac) {
-                        Ok(_buffered_data) => {
-                            // 受信データをStreaming Controllerに通知
-                            debug!("ESP-NOW callback: received {} bytes from {:02X?}", 
-                                   received_data.data.len(), received_data.mac);
-                            
-                            // 従来のキューシステムと併用しつつ、段階的移行
-                            queue::data_queue::try_enqueue_from_callback(received_data)
-                        }
-                        Err(e) => {
-                            error!("ESP-NOW callback: failed to create buffered data: {}", e);
-                            false
-                        }
-                    }
-                } else {
-                    error!("ESP-NOW callback: StreamingController not initialized");
-                    false
-                }
-            }
-            Err(_) => {
-                // ロック取得失敗 - メインループで処理中の可能性
-                debug!("ESP-NOW callback: StreamingController locked, using fallback queue");
-                queue::data_queue::try_enqueue_from_callback(received_data)
-            }
-        }
+        queue::data_queue::try_enqueue_from_callback(received_data)
     };
     esp_now::receiver::process_esp_now_data(&mut callback, info, data, data_len);
 }
@@ -199,38 +163,33 @@ fn initialize_esp_now() -> Result<()> {
     Ok(())
 }
 
-/// Streaming Architecture対応のデータ処理ループ
+/// データ処理メインループ
 ///
-/// 新しいStreaming Controllerを使用してデータ処理を行います。
-/// 従来のキューシステムと併用して段階的に移行します。
+/// キューからデータを取得し、USB CDC経由でPCに転送します。
+/// スリープコマンドもUSB経由で受信し、ESP-NOWで送信します。
 #[allow(unused_assignments)]
-fn process_streaming_data_loop(
+fn process_data_loop(
     usb_cdc: &mut UsbCdc, 
     esp_now_sender: &mut EspNowSender,
 ) -> Result<()> {
-    info!("Entering streaming processing loop...");
+    info!("Entering data processing loop...");
     
     loop {
         let mut processed_any_data = false;
         
-        // 1. 従来のキューからデータを取得（互換性のため）
+        // 1. キューからデータを取得してUSB転送
         match queue::data_queue::dequeue() {
             Ok(received_data) => {
                 let mac_str = format_mac_address(&received_data.mac);
-                debug!("Streaming Loop: Processing legacy queue data from {}. ({} bytes)",
-                       mac_str, received_data.data.len());
-                
-                // WDT問題のため、Streaming Controllerを使用せず直接USB送信
-                debug!("Streaming Loop: Processing data from {} using fallback method. ({} bytes)",
-                       mac_str, received_data.data.len());
+                debug!("Processing data from {}: {} bytes", mac_str, received_data.data.len());
                 
                 match usb_cdc.send_frame(&received_data.data, &mac_str) {
                     Ok(bytes_sent) => {
-                        debug!("Streaming Loop: USB transfer successful: {} bytes", bytes_sent);
+                        debug!("USB transfer successful: {} bytes", bytes_sent);
                         processed_any_data = true;
                     }
                     Err(usb_err) => {
-                        error!("Streaming Loop: USB transfer failed for {}: {}", mac_str, usb_err);
+                        error!("USB transfer failed for {}: {}", mac_str, usb_err);
                     }
                 }
                 processed_any_data = true;
@@ -310,54 +269,10 @@ fn main() -> Result<()> {
     init_sleep_command_queue();
     info!("✓ Sleep command queue initialized");
 
-    // Streaming Controllerの初期化
-    let streaming_config = StreamingConfig::default();
-    info!("✓ Streaming config created: timeout={}ms, retries={}", 
-          streaming_config.usb_timeout_ms, streaming_config.usb_max_retries);
-    
-    // グローバルなStreaming Controllerを設定
-    {
-        info!("Setting up global streaming controller...");
-        let mut global_controller = STREAMING_CONTROLLER.lock().unwrap();
-        *global_controller = Some(StreamingController::new(streaming_config.clone()));
-        info!("✓ Global streaming controller set up");
-        
-        // Streaming Controller の初期状態を確認
-        if let Some(controller) = global_controller.as_ref() {
-            info!("Streaming Controller initialized: {} devices registered", controller.list_devices().len());
-        }
-    }
-
     // 設定からカメラ情報を読み込み
     info!("Loading camera configurations...");
     let cameras = config::load_camera_configs();
     info!("✓ Camera configs loaded: {} cameras", cameras.len());
-
-    // カメラをStreaming Controllerに登録
-    {
-        info!("Registering cameras with Streaming Controller...");
-        let mut global_controller = STREAMING_CONTROLLER.lock().unwrap();
-        
-        if let Some(controller) = global_controller.as_mut() {
-            for (index, camera) in cameras.iter().enumerate() {
-                let device_id = camera.mac_address.into_bytes();
-                let device_name = format!("{} ({})", camera.name, camera.mac_address);
-                
-                info!("Registering camera {} ({}/{})", camera.name, index + 1, cameras.len());
-                match controller.register_device(device_id, device_name) {
-                    Ok(()) => {
-                        info!("✓ Registered camera: {}", camera.name);
-                    }
-                    Err(e) => {
-                        warn!("Failed to register camera {}: {:?}", camera.name, e);
-                    }
-                }
-            }
-            info!("✓ Camera registration completed: {} cameras", cameras.len());
-        } else {
-            error!("Failed to register cameras: StreamingController not initialized");
-        }
-    }
 
     // ペリフェラルの取得
     info!("Taking peripherals...");
@@ -431,25 +346,9 @@ fn main() -> Result<()> {
         peripherals.pins.gpio18, // XIAO ESP32C3のUSB D-ピン
         peripherals.pins.gpio19, // XIAO ESP32C3のUSB D+ピン
     )?;
-    info!("✓ USB CDC initialized with streaming architecture support.");
+    info!("✓ USB CDC initialized.");
 
-    // Streaming Architecture対応のメインデータ処理ループ
-    info!("Starting streaming data processing loop...");
-    process_streaming_data_loop(&mut usb_cdc, &mut esp_now_sender)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_streaming_integration() {
-        // Streaming Controllerの基本的な初期化テスト
-        let config = StreamingConfig::default();
-        let controller = StreamingController::new(config);
-        
-        assert_eq!(controller.list_devices().len(), 0);
-        
-        // テスト環境ではハードウェア依存の処理はスキップ
-    }
+    // メインデータ処理ループ
+    info!("Starting data processing loop...");
+    process_data_loop(&mut usb_cdc, &mut esp_now_sender)
 }
