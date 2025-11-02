@@ -270,3 +270,114 @@ impl DataService {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_measured_data_new() {
+        let data = MeasuredData::new(50, None);
+        assert_eq!(data.voltage_percent, 50);
+        assert!(data.image_data.is_none());
+        assert!(data.temperature_celsius.is_none());
+        assert!(data.tds_voltage.is_none());
+        assert!(data.tds_ppm.is_none());
+        assert!(data.sensor_warnings.is_empty());
+    }
+
+    #[test]
+    fn test_measured_data_with_temperature() {
+        let data = MeasuredData::new(75, None)
+            .with_temperature(Some(25.5));
+        
+        assert_eq!(data.voltage_percent, 75);
+        assert_eq!(data.temperature_celsius, Some(25.5));
+    }
+
+    #[test]
+    fn test_measured_data_with_tds() {
+        let data = MeasuredData::new(80, None)
+            .with_tds_voltage(Some(1.5))
+            .with_tds(Some(450.0));
+        
+        assert_eq!(data.tds_voltage, Some(1.5));
+        assert_eq!(data.tds_ppm, Some(450.0));
+    }
+
+    #[test]
+    fn test_measured_data_add_warning() {
+        let mut data = MeasuredData::new(30, None);
+        data.add_warning("Low voltage detected".to_string());
+        data.add_warning("Sensor timeout".to_string());
+        
+        assert_eq!(data.sensor_warnings.len(), 2);
+        assert_eq!(data.sensor_warnings[0], "Low voltage detected");
+        assert_eq!(data.sensor_warnings[1], "Sensor timeout");
+    }
+
+    #[test]
+    fn test_get_summary_voltage_only() {
+        let data = MeasuredData::new(85, None);
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:85%");
+    }
+
+    #[test]
+    fn test_get_summary_with_temperature() {
+        let data = MeasuredData::new(70, None)
+            .with_temperature(Some(23.7));
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:70%, 温度:23.7°C");
+    }
+
+    #[test]
+    fn test_get_summary_with_tds() {
+        let data = MeasuredData::new(60, None)
+            .with_tds_voltage(Some(1.23))
+            .with_tds(Some(567.8));
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:60%, TDS電圧:1.23V, TDS:567.8ppm");
+    }
+
+    #[test]
+    fn test_get_summary_with_image() {
+        let image_data = vec![1, 2, 3, 4, 5];
+        let data = MeasuredData::new(90, Some(image_data));
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:90%, 画像:5bytes");
+    }
+
+    #[test]
+    fn test_get_summary_with_warnings() {
+        let mut data = MeasuredData::new(40, None);
+        data.add_warning("Warning 1".to_string());
+        data.add_warning("Warning 2".to_string());
+        let summary = data.get_summary();
+        
+        assert_eq!(summary, "電圧:40%, 警告:2件");
+    }
+
+    #[test]
+    fn test_get_summary_full_data() {
+        let image_data = vec![0; 1024];
+        let mut data = MeasuredData::new(95, Some(image_data))
+            .with_temperature(Some(26.3))
+            .with_tds_voltage(Some(2.15))
+            .with_tds(Some(890.5));
+        data.add_warning("Test warning".to_string());
+        
+        let summary = data.get_summary();
+        
+        assert!(summary.contains("電圧:95%"));
+        assert!(summary.contains("温度:26.3°C"));
+        assert!(summary.contains("TDS電圧:2.15V"));
+        assert!(summary.contains("TDS:890.5ppm"));
+        assert!(summary.contains("画像:1024bytes"));
+        assert!(summary.contains("警告:1件"));
+    }
+}

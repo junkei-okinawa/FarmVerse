@@ -10,6 +10,10 @@ rust-version = "1.85"
 name = "sensor_data_sender"
 path = "src/main.rs"
 
+[lib]
+name = "sensor_data_sender"
+path = "src/lib.rs"
+
 [profile.release]
 opt-level = "s"
 # opt-level = "z"      # "s" から "z" に変更 (サイズをさらに積極的に最適化)

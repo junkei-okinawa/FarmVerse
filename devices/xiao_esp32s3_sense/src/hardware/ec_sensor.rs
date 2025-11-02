@@ -139,11 +139,12 @@ impl EcTdsSensor {
             FreeRtos::delay_ms(50);  // 最小限の安定化時間
             let avg_adc = sensor.read_adc_averaged(sample_count, delay_ms);
             let _ = sensor.power_off();
-            let adc_value = if avg_adc.is_ok() {
-                avg_adc.unwrap()
-            } else {
-                warn!("ADC読み取りが失敗しました");
-                return Ok(None);
+            let adc_value = match avg_adc {
+                Ok(val) => val,
+                Err(e) => {
+                    warn!("ADC読み取りが失敗しました: {:?}", e);
+                    return Ok(None);
+                }
             };
 
             let voltage = sensor.adc_to_voltage(adc_value);
