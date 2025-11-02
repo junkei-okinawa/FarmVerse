@@ -60,6 +60,44 @@ pub struct Config {
     #[default(4200)]
     adc_voltage_max_mv: u16,
 
+    // 温度センサー設定（DS18B20）
+    #[default(true)]
+    temp_sensor_enabled: bool,
+
+    #[default(2)]
+    temp_sensor_power_pin: i32,
+
+    #[default(3)]
+    temp_sensor_data_pin: i32,
+
+    #[default(0.7)]
+    temperature_offset_celsius: f32,
+
+    // TDSセンサー設定
+    #[default(true)]
+    tds_sensor_enabled: bool,
+
+    #[default(4)]
+    tds_sensor_power_pin: u8,
+
+    #[default(1)]
+    tds_sensor_adc_pin: u8,
+
+    #[default(500.0)]
+    tds_factor: f32,
+
+    #[default(10)]
+    tds_measurement_samples: u8,
+
+    #[default(0)]
+    tds_calibrate_reference_adc: u16,
+
+    #[default(0.0)]
+    tds_calibrate_reference_ec: f32,
+
+    #[default(0.00)]
+    tds_temp_coefficient: f32,
+    
     // テスト・デバッグ設定
     #[default(false)]
     force_camera_test: bool,
@@ -149,6 +187,44 @@ pub struct AppConfig {
 
     /// ADC電圧最大値（ミリボルト）
     pub adc_voltage_max_mv: u16,
+
+    // 温度センサー設定（DS18B20）
+    /// 温度センサーの有効/無効
+    pub temp_sensor_enabled: bool,
+
+    /// 温度センサー電源制御GPIO番号
+    pub temp_sensor_power_pin: i32,
+
+    /// 温度センサーデータGPIO番号
+    pub temp_sensor_data_pin: i32,
+
+    /// 温度補正値（℃）
+    pub temperature_offset_celsius: f32,
+
+    // TDSセンサー設定
+    /// TDSセンサーの有効/無効
+    pub tds_sensor_enabled: bool,
+
+    /// TDSセンサー電源制御GPIO番号
+    pub tds_sensor_power_pin: u8,
+
+    /// TDSセンサーADC入力GPIO番号
+    pub tds_sensor_adc_pin: u8,
+
+    /// TDS変換係数
+    pub tds_factor: f32,
+
+    /// TDS測定サンプル数
+    pub tds_measurement_samples: u8,
+
+    /// TDSセンサー参照点キャリブレーション用ADC値
+    pub tds_calibrate_reference_adc: u16,
+
+    /// TDSセンサー参照点キャリブレーション用EC値
+    pub tds_calibrate_reference_ec: f32,
+
+    /// TDSセンサー温度補正係数
+    pub tds_temp_coefficient: f32,
 
     // テスト・デバッグ設定
     /// 電圧チェックを無視してカメラテストを強制実行
@@ -308,6 +384,22 @@ impl AppConfig {
         let bypass_voltage_threshold = config.bypass_voltage_threshold;
         let debug_mode = config.debug_mode;
 
+        // 温度センサー設定を取得
+        let temp_sensor_enabled = config.temp_sensor_enabled;
+        let temp_sensor_power_pin = config.temp_sensor_power_pin;
+        let temp_sensor_data_pin = config.temp_sensor_data_pin;
+        let temperature_offset_celsius = config.temperature_offset_celsius;
+
+        // TDSセンサー設定を取得
+        let tds_sensor_enabled = config.tds_sensor_enabled;
+        let tds_sensor_power_pin = config.tds_sensor_power_pin;
+        let tds_sensor_adc_pin = config.tds_sensor_adc_pin;
+        let tds_factor = config.tds_factor;
+        let tds_measurement_samples = config.tds_measurement_samples;
+        let tds_calibrate_reference_adc = config.tds_calibrate_reference_adc;
+        let tds_calibrate_reference_ec = config.tds_calibrate_reference_ec;
+        let tds_temp_coefficient = config.tds_temp_coefficient;
+
         Ok(AppConfig {
             receiver_mac,
             sleep_duration_seconds,
@@ -326,6 +418,18 @@ impl AppConfig {
             esp_now_chunk_delay_ms,
             adc_voltage_min_mv,
             adc_voltage_max_mv,
+            temp_sensor_enabled,
+            temp_sensor_power_pin,
+            temp_sensor_data_pin,
+            temperature_offset_celsius,
+            tds_sensor_enabled,
+            tds_sensor_power_pin,
+            tds_sensor_adc_pin,
+            tds_factor,
+            tds_measurement_samples,
+            tds_calibrate_reference_adc,
+            tds_calibrate_reference_ec,
+            tds_temp_coefficient,
             force_camera_test,
             bypass_voltage_threshold,
             debug_mode,
@@ -419,6 +523,19 @@ mod tests {
             esp_now_chunk_delay_ms: 10, // Default delay
             adc_voltage_min_mv: 3300, // Default min voltage
             adc_voltage_max_mv: 4200, // Default max voltage
+            // デフォルトのセンサー設定
+            temp_sensor_enabled: true,
+            temp_sensor_power_pin: 2,
+            temp_sensor_data_pin: 3,
+            temperature_offset_celsius: 0.7,
+            tds_sensor_enabled: true,
+            tds_sensor_power_pin: 4,
+            tds_sensor_adc_pin: 1,
+            tds_factor: 500.0,
+            tds_measurement_samples: 10,
+            tds_calibrate_reference_adc: 0,
+            tds_calibrate_reference_ec: 0.0,
+            tds_temp_coefficient: 0.00,
             force_camera_test,
             bypass_voltage_threshold,
             debug_mode,

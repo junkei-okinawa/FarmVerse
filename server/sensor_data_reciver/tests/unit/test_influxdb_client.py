@@ -57,8 +57,8 @@ class TestInfluxDBClientAsyncTasks:
         with patch.object(client, '_write_sensor_data_async', new_callable=AsyncMock) as mock_write_async, \
              patch.object(client, '_cleanup_completed_tasks', new_callable=AsyncMock) as mock_cleanup:
             
-            # Call write_sensor_data
-            result = client.write_sensor_data("aa:bb:cc:dd:ee:ff", 85.5, 22.3)
+            # Call write_sensor_data with TDS voltage
+            result = client.write_sensor_data("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 1.5)
             
             # Should return True for successful initiation
             assert result is True
@@ -73,8 +73,8 @@ class TestInfluxDBClientAsyncTasks:
             await asyncio.gather(*client._active_tasks, return_exceptions=True)
             client._active_tasks.clear()
             
-            # Verify the async methods were called
-            mock_write_async.assert_called_once_with("aa:bb:cc:dd:ee:ff", 85.5, 22.3)
+            # Verify the async methods were called with TDS voltage
+            mock_write_async.assert_called_once_with("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 1.5)
             mock_cleanup.assert_called_once()
     
     @pytest.mark.asyncio
@@ -150,10 +150,78 @@ class TestInfluxDBClientAsyncTasks:
         mock_config.IS_TEST_ENV = True
         client = InfluxDBClient()
         
-        result = client.write_sensor_data("aa:bb:cc:dd:ee:ff", 85.5, 22.3)
+        result = client.write_sensor_data("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 2.1)
         
         # Should return False when skipping in test env
         assert result is False
         
         # No tasks should be created
         assert len(client._active_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_write_sensor_data_with_tds_voltage(self, mock_config, mock_influxdb_client):
+        """Test that write_sensor_data works with TDS voltage parameter"""
+        mock_instance, mock_write_api = mock_influxdb_client
+        
+        # Mock health check to return success
+        mock_instance.health.return_value.status = "pass"
+        
+        client = InfluxDBClient()
+        
+        # Mock the async write method to return immediately
+        with patch.object(client, '_write_sensor_data_async', new_callable=AsyncMock) as mock_write_async, \
+             patch.object(client, '_cleanup_completed_tasks', new_callable=AsyncMock) as mock_cleanup:
+            
+            # Call write_sensor_data with TDS voltage
+            result = client.write_sensor_data("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 3.2)
+            
+            # Should return True for successful initiation
+            assert result is True
+            
+            # Give a moment for the task to be created
+            await asyncio.sleep(0.01)
+            
+            # Check that a task was added to active tasks
+            assert len(client._active_tasks) == 1
+            
+            # Wait for the task to complete
+            await asyncio.gather(*client._active_tasks, return_exceptions=True)
+            client._active_tasks.clear()
+            
+            # Verify the async methods were called with TDS voltage
+            mock_write_async.assert_called_once_with("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 3.2)
+            mock_cleanup.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_write_sensor_data_without_tds_voltage(self, mock_config, mock_influxdb_client):
+        """Test that write_sensor_data works without TDS voltage parameter (backwards compatibility)"""
+        mock_instance, mock_write_api = mock_influxdb_client
+        
+        # Mock health check to return success
+        mock_instance.health.return_value.status = "pass"
+        
+        client = InfluxDBClient()
+        
+        # Mock the async write method to return immediately
+        with patch.object(client, '_write_sensor_data_async', new_callable=AsyncMock) as mock_write_async, \
+             patch.object(client, '_cleanup_completed_tasks', new_callable=AsyncMock) as mock_cleanup:
+            
+            # Call write_sensor_data without TDS voltage (backwards compatibility)
+            result = client.write_sensor_data("aa:bb:cc:dd:ee:ff", 85.5, 22.3)
+            
+            # Should return True for successful initiation
+            assert result is True
+            
+            # Give a moment for the task to be created
+            await asyncio.sleep(0.01)
+            
+            # Check that a task was added to active tasks
+            assert len(client._active_tasks) == 1
+            
+            # Wait for the task to complete
+            await asyncio.gather(*client._active_tasks, return_exceptions=True)
+            client._active_tasks.clear()
+            
+            # Verify the async methods were called with None for TDS voltage
+            mock_write_async.assert_called_once_with("aa:bb:cc:dd:ee:ff", 85.5, 22.3, None)
+            mock_cleanup.assert_called_once()

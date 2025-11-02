@@ -17,9 +17,9 @@ mod power;
 use communication::{NetworkManager, esp_now::{EspNowSender}};
 use config::AppConfig;
 use core::{AppController, DataService, MeasuredData, RtcManager};
-use hardware::{CameraPins, VoltageSensor};
+use hardware::{CameraPins, VoltageSensor, TempSensor, EcTdsSensor};
 use hardware::led::StatusLed;
-use log::{error, info};
+use log::{error, info, warn};
 use power::sleep::{DeepSleep, EspIdfDeepSleep};
 
 /// アプリケーションのメインエントリーポイント
@@ -43,7 +43,10 @@ fn main() -> anyhow::Result<()> {
     // 必要なピンを先に抽出
     let pins = peripherals.pins;
     let led_pin = pins.gpio21;
-    let voltage_pin = pins.gpio6;
+    let voltage_pin = pins.gpio6; // D5
+
+    // RMTチャンネルを分離（温度センサー用）
+    let rmt_channel = peripherals.rmt.channel0;
 
     // ステータスLEDの初期化
     let mut led = StatusLed::new(led_pin)?;
@@ -61,14 +64,117 @@ fn main() -> anyhow::Result<()> {
     // RTCタイム管理
     RtcManager::check_and_initialize_rtc(&timezone, &deep_sleep_controller)?;
     
-    // ADC電圧測定
-    let voltage_percent = VoltageSensor::measure_voltage_percentage(
+    // ADC電圧測定 ADC1 は使用後に所有権が解放され、後続処理で利用可能になる。
+    let (voltage_percent, adc1) = VoltageSensor::measure_voltage_percentage(
         peripherals.adc1,
         voltage_pin,
     )?;
 
     info!("設定されている受信先MAC: {}", app_config.receiver_mac);
     info!("設定されているスリープ時間: {}秒", app_config.sleep_duration_seconds);
+
+    // センサー測定の実行
+    let mut measured_data = MeasuredData::new(voltage_percent, None);
+
+    // 温度センサーの初期化（設定が有効な場合）
+    let mut temp_sensor = if app_config.temp_sensor_enabled {
+        info!("温度センサーを初期化中...");
+        match TempSensor::new(
+            app_config.temp_sensor_power_pin,
+            app_config.temp_sensor_data_pin,
+            app_config.temperature_offset_celsius,
+            rmt_channel,
+        ) {
+            Ok(sensor) => {
+                info!("✓ 温度センサーの初期化に成功: {}", sensor.get_info());
+                Some(sensor)
+            }
+            Err(e) => {
+                warn!("温度センサーの初期化に失敗: {:?}", e);
+                warn!("温度センサーなしで続行します");
+                None
+            }
+        }
+    } else {
+        info!("温度センサーは設定で無効化されています");
+        None
+    };
+
+    // 温度測定（利用可能な場合）
+    if let Some(ref mut sensor) = temp_sensor {
+        match sensor.read_temperature() {
+            Ok(reading) => {
+                info!("🌡️ 温度測定結果: {:.1}°C (補正済み)", reading.corrected_temperature_celsius);
+                measured_data = measured_data.with_temperature(Some(reading.corrected_temperature_celsius));
+                
+                if let Some(ref warning) = reading.warning_message {
+                    measured_data.add_warning(format!("温度センサー: {}", warning));
+                }
+            }
+            Err(e) => {
+                warn!("温度測定に失敗: {:?}", e);
+                measured_data.add_warning("温度測定に失敗しました".to_string());
+            }
+        }
+    } else {
+        info!("温度センサーが利用できません");
+    }
+
+    // EC/TDSセンサーの初期化（設定が有効な場合、電圧測定後のADC1を使用）
+    let mut ec_tds_sensor = if app_config.tds_sensor_enabled {
+        info!("EC/TDSセンサーを初期化中...");
+        
+        match EcTdsSensor::new(
+            app_config.tds_sensor_power_pin,
+            1, // GPIO1固定（ADC1対応、WiFi競合回避）
+            app_config.tds_factor,
+            app_config.tds_calibrate_reference_adc,
+            app_config.tds_calibrate_reference_ec,
+            app_config.tds_temp_coefficient,
+            pins.gpio1,
+            adc1, // ADC1を再利用
+        ) {
+            Ok(sensor) => {
+                info!("✓ EC/TDSセンサーの初期化に成功: {}", sensor.get_info());
+                Some(sensor)
+            }
+            Err(e) => {
+                warn!("EC/TDSセンサーの初期化に失敗: {:?}", e);
+                warn!("EC/TDSセンサーなしで続行します");
+                None
+            }
+        }
+    } else {
+        info!("EC/TDSセンサーは設定で無効化されています");
+        None
+    };
+
+    // EC/TDS測定（利用可能な場合）
+    if let Some(ref mut sensor) = ec_tds_sensor {
+        // 温度補正のために測定済み温度を使用
+        let temp_for_compensation = measured_data.temperature_celsius;
+
+        match sensor.read_voltage(app_config.tds_measurement_samples, 10) {
+            Ok(Some(voltage)) => {
+                info!("✓ EC/TDSセンサーの電圧測定成功: {:.2} V", voltage);
+                measured_data = measured_data.with_tds_voltage(Some(voltage));
+            }
+            Ok(None) => {
+                warn!("EC/TDSセンサーの電圧測定結果がNoneです");
+            }
+            Err(e) => {
+                warn!("EC/TDSセンサーの電圧測定エラー: {:?}", e);
+            }
+        }
+    } else {
+        info!("EC/TDSセンサーが利用できません");
+    }
+
+    info!("=== 測定結果サマリ ===");
+    info!("{}", measured_data.get_summary());
+    if !measured_data.sensor_warnings.is_empty() {
+        warn!("センサー警告: {:?}", measured_data.sensor_warnings);
+    }
 
     // カメラ用ピンの準備
     let camera_pins = CameraPins::new(
@@ -96,9 +202,12 @@ fn main() -> anyhow::Result<()> {
         &mut led,
     )?;
 
-    // 測定データの準備と送信
+    // 画像データを測定データに追加
+    measured_data.image_data = image_data;
+
+    // 測定データの送信
     info!("データ送信タスクを開始します");
-    let measured_data = MeasuredData::new(voltage_percent, image_data);
+    info!("送信データサマリ: {}", measured_data.get_summary());
 
     // ネットワーク（WiFi）初期化
     let _wifi_connection = NetworkManager::initialize_wifi_for_esp_now(

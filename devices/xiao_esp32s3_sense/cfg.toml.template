@@ -75,6 +75,37 @@ adc_voltage_min_mv = 128
 # ADC最大電圧値（mV）- キャリブレーション用  
 adc_voltage_max_mv = 3130
 
+# 温度センサー設定（DS18B20）
+# -------------------------------------------------------------------------
+# DS18B20温度センサーの有効/無効
+temp_sensor_enabled = true
+
+# 温度センサー電源制御GPIO番号
+temp_sensor_power_pin = 2
+
+# 温度センサーデータGPIO番号
+temp_sensor_data_pin = 3
+
+# 温度補正値（℃）- センサー校正用
+temperature_offset_celsius = 0.7
+
+# TDSセンサー設定
+# -------------------------------------------------------------------------
+# TDSセンサーの有効/無効
+tds_sensor_enabled = true
+
+# TDSセンサー電源制御GPIO番号
+tds_sensor_power_pin = 4
+
+# TDSセンサーADC入力GPIO番号（ADC1対応ピン、WiFi競合回避）
+tds_sensor_adc_pin = 1
+
+# TDS変換係数（通常400-700）
+tds_factor = 500.0
+
+# TDS測定時の平均化サンプル数
+tds_measurement_samples = 10
+
 # ESP-NOW 画像送信設定
 # -------------------------------------------------------------------------
 # 画像データ送信時のチャンクサイズ（バイト）
