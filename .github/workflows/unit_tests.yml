@@ -47,13 +47,13 @@ jobs:
           chmod +x run_tests.sh
           ./run_tests.sh | tee test_output.txt
           
-          # テスト結果からテスト数を抽出
-          TEST_RESULT=$(grep "test result:" test_output.txt || echo "")
+          # テスト結果からテスト数を抽出（最後のtest result行のみ）
+          TEST_RESULT=$(grep "test result:" test_output.txt | tail -1 || echo "")
           if [ -n "$TEST_RESULT" ]; then
             PASSED=$(echo "$TEST_RESULT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo "0")
-            echo "tests_passed=$PASSED" >> $GITHUB_OUTPUT
+            echo "tests_passed=$PASSED" >> "$GITHUB_OUTPUT"
           else
-            echo "tests_passed=unknown" >> $GITHUB_OUTPUT
+            echo "tests_passed=unknown" >> "$GITHUB_OUTPUT"
           fi
           
       - name: Verify test execution
@@ -153,13 +153,12 @@ jobs:
           chmod +x run_tests.sh
           ./run_tests.sh | tee test_output.txt
           
-          # テスト結果からテスト数を抽出
-          TEST_RESULT=$(grep "test result:" test_output.txt || echo "")
-          if [ -n "$TEST_RESULT" ]; then
-            PASSED=$(echo "$TEST_RESULT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo "0")
-            echo "tests_passed=$PASSED" >> $GITHUB_OUTPUT
+          # テスト結果からテスト数を抽出（すべての結果を合計）
+          TOTAL_PASSED=$(grep "test result:" test_output.txt | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{sum+=$1} END {print sum}' || echo "0")
+          if [ -n "$TOTAL_PASSED" ] && [ "$TOTAL_PASSED" != "0" ]; then
+            echo "tests_passed=$TOTAL_PASSED" >> "$GITHUB_OUTPUT"
           else
-            echo "tests_passed=unknown" >> $GITHUB_OUTPUT
+            echo "tests_passed=unknown" >> "$GITHUB_OUTPUT"
           fi
           
       - name: Summary
