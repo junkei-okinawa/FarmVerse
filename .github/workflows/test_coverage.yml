@@ -1,5 +1,10 @@
 name: Test Coverage Report
 
+env:
+  # Expected test counts (update when adding new tests)
+  EXPECTED_VOLTAGE_TESTS: 10
+  EXPECTED_MAC_TESTS: 13
+
 on:
   push:
     branches: [ main ]
@@ -31,8 +36,8 @@ jobs:
           ./run_tests.sh > test_output.txt 2>&1
           
           # 結果を解析（より堅牢なパターンマッチング）
-          VOLTAGE_TESTS=$(grep "running.*tests" test_output.txt | grep -A 1 "voltage_calc" | head -1 | awk '{print $2}' || echo "10")
-          MAC_TESTS=$(grep "running.*tests" test_output.txt | grep -A 1 "mac_address" | head -1 | awk '{print $2}' || echo "13")
+          VOLTAGE_TESTS=$(grep "running.*tests" test_output.txt | grep -A 1 "voltage_calc" | head -1 | awk '{print $2}' || echo "${{ env.EXPECTED_VOLTAGE_TESTS }}")
+          MAC_TESTS=$(grep "running.*tests" test_output.txt | grep -A 1 "mac_address" | head -1 | awk '{print $2}' || echo "${{ env.EXPECTED_MAC_TESTS }}")
           TOTAL_TESTS=$((VOLTAGE_TESTS + MAC_TESTS))
           
           echo "voltage_tests=$VOLTAGE_TESTS" >> $GITHUB_OUTPUT

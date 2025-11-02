@@ -1,7 +1,7 @@
 #!/bin/bash
-# Before first use, make this script executable with: chmod +x run_tests.sh
 
 # ホストマシンでのユニットテスト実行スクリプト
+# Before first use, make this script executable with: chmod +x run_tests.sh
 set -e  # エラーで停止
 
 echo "================================"
