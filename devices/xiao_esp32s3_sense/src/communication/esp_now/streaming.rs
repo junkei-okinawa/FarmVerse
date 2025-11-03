@@ -474,3 +474,306 @@ pub fn split_image_to_chunks(image_data: &[u8], chunk_size: usize) -> Vec<Vec<u8
 pub fn reconstruct_image_from_chunks(chunks: &[Vec<u8>]) -> Vec<u8> {
     chunks.iter().flatten().copied().collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_message_type_conversion() {
+        assert_eq!(MessageType::from_u8(1), Some(MessageType::StartFrame));
+        assert_eq!(MessageType::from_u8(2), Some(MessageType::DataChunk));
+        assert_eq!(MessageType::from_u8(3), Some(MessageType::EndFrame));
+        assert_eq!(MessageType::from_u8(4), Some(MessageType::Ack));
+        assert_eq!(MessageType::from_u8(5), Some(MessageType::Nack));
+        assert_eq!(MessageType::from_u8(99), None);
+    }
+
+    #[test]
+    fn test_streaming_header_creation() {
+        let header = StreamingHeader::new(
+            MessageType::DataChunk,
+            100,  // sequence_id
+            1,    // frame_id
+            5,    // chunk_index
+            10,   // total_chunks
+            200,  // data_length
+        );
+        
+        assert_eq!(header.message_type, MessageType::DataChunk);
+        assert_eq!(header.sequence_id, 100);
+        assert_eq!(header.frame_id, 1);
+        assert_eq!(header.chunk_index, 5);
+        assert_eq!(header.total_chunks, 10);
+        assert_eq!(header.data_length, 200);
+        assert_eq!(header.checksum, 0); // Not yet calculated
+    }
+
+    #[test]
+    fn test_checksum_calculation() {
+        let mut header = StreamingHeader::new(
+            MessageType::DataChunk,
+            100,
+            1,
+            5,
+            10,
+            3, // data_length should match actual data
+        );
+        
+        let data = vec![0x01, 0x02, 0x03];
+        header.calculate_checksum(&data);
+        
+        // Checksum should be non-zero after calculation
+        assert_ne!(header.checksum, 0);
+        
+        // Verify checksum matches
+        assert!(header.verify_checksum(&data));
+    }
+
+    #[test]
+    fn test_checksum_verification_fail() {
+        let mut header = StreamingHeader::new(
+            MessageType::DataChunk,
+            100,
+            1,
+            5,
+            10,
+            3,
+        );
+        
+        let data = vec![0x01, 0x02, 0x03];
+        header.calculate_checksum(&data);
+        
+        // Different data should fail verification
+        let wrong_data = vec![0x04, 0x05, 0x06];
+        assert!(!header.verify_checksum(&wrong_data));
+    }
+
+    #[test]
+    fn test_streaming_message_serialization() {
+        let mut header = StreamingHeader::new(
+            MessageType::DataChunk,
+            256,   // sequence_id
+            1000,  // frame_id
+            5,     // chunk_index
+            10,    // total_chunks
+            4,     // data_length
+        );
+        
+        let data = vec![0xAA, 0xBB, 0xCC, 0xDD];
+        header.calculate_checksum(&data);
+        
+        let message = StreamingMessage::new(header.clone(), data.clone());
+        let serialized = message.serialize();
+        
+        // Check serialized size
+        // Header: 1 (type) + 2 (seq) + 4 (frame) + 2 (chunk_idx) + 2 (total) + 2 (len) + 4 (checksum) = 17 bytes
+        // Data: 4 bytes
+        // Total: 21 bytes
+        assert_eq!(serialized.len(), 17 + 4);
+        
+        // Check message type (first byte)
+        assert_eq!(serialized[0], MessageType::DataChunk as u8);
+        
+        // Check sequence_id (little-endian)
+        assert_eq!(u16::from_le_bytes([serialized[1], serialized[2]]), 256);
+        
+        // Check data at the end
+        assert_eq!(&serialized[17..21], &[0xAA, 0xBB, 0xCC, 0xDD]);
+    }
+
+    #[test]
+    fn test_streaming_message_deserialization() {
+        // Create a valid message first
+        let mut header = StreamingHeader::new(
+            MessageType::StartFrame,
+            512,
+            2000,
+            0,
+            1,
+            5,
+        );
+        
+        let data = vec![0x10, 0x20, 0x30, 0x40, 0x50];
+        header.calculate_checksum(&data);
+        
+        let original_message = StreamingMessage::new(header.clone(), data.clone());
+        let serialized = original_message.serialize();
+        
+        // Deserialize
+        let deserialized = StreamingMessage::deserialize(&serialized)
+            .expect("Deserialization should succeed");
+        
+        // Verify header fields
+        assert_eq!(deserialized.header.message_type, MessageType::StartFrame);
+        assert_eq!(deserialized.header.sequence_id, 512);
+        assert_eq!(deserialized.header.frame_id, 2000);
+        assert_eq!(deserialized.header.chunk_index, 0);
+        assert_eq!(deserialized.header.total_chunks, 1);
+        assert_eq!(deserialized.header.data_length, 5);
+        assert_eq!(deserialized.header.checksum, header.checksum);
+        
+        // Verify data
+        assert_eq!(deserialized.data, data);
+    }
+
+    #[test]
+    fn test_deserialization_too_short() {
+        let short_data = vec![0x01, 0x02]; // Only 2 bytes (minimum is 15 for header)
+        
+        let result = StreamingMessage::deserialize(&short_data);
+        assert!(result.is_err());
+        
+        match result {
+            Err(StreamingError::InvalidFrame(msg)) => {
+                assert!(msg.contains("too short"));
+            }
+            _ => panic!("Expected InvalidFrame error"),
+        }
+    }
+
+    #[test]
+    fn test_deserialization_invalid_message_type() {
+        // Create invalid message with unknown type (99)
+        let invalid_data = vec![
+            99,  // Invalid message type
+            0x00, 0x01,  // sequence_id
+            0x00, 0x00, 0x00, 0x01,  // frame_id
+            0x00, 0x00,  // chunk_index
+            0x00, 0x01,  // total_chunks
+            0x00, 0x00,  // data_length
+            0x00, 0x00, 0x00, 0x00,  // checksum
+        ];
+        
+        let result = StreamingMessage::deserialize(&invalid_data);
+        assert!(result.is_err());
+        
+        match result {
+            Err(StreamingError::InvalidFrame(msg)) => {
+                assert!(msg.contains("Invalid message type"));
+            }
+            _ => panic!("Expected InvalidFrame error"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip_serialization() {
+        // Test all message types
+        let message_types = vec![
+            MessageType::StartFrame,
+            MessageType::DataChunk,
+            MessageType::EndFrame,
+            MessageType::Ack,
+            MessageType::Nack,
+        ];
+        
+        for msg_type in message_types {
+            let mut header = StreamingHeader::new(
+                msg_type,
+                1024,
+                5000,
+                3,
+                7,
+                8,
+            );
+            
+            let data = vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+            header.calculate_checksum(&data);
+            
+            let original = StreamingMessage::new(header.clone(), data.clone());
+            let serialized = original.serialize();
+            let deserialized = StreamingMessage::deserialize(&serialized)
+                .expect("Round-trip deserialization should succeed");
+            
+            assert_eq!(deserialized.header.message_type, msg_type);
+            assert_eq!(deserialized.data, data);
+            assert!(deserialized.header.verify_checksum(&deserialized.data));
+        }
+    }
+
+    #[test]
+    fn test_empty_data_message() {
+        let mut header = StreamingHeader::new(
+            MessageType::Ack,
+            0,
+            0,
+            0,
+            0,
+            0,  // data_length = 0
+        );
+        
+        let data = vec![];
+        header.calculate_checksum(&data);
+        
+        let message = StreamingMessage::new(header.clone(), data.clone());
+        let serialized = message.serialize();
+        let deserialized = StreamingMessage::deserialize(&serialized)
+            .expect("Empty data deserialization should succeed");
+        
+        assert_eq!(deserialized.data.len(), 0);
+        assert!(deserialized.header.verify_checksum(&deserialized.data));
+    }
+
+    #[test]
+    fn test_max_chunk_size() {
+        // ESP-NOW has 250 byte limit
+        // Header is 17 bytes, so max data is 233 bytes
+        let mut header = StreamingHeader::new(
+            MessageType::DataChunk,
+            1,
+            1,
+            0,
+            1,
+            233,
+        );
+        
+        let data = vec![0xAB; 233];  // 233 bytes of 0xAB
+        header.calculate_checksum(&data);
+        
+        let message = StreamingMessage::new(header.clone(), data.clone());
+        let serialized = message.serialize();
+        
+        // Total should be 250 bytes (17 header + 233 data)
+        assert_eq!(serialized.len(), 250);
+        
+        let deserialized = StreamingMessage::deserialize(&serialized)
+            .expect("Max chunk size deserialization should succeed");
+        
+        assert_eq!(deserialized.data.len(), 233);
+        assert!(deserialized.header.verify_checksum(&deserialized.data));
+    }
+
+    #[test]
+    fn test_split_image_to_chunks() {
+        let image_data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let chunks = split_image_to_chunks(&image_data, 3);
+        
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(chunks[0], vec![1, 2, 3]);
+        assert_eq!(chunks[1], vec![4, 5, 6]);
+        assert_eq!(chunks[2], vec![7, 8, 9]);
+        assert_eq!(chunks[3], vec![10]);
+    }
+
+    #[test]
+    fn test_reconstruct_image_from_chunks() {
+        let chunks = vec![
+            vec![1, 2, 3],
+            vec![4, 5, 6],
+            vec![7, 8, 9],
+            vec![10],
+        ];
+        
+        let reconstructed = reconstruct_image_from_chunks(&chunks);
+        assert_eq!(reconstructed, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn test_round_trip_chunk_operations() {
+        let original_data = vec![0xAA; 1000];  // 1000 bytes
+        let chunks = split_image_to_chunks(&original_data, 233);
+        let reconstructed = reconstruct_image_from_chunks(&chunks);
+        
+        assert_eq!(reconstructed, original_data);
+    }
+}
