@@ -8,18 +8,11 @@ pub enum DeserializeError {
     InvalidMessageType(u8),
 }
 
-impl DeserializeError {
-    pub fn as_str(&self) -> &'static str {
+impl core::fmt::Display for DeserializeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            DeserializeError::DataTooShort => "Data too short for header",
-            DeserializeError::InvalidMessageType(_) => "Invalid message type",
-        }
-    }
-
-    pub fn to_string(&self) -> String {
-        match self {
-            DeserializeError::DataTooShort => "Data too short for header".to_string(),
-            DeserializeError::InvalidMessageType(value) => format!("Invalid message type: {}", value),
+            DeserializeError::DataTooShort => write!(f, "Data too short for header"),
+            DeserializeError::InvalidMessageType(value) => write!(f, "Invalid message type: {}", value),
         }
     }
 }
