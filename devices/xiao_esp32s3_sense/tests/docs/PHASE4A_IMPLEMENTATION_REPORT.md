@@ -128,7 +128,7 @@ checksum = sequence_id + frame_id + chunk_index +
 ### ローカル実行
 ```bash
 ./run_tests.sh
-# 結果: 全11テスト成功 ✅
+# 結果: 全11テストが成功する見込み ✅
 ```
 
 ### テストカバレッジ
