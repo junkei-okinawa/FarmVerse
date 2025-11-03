@@ -15,6 +15,13 @@ impl DeserializeError {
             DeserializeError::InvalidMessageType(_) => "Invalid message type",
         }
     }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            DeserializeError::DataTooShort => "Data too short for header".to_string(),
+            DeserializeError::InvalidMessageType(value) => format!("Invalid message type: {}", value),
+        }
+    }
 }
 
 /// メッセージタイプ
