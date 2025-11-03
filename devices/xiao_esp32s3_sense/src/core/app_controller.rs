@@ -61,8 +61,10 @@ impl AppController {
 #[cfg(all(test, not(target_os = "espidf")))]
 mod tests {
     use super::*;
+    use crate::mac_address::MacAddress;
     use crate::power::sleep::DeepSleepPlatform;
     use std::sync::{Arc, Mutex};
+    use std::str::FromStr;
 
     #[derive(Clone)]
     struct MockDeepSleepPlatform {
@@ -89,7 +91,7 @@ mod tests {
 
     fn create_test_config(sleep_duration: u64, timeout: u64) -> Arc<AppConfig> {
         Arc::new(AppConfig {
-            receiver_mac: "AA:BB:CC:DD:EE:FF".to_string(),
+            receiver_mac: MacAddress::from_str("AA:BB:CC:DD:EE:FF").unwrap(),
             sleep_duration_seconds: sleep_duration,
             sleep_command_timeout_seconds: timeout,
             debug_mode: false,
