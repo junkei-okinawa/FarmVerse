@@ -8,7 +8,7 @@ ESP-NOWストリーミングプロトコルのエンドツーエンド統合テ�
 ## 🎯 実装内容
 
 ### テストファイル
-- **ファイル**: `tests/unit/streaming_integration_test.rs`
+- **ファイル**: `src/utils/streaming_protocol.rs`（`#[cfg(test)]` モジュール内）
 - **テスト数**: 11テスト
 - **カバレッジ**: ストリーミングプロトコル全体のエンドツーエンド検証
 
@@ -134,7 +134,7 @@ checksum = sequence_id + frame_id + chunk_index +
 ### テストカバレッジ
 - ✅ ユニットテスト (streaming_protocol.rs): 18テスト
 - ✅ ユニットテスト (streaming.rs): 9テスト
-- ✅ 統合テスト (streaming_integration_test.rs): 11テスト
+- ✅ 統合テスト (streaming_protocol.rs内): 11テスト
 - **合計**: 38テスト
 
 ## 🎓 検証された品質特性
@@ -189,11 +189,11 @@ Phase 4Aは完了しました。次の実装:
 ## 📚 関連ドキュメント
 
 - `tests/docs/02_STRATEGY.md`: 全体テスト戦略
-- `tests/docs/PHASE4AB_IMPLEMENTATION_REPORT.md`: Phase 4B実装レポート
+- `tests/docs/PHASE4B_IMPLEMENTATION_REPORT.md`: Phase 4B実装レポート
 - `src/utils/streaming_protocol.rs`: ハードウェア非依存実装
 - `src/communication/esp_now/streaming.rs`: ESP-NOW依存実装
 
 ---
-*Generated: 2025-11-03*
+*Generated: 2025-11-01*
 *Status: Phase 4A Completed ✅*
 *Total Tests: 11 Integration Tests + 27 Unit Tests = 38 Tests*
