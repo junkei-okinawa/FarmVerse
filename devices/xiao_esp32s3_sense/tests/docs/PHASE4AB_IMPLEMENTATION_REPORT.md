@@ -71,6 +71,8 @@ impl From<DeserializeError> for StreamingError {
 }
 ```
 
+**Note**: `Display`トレイトにより`to_string()`で詳細なエラーメッセージ（例: "Invalid message type: 99"）を取得可能
+
 #### ヘルパー関数
 ```rust
 impl StreamingMessage {
