@@ -110,31 +110,6 @@ impl StreamingHeader {
         
         calculated == self.checksum
     }
-
-    /// フィールドアクセサ
-    pub fn message_type(&self) -> MessageType {
-        self.message_type
-    }
-
-    pub fn sequence_id(&self) -> u16 {
-        self.sequence_id
-    }
-
-    pub fn frame_id(&self) -> u32 {
-        self.frame_id
-    }
-
-    pub fn chunk_index(&self) -> u16 {
-        self.chunk_index
-    }
-
-    pub fn total_chunks(&self) -> u16 {
-        self.total_chunks
-    }
-
-    pub fn data_length(&self) -> u16 {
-        self.data_length
-    }
 }
 
 /// ストリーミングメッセージ
@@ -221,16 +196,6 @@ impl StreamingMessage {
         };
         
         Ok(StreamingMessage::new(header, payload))
-    }
-
-    /// ヘッダーへのアクセス
-    pub fn header(&self) -> &StreamingHeader {
-        &self.header
-    }
-
-    /// データへのアクセス
-    pub fn data(&self) -> &[u8] {
-        &self.data
     }
 
     /// Start Frameメッセージを作成
@@ -647,8 +612,8 @@ mod tests {
         let start_msg = StreamingMessage::start_frame(frame_id, sequence_id);
         let start_bytes = start_msg.serialize();
         let decoded_start = StreamingMessage::deserialize(&start_bytes).unwrap();
-        assert_eq!(decoded_start.header().message_type(), MessageType::StartFrame);
-        assert_eq!(decoded_start.header().frame_id(), frame_id);
+        assert_eq!(decoded_start.header.message_type, MessageType::StartFrame);
+        assert_eq!(decoded_start.header.frame_id, frame_id);
         sequence_id += 1;
         
         // 2. Data Chunks
@@ -667,13 +632,13 @@ mod tests {
             let decoded = StreamingMessage::deserialize(&bytes).unwrap();
             
             // 検証
-            assert_eq!(decoded.header().message_type(), MessageType::DataChunk);
-            assert_eq!(decoded.header().frame_id(), frame_id);
-            assert_eq!(decoded.header().chunk_index(), chunk_idx as u16);
-            assert_eq!(decoded.header().total_chunks(), total_chunks);
-            assert!(decoded.header().verify_checksum(decoded.data()));
+            assert_eq!(decoded.header.message_type, MessageType::DataChunk);
+            assert_eq!(decoded.header.frame_id, frame_id);
+            assert_eq!(decoded.header.chunk_index, chunk_idx as u16);
+            assert_eq!(decoded.header.total_chunks, total_chunks);
+            assert!(decoded.header.verify_checksum(&decoded.data));
             
-            received_data.extend_from_slice(decoded.data());
+            received_data.extend_from_slice(&decoded.data);
             sequence_id += 1;
         }
         
@@ -681,8 +646,8 @@ mod tests {
         let end_msg = StreamingMessage::end_frame(frame_id, sequence_id);
         let end_bytes = end_msg.serialize();
         let decoded_end = StreamingMessage::deserialize(&end_bytes).unwrap();
-        assert_eq!(decoded_end.header().message_type(), MessageType::EndFrame);
-        assert_eq!(decoded_end.header().frame_id(), frame_id);
+        assert_eq!(decoded_end.header.message_type, MessageType::EndFrame);
+        assert_eq!(decoded_end.header.frame_id, frame_id);
         
         // 4. データ整合性確認
         assert_eq!(received_data, image_data);
@@ -718,8 +683,8 @@ mod tests {
             let bytes = data_msg.serialize();
             let decoded = StreamingMessage::deserialize(&bytes).unwrap();
             
-            assert!(decoded.header().verify_checksum(decoded.data()));
-            received_data.extend_from_slice(decoded.data());
+            assert!(decoded.header.verify_checksum(&decoded.data));
+            received_data.extend_from_slice(&decoded.data);
             sequence_id += 1;
         }
         
@@ -741,15 +706,15 @@ mod tests {
         let ack_msg = StreamingMessage::ack(sequence_id);
         let ack_bytes = ack_msg.serialize();
         let decoded_ack = StreamingMessage::deserialize(&ack_bytes).unwrap();
-        assert_eq!(decoded_ack.header().message_type(), MessageType::Ack);
-        assert_eq!(decoded_ack.header().sequence_id(), sequence_id);
+        assert_eq!(decoded_ack.header.message_type, MessageType::Ack);
+        assert_eq!(decoded_ack.header.sequence_id, sequence_id);
         
         // NACKメッセージ
         let nack_msg = StreamingMessage::nack(sequence_id);
         let nack_bytes = nack_msg.serialize();
         let decoded_nack = StreamingMessage::deserialize(&nack_bytes).unwrap();
-        assert_eq!(decoded_nack.header().message_type(), MessageType::Nack);
-        assert_eq!(decoded_nack.header().sequence_id(), sequence_id);
+        assert_eq!(decoded_nack.header.message_type, MessageType::Nack);
+        assert_eq!(decoded_nack.header.sequence_id, sequence_id);
     }
     
     #[test]
@@ -767,7 +732,7 @@ mod tests {
         
         // デシリアライズ後のチェックサム検証
         let decoded = StreamingMessage::deserialize(&bytes).unwrap();
-        assert!(!decoded.header().verify_checksum(decoded.data()));
+        assert!(!decoded.header.verify_checksum(&decoded.data));
     }
     
     #[test]
@@ -780,7 +745,7 @@ mod tests {
         let bytes = msg.serialize();
         let decoded = StreamingMessage::deserialize(&bytes).unwrap();
         
-        assert_eq!(decoded.header().sequence_id(), max_sequence);
+        assert_eq!(decoded.header.sequence_id, max_sequence);
         
         // 次のシーケンスIDは0に戻る想定
         let next_sequence = max_sequence.wrapping_add(1);
@@ -815,8 +780,8 @@ mod tests {
             let bytes = msg.serialize();
             let decoded = StreamingMessage::deserialize(&bytes).unwrap();
             
-            assert_eq!(decoded.header().chunk_index(), expected_idx as u16);
-            reconstructed.extend_from_slice(decoded.data());
+            assert_eq!(decoded.header.chunk_index, expected_idx as u16);
+            reconstructed.extend_from_slice(&decoded.data);
         }
         
         assert_eq!(reconstructed, image_data);
@@ -832,9 +797,9 @@ mod tests {
         let bytes = msg.serialize();
         let decoded = StreamingMessage::deserialize(&bytes).unwrap();
         
-        assert_eq!(decoded.header().data_length(), 0);
-        assert_eq!(decoded.data().len(), 0);
-        assert!(decoded.header().verify_checksum(decoded.data()));
+        assert_eq!(decoded.header.data_length, 0);
+        assert_eq!(decoded.data.len(), 0);
+        assert!(decoded.header.verify_checksum(&decoded.data));
     }
     
     #[test]
@@ -871,6 +836,6 @@ mod tests {
         assert!(bytes.len() <= 250);
         
         let decoded = StreamingMessage::deserialize(&bytes).unwrap();
-        assert_eq!(decoded.data(), &data[..]);
+        assert_eq!(&decoded.data, &data[..]);
     }
 }
