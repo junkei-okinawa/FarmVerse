@@ -27,18 +27,21 @@ I sensor_data_sender: EOF マーカー送信完了
 ```
 ┌─────────────────────┐
 │ xiao_esp32s3_sense  │ ← このデバイス
-│   (ESP32-S3)        │
+│   (Sender ESP32-S3) │
 └──────────┬──────────┘
            │ ESP-NOW Frame Protocol
            │ (START: 0xFACEAABB, END: 0xCDEF5678)
-           │ big-endian markers / little-endian data
+           │ big-endian markers / little-endian data fields
            ▼
 ┌─────────────────────┐
-│ usb_cdc_receiver    │
+│ USB_CDC_Receiver    │
 │  (ESP32-C3)         │
-│  1. ESP-NOW受信     │
-│  2. バッファリング  │
-│  3. USB CDC転送     │
+│                     │
+│ 1. ESP-NOW受信      │
+│    ↓                │
+│ 2. バッファリング   │
+│    ↓                │
+│ 3. USB CDC送信      │
 └──────────┬──────────┘
            │ USB CDC (透過転送)
            │ ESP-NOW Frameをそのまま転送
@@ -49,6 +52,49 @@ I sensor_data_sender: EOF マーカー送信完了
 │  Frame Parser       │
 └─────────────────────┘
 ```
+
+### プロトコル階層
+
+本システムでは2つのプロトコルを使用しています:
+
+#### Protocol 1: ESP-NOW Frame Protocol (xiao_esp32s3_sense → USB_CDC_Receiver)
+
+**実装場所**:
+- **送信側**: `devices/xiao_esp32s3_sense/src/communication/esp_now/sender.rs`
+  - `create_sensor_data_frame()` 関数
+- **受信側**: `server/usb_cdc_receiver/src/esp_now/frame.rs`
+  - `Frame::from_bytes()` 関数
+
+**フレーム構造** (27+ バイト):
+```
+Offset  Size  Field           Value/Format        Endian
+------  ----  --------------  ------------------  -------
+0       4     START_MARKER    0xFACEAABB          big
+4       6     MAC_ADDRESS     送信元MAC           -
+10      1     FRAME_TYPE      1=HASH,2=DATA,3=EOF -
+11      4     SEQUENCE_NUM    シーケンス番号       little
+15      4     DATA_LEN        データ長             little
+19      N     DATA            実データ             -
+19+N    4     CHECKSUM        XORチェックサム      little
+23+N    4     END_MARKER      0xCDEF5678          big
+```
+
+**チェックサム計算** (XOR):
+```rust
+fn calculate_xor_checksum(data: &[u8]) -> u32 {
+    data.iter().fold(0u32, |acc, &byte| acc ^ (byte as u32))
+}
+```
+
+#### Protocol 2: USB CDC Streaming Protocol (USB_CDC_Receiver → sensor_data_receiver)
+
+USB_CDC_Receiverは受信したESP-NOW Frameを**そのまま透過転送**します。
+sensor_data_receiver (Python)がESP-NOW Frame Protocolを直接解析します。
+
+**重要な注意点**:
+- ✅ マーカー(START/END)はbig-endian
+- ✅ データフィールド(SEQUENCE_NUM, DATA_LEN等)はlittle-endian
+- ✅ USB CDC Receiverはフレーム変換なし（透過転送のみ）
 
 ### ESP-NOW Frame Protocol 仕様
 
@@ -213,7 +259,27 @@ cargo test --lib
 
 ## 🧪 テスト・デバッグ
 
-### カメラテストの実行
+### ホストマシンユニットテスト
+
+実機（ESP32S3）不要で、ホストマシン（Mac/Linux/Windows）で実行可能なテストです。
+
+```bash
+# すべてのユニットテストを実行
+./run_tests.sh
+
+# または個別実行
+# ストリーミングプロトコルテスト（統合テスト11件含む）
+cd src/utils
+rustc +stable --test streaming_protocol.rs --edition 2021 -o ../../target/streaming_tests
+../../target/streaming_tests
+
+# 電圧計算テスト
+cd src/utils
+rustc +stable --test voltage_calc.rs --edition 2021 -o ../../target/voltage_tests
+../../target/voltage_tests
+```
+
+### カメラテストの実行（実機が必要）
 ```toml
 # cfg.tomlで以下を設定
 force_camera_test = true
