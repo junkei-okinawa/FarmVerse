@@ -1,4 +1,4 @@
-use super::{UsbError, UsbResult};
+use super::{UsbError, UsbInterface, UsbResult};
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::usb_serial::{UsbDMinGpio, UsbDPlusGpio, UsbSerialConfig, UsbSerialDriver};
 use esp_idf_svc::sys;
@@ -41,7 +41,10 @@ impl<'d> UsbCdc<'d> {
         debug!("USB CDC Initialized with buffer sizes: TX/RX: 4096 bytes");
         Ok(UsbCdc { driver })
     }
+}
 
+// UsbInterface トレイトの実装
+impl<'d> UsbInterface for UsbCdc<'d> {
     /// データをUSB経由で送信します
     ///
     /// # 引数
@@ -51,7 +54,7 @@ impl<'d> UsbCdc<'d> {
     /// # 戻り値
     ///
     /// * `UsbResult<usize>` - 送信されたバイト数、または`UsbError`
-    pub fn write(&mut self, data: &[u8], timeout_ms: u32) -> UsbResult<usize> {
+    fn write(&mut self, data: &[u8], timeout_ms: u32) -> UsbResult<usize> {
         self.driver.write(data, timeout_ms).map_err(|e| e.into())
     }
 
@@ -65,7 +68,7 @@ impl<'d> UsbCdc<'d> {
     /// # 戻り値
     ///
     /// * `UsbResult<usize>` - 読み取ったバイト数、または`UsbError`
-    pub fn read(&mut self, buffer: &mut [u8], timeout_ms: u32) -> UsbResult<usize> {
+    fn read(&mut self, buffer: &mut [u8], timeout_ms: u32) -> UsbResult<usize> {
         self.driver.read(buffer, timeout_ms).map_err(|e| e.into())
     }
 
@@ -78,7 +81,7 @@ impl<'d> UsbCdc<'d> {
     /// # 戻り値
     ///
     /// * `UsbResult<Option<String>>` - コマンド文字列、またはタイムアウト時はNone
-    pub fn read_command(&mut self, timeout_ms: u32) -> UsbResult<Option<String>> {
+    fn read_command(&mut self, timeout_ms: u32) -> UsbResult<Option<String>> {
         let mut buffer = [0u8; 256]; // コマンド用のバッファ
 
         match self.read(&mut buffer, timeout_ms) {
@@ -113,7 +116,7 @@ impl<'d> UsbCdc<'d> {
     ///
     /// * `UsbResult<usize>` - 送信に成功した場合は送信バイト数、
     ///   失敗した場合は`UsbError`
-    pub fn send_frame(&mut self, data: &[u8], mac_str: &str) -> UsbResult<usize> {
+    fn send_frame(&mut self, data: &[u8], mac_str: &str) -> UsbResult<usize> {
         // 送信設定パラメータ
         const MAX_CHUNK_SIZE: usize = 64; // USBバッファサイズに合わせて調整
         const WRITE_TIMEOUT_MS: u32 = 30000; // 30秒のタイムアウト

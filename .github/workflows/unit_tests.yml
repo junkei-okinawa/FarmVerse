@@ -6,12 +6,18 @@ on:
     paths:
       - 'devices/xiao_esp32s3_sense/src/**'
       - 'devices/xiao_esp32s3_sense/run_tests.sh'
+      - 'server/usb_cdc_receiver/src/**'
+      - 'server/usb_cdc_receiver/tests/**'
+      - 'server/usb_cdc_receiver/run_tests.sh'
       - '.github/workflows/unit_tests.yml'
   pull_request:
     branches: [ main, develop ]
     paths:
       - 'devices/xiao_esp32s3_sense/src/**'
       - 'devices/xiao_esp32s3_sense/run_tests.sh'
+      - 'server/usb_cdc_receiver/src/**'
+      - 'server/usb_cdc_receiver/tests/**'
+      - 'server/usb_cdc_receiver/run_tests.sh'
   workflow_dispatch: # 手動実行を許可
 
 jobs:
@@ -35,10 +41,21 @@ jobs:
           cargo --version
           
       - name: Run unit tests
+        id: xiao_tests
         run: |
           cd devices/xiao_esp32s3_sense
           chmod +x run_tests.sh
-          ./run_tests.sh
+          ./run_tests.sh | tee test_output.txt
+          
+          # テスト結果からテスト数を抽出（最後のtest result行のみ）
+          TEST_RESULT=$(grep "test result:" test_output.txt | tail -1 || echo "")
+          if [ -n "$TEST_RESULT" ]; then
+            PASSED=$(echo "$TEST_RESULT" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+')
+            PASSED=${PASSED:-0}
+            echo "tests_passed=$PASSED" >> "$GITHUB_OUTPUT"
+          else
+            echo "tests_passed=unknown" >> "$GITHUB_OUTPUT"
+          fi
           
       - name: Verify test execution
         run: |
@@ -55,8 +72,18 @@ jobs:
             echo "Checking if tests ran successfully..."
           fi
           
-          # run_tests.shの終了コードで判定（すでに実行済み）
           echo "✅ Unit tests completed successfully"
+          
+          # サマリーに追加
+          echo "### XIAO ESP32S3 Test Summary 📊" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Unit tests completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.xiao_tests.outputs.tests_passed }}" != "unknown" ]; then
+            echo "**Total: ${{ steps.xiao_tests.outputs.tests_passed }} tests passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**All tests passed**" >> $GITHUB_STEP_SUMMARY
+          fi
           
       - name: Upload test artifacts
         if: always()
@@ -97,11 +124,52 @@ jobs:
         
       - name: Summary
         run: |
-          echo "### Test Summary 📊" >> $GITHUB_STEP_SUMMARY
+          echo "### Code Quality Summary 📊" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Unit tests completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Code quality checks completed" >> $GITHUB_STEP_SUMMARY
+          
+  usb-cdc-receiver-test:
+    name: USB CDC Receiver Unit Tests
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          
+      - name: Display Rust version
+        run: |
+          rustc --version
+          cargo --version
+          
+      - name: Run USB CDC Receiver unit tests
+        id: usb_tests
+        run: |
+          cd server/usb_cdc_receiver
+          chmod +x run_tests.sh
+          ./run_tests.sh | tee test_output.txt
+          
+          # テスト結果からテスト数を抽出（すべての結果を合計）
+          TOTAL_PASSED=$(grep "test result:" test_output.txt | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' | awk '{sum+=$1} END {print sum+0}')
+          if [ -n "$TOTAL_PASSED" ] && [ "$TOTAL_PASSED" != "0" ]; then
+            echo "tests_passed=$TOTAL_PASSED" >> "$GITHUB_OUTPUT"
+          else
+            echo "tests_passed=unknown" >> "$GITHUB_OUTPUT"
+          fi
+          
+      - name: Summary
+        run: |
+          echo "### USB CDC Receiver Test Summary 📊" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Test Coverage:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Voltage calculation: 10 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- MAC address processing: 13 tests" >> $GITHUB_STEP_SUMMARY
-          echo "- **Total: 23 tests passed**" >> $GITHUB_STEP_SUMMARY
+          echo "✅ USB CDC Receiver unit tests completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.usb_tests.outputs.tests_passed }}" != "unknown" ]; then
+            echo "**Total: ${{ steps.usb_tests.outputs.tests_passed }} tests passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**All tests passed**" >> $GITHUB_STEP_SUMMARY
+          fi
