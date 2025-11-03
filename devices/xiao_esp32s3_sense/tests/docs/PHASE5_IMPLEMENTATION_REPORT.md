@@ -78,13 +78,30 @@ mod tests {
 ```
 
 #### 実行方法
-```bash
-# 全テスト実行
-./run_tests.sh
 
-# 統合テストのみ (手動実行)
-cargo +stable test --lib integration_tests
+**ホストユニットテストの実行** (ハードウェア非依存部分):
+```bash
+# 全ホストユニットテスト実行
+./run_tests.sh
 ```
+
+**統合テストの実行** (ESP32S3実機が必要):
+```bash
+# ⚠️ 注意: 統合テストは実機環境が必要
+# ESP-IDF環境のセットアップ:
+. ~/esp/v5.1.6/esp-idf/export.sh
+
+# 実機に接続した状態で実行:
+cargo test --lib integration_tests
+
+# または、probe-rsを使用した実機テスト:
+# (今後の実装予定)
+```
+
+**現状の制限**:
+- 統合テスト (`src/lib.rs::integration_tests`) は ESP-IDF 依存のため、ホストマシン単体では実行不可
+- 実機でのテスト実行が必要
+- CI/CD では現在ホストユニットテストのみ実行
 
 ### 4. lib.rsの更新
 #### 変更内容
@@ -140,25 +157,50 @@ mod integration_tests {
 
 ## 今後の改善点
 
-### 1. テストカバレッジ測定
+### 1. 実機統合テストの自動化 (優先度: 高)
+**現状**: 統合テスト (`src/lib.rs::integration_tests`) は実機が必要で手動実行のみ
+
+**改善案**:
+```bash
+# Option A: ESP-IDF 環境での実機テスト自動化
+# - GitHub Actions で ESP32S3 実機を使用
+# - または、QEMUエミュレータの活用
+
+# Option B: 実機不要な統合テストへの再設計
+# - ハードウェア抽象化レイヤーの強化
+# - モック/スタブの充実
+```
+
+**手動実行手順**:
+```bash
+# 1. ESP-IDF 環境セットアップ
+. ~/esp/v5.1.6/esp-idf/export.sh
+
+# 2. 実機接続確認
+ls /dev/tty.usbserial-*  # macOS
+ls /dev/ttyUSB*          # Linux
+
+# 3. 統合テスト実行
+cargo test --lib integration_tests
+```
+
+### 2. テストカバレッジ測定
 ```bash
 # cargo-llvm-covを使用したカバレッジ測定
 cargo +stable install cargo-llvm-cov
 cargo +stable llvm-cov --lib --tests --html
 ```
 
-### 2. CI/CD統合
-- GitHub Actionsで統合テストも実行
-- カバレッジレポートの生成と可視化
+### 3. CI/CD統合の拡充
+- ✅ ホストユニットテストは自動実行済み
+- ❌ 統合テストは実機が必要で未対応
+- 📝 実機テスト環境の構築が必要
 
-### 3. より高度な統合テスト
+### 4. より高度な統合テスト (Phase 6候補)
 - エラーケースのテスト拡充
 - パフォーマンステスト
 - ストレステスト
-
-### 4. 実機テスト（Phase 6候補）
-- probe-rsを使用した実機テスト
-- ハードウェア依存部分のテスト
+- probe-rsを使用したハードウェアデバッグテスト
 
 ## まとめ
 
@@ -166,6 +208,16 @@ Phase 5では以下を達成しました:
 - ✅ AppControllerのテスト設計と実装
 - ✅ データフロー統合テストの実装（8テスト）
 - ✅ テスト実行スクリプトの整備
-- ✅ 合計99個のテスト実装
+- ✅ 合計99個のテスト実装（ユニット91 + 統合8）
 
-次のフェーズ（Phase 6）では、実機テストやより高度な統合テストに進むことができます。
+**重要な発見**:
+- 統合テストは `src/lib.rs::integration_tests` に実装
+- ESP-IDF依存のため **実機が必要** (ホストマシン単体では実行不可)
+- ホストユニットテストは `run_tests.sh` で実行可能
+- 実機統合テストは手動実行が必要
+
+**テスト実行環境**:
+1. **ホストユニットテスト**: `./run_tests.sh` (自動化済み、CI/CD対応)
+2. **実機統合テスト**: `cargo test --lib integration_tests` (実機環境が必要、手動実行)
+
+次のフェーズ（Phase 6）では、実機テストの自動化やより高度な統合テストに進むことができます。
