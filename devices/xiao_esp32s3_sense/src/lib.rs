@@ -15,7 +15,7 @@
 pub mod communication;
 #[cfg(not(test))]
 pub mod config;
-pub mod core;  // テスト時も公開
+pub mod core;  // 常に公開（統合テストのため）
 #[cfg(not(test))]
 pub mod hardware;
 pub mod mac_address;
@@ -28,7 +28,7 @@ pub mod utils;
 pub use communication::esp_now::{EspNowError, EspNowSender, EspNowReceiver};
 #[cfg(not(test))]
 pub use config::{AppConfig, ConfigError, MemoryConfig};
-pub use core::{DataService, MeasuredData};  // テスト時も公開
+pub use core::{DataService, MeasuredData};  // 常に公開（統合テストのため）
 #[cfg(not(test))]
 pub use hardware::camera::CameraController;
 #[cfg(not(test))]

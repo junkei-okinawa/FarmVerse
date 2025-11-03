@@ -54,7 +54,7 @@ fn main() -> anyhow::Result<()> {
     led.turn_off()?;
 
     // ディープスリープコントローラーの初期化
-    let deep_sleep_controller = DeepSleep::new(app_config.clone(), EspIdfDeepSleep);
+    let deep_sleep_controller = DeepSleep::new(EspIdfDeepSleep);
 
     // タイムゾーン設定
     let timezone = app_config

@@ -1,6 +1,4 @@
-use crate::config::AppConfig;
 use log::info;
-use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeepSleepError {
@@ -33,7 +31,7 @@ pub struct DeepSleep<P: DeepSleepPlatform> {
 
 impl<P: DeepSleepPlatform> DeepSleep<P> {
     /// Create a new `DeepSleep` controller.
-    pub fn new(_config: Arc<AppConfig>, platform: P) -> Self {
+    pub fn new(platform: P) -> Self {
         DeepSleep { platform }
     }
 
