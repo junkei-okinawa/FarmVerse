@@ -38,76 +38,7 @@ impl From<DeserializeError> for StreamingError {
     }
 }
 
-/// StreamingMessage用のヘルパー関数
-/// ハードウェア非依存の実装はutils::streaming_protocolで提供
-impl StreamingMessage {
-    pub fn start_frame(frame_id: u32, sequence_id: u16) -> Self {
-        let header = StreamingHeader::new(
-            MessageType::StartFrame,
-            sequence_id,
-            frame_id,
-            0,
-            0,
-            0,
-        );
-        Self::new(header, Vec::new())
-    }
-    
-    pub fn end_frame(frame_id: u32, sequence_id: u16) -> Self {
-        let header = StreamingHeader::new(
-            MessageType::EndFrame,
-            sequence_id,
-            frame_id,
-            0,
-            0,
-            0,
-        );
-        Self::new(header, Vec::new())
-    }
-    
-    pub fn data_chunk(
-        frame_id: u32,
-        sequence_id: u16,
-        chunk_index: u16,
-        total_chunks: u16,
-        data: Vec<u8>,
-    ) -> Self {
-        let mut header = StreamingHeader::new(
-            MessageType::DataChunk,
-            sequence_id,
-            frame_id,
-            chunk_index,
-            total_chunks,
-            data.len() as u16,
-        );
-        header.calculate_checksum(&data);
-        Self::new(header, data)
-    }
-    
-    pub fn ack(sequence_id: u16) -> Self {
-        let header = StreamingHeader::new(
-            MessageType::Ack,
-            sequence_id,
-            0,
-            0,
-            0,
-            0,
-        );
-        Self::new(header, Vec::new())
-    }
-    
-    pub fn nack(sequence_id: u16) -> Self {
-        let header = StreamingHeader::new(
-            MessageType::Nack,
-            sequence_id,
-            0,
-            0,
-            0,
-            0,
-        );
-        Self::new(header, Vec::new())
-    }
-}
+// StreamingMessageのメソッドはutils::streaming_protocolで実装済み
 
 /// ストリーミング送信状態
 #[derive(Debug, PartialEq)]
