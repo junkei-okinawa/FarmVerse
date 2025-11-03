@@ -110,7 +110,7 @@ mod tests {
     fn test_fallback_sleep_success() {
         let config = create_test_config(300, 10);
         let mock_platform = MockDeepSleepPlatform::new();
-        let deep_sleep = DeepSleep::new(config.clone(), mock_platform.clone());
+        let deep_sleep = DeepSleep::new(mock_platform.clone());
 
         let result = AppController::fallback_sleep(
             &deep_sleep,
@@ -129,7 +129,7 @@ mod tests {
         // Test with 60 seconds
         let config = create_test_config(60, 10);
         let mock_platform = MockDeepSleepPlatform::new();
-        let deep_sleep = DeepSleep::new(config.clone(), mock_platform.clone());
+        let deep_sleep = DeepSleep::new(mock_platform.clone());
 
         let result = AppController::fallback_sleep(&deep_sleep, &config, "Error");
         assert!(result.is_ok());
@@ -140,7 +140,7 @@ mod tests {
         // Test with 600 seconds
         let config2 = create_test_config(600, 10);
         let mock_platform2 = MockDeepSleepPlatform::new();
-        let deep_sleep2 = DeepSleep::new(config2.clone(), mock_platform2.clone());
+        let deep_sleep2 = DeepSleep::new(mock_platform2.clone());
 
         let result2 = AppController::fallback_sleep(&deep_sleep2, &config2, "Error");
         assert!(result2.is_ok());
