@@ -30,9 +30,15 @@ Phase 4A (ESP-NOW Streaming Protocol) と Phase 4B (ハードウェア依存部�
 
 #### エラー型
 ```rust
+/// デシリアライゼーションエラー型(ハードウェア非依存)
+/// 
+/// ストリーミングメッセージのデシリアライズ時に発生するエラー。
+/// ハードウェア非依存のため、`no_std`環境でも使用可能。
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum DeserializeError {
+    /// データ長がヘッダーサイズ(17バイト)未満
     DataTooShort,
+    /// 無効なメッセージタイプ値を検出(値を含む)
     InvalidMessageType(u8),
 }
 ```
