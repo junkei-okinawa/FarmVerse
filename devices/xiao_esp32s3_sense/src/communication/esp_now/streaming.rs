@@ -9,177 +9,38 @@
 
 use crate::hardware::camera::StreamingCameraConfig;
 use crate::communication::esp_now::sender::{EspNowSender, EspNowError};
+use crate::utils::streaming_protocol::{
+    MessageType, StreamingHeader, StreamingMessage, DeserializeError
+};
 
-/// メッセージタイプ
-#[derive(Debug, PartialEq, Clone, Copy)]
-#[repr(u8)]
-pub enum MessageType {
-    StartFrame = 1,
-    DataChunk = 2,
-    EndFrame = 3,
-    Ack = 4,
-    Nack = 5,
+/// ストリーミング送信エラー
+#[derive(Debug, PartialEq)]
+pub enum StreamingError {
+    ChunkSizeInvalid,
+    SendTimeout,
+    AckTimeout,
+    ChecksumMismatch,
+    MaxRetriesExceeded,
+    CameraError(&'static str),
+    InvalidFrame(String),
+    EspNowError(EspNowError),
 }
 
-impl MessageType {
-    /// u8値からMessageTypeに変換
-    pub fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            1 => Some(MessageType::StartFrame),
-            2 => Some(MessageType::DataChunk),
-            3 => Some(MessageType::EndFrame),
-            4 => Some(MessageType::Ack),
-            5 => Some(MessageType::Nack),
-            _ => None,
-        }
+impl From<EspNowError> for StreamingError {
+    fn from(error: EspNowError) -> Self {
+        StreamingError::EspNowError(error)
     }
 }
 
-/// ストリーミングメッセージヘッダー
-#[derive(Debug, PartialEq, Clone)]
-pub struct StreamingHeader {
-    pub message_type: MessageType,
-    pub sequence_id: u16,
-    pub frame_id: u32,
-    pub chunk_index: u16,
-    pub total_chunks: u16,
-    pub data_length: u16,
-    pub checksum: u32,
-}
-
-impl StreamingHeader {
-    pub fn new(
-        message_type: MessageType,
-        sequence_id: u16,
-        frame_id: u32,
-        chunk_index: u16,
-        total_chunks: u16,
-        data_length: u16,
-    ) -> Self {
-        Self {
-            message_type,
-            sequence_id,
-            frame_id,
-            chunk_index,
-            total_chunks,
-            data_length,
-            checksum: 0, // Will be calculated
-        }
-    }
-    
-    pub fn calculate_checksum(&mut self, data: &[u8]) {
-        let mut checksum: u32 = 0;
-        checksum = checksum.wrapping_add(self.sequence_id as u32);
-        checksum = checksum.wrapping_add(self.frame_id);
-        checksum = checksum.wrapping_add(self.chunk_index as u32);
-        checksum = checksum.wrapping_add(self.total_chunks as u32);
-        checksum = checksum.wrapping_add(self.data_length as u32);
-        
-        for byte in data {
-            checksum = checksum.wrapping_add(*byte as u32);
-        }
-        
-        self.checksum = checksum;
-    }
-    
-    pub fn verify_checksum(&self, data: &[u8]) -> bool {
-        let mut calculated: u32 = 0;
-        calculated = calculated.wrapping_add(self.sequence_id as u32);
-        calculated = calculated.wrapping_add(self.frame_id);
-        calculated = calculated.wrapping_add(self.chunk_index as u32);
-        calculated = calculated.wrapping_add(self.total_chunks as u32);
-        calculated = calculated.wrapping_add(self.data_length as u32);
-        
-        for byte in data {
-            calculated = calculated.wrapping_add(*byte as u32);
-        }
-        
-        calculated == self.checksum
+impl From<DeserializeError> for StreamingError {
+    fn from(error: DeserializeError) -> Self {
+        StreamingError::InvalidFrame(error.as_str().to_string())
     }
 }
 
-/// ストリーミングメッセージ
-#[derive(Debug, PartialEq, Clone)]
-pub struct StreamingMessage {
-    pub header: StreamingHeader,
-    pub data: Vec<u8>,
-}
-
+/// StreamingMessage用のヘルパー関数
+/// ハードウェア非依存の実装はutils::streaming_protocolで提供
 impl StreamingMessage {
-    pub fn new(header: StreamingHeader, data: Vec<u8>) -> Self {
-        Self { header, data }
-    }
-    
-    /// メッセージをバイト配列にシリアライズする
-    pub fn serialize(&self) -> Vec<u8> {
-        let mut serialized = Vec::new();
-        
-        // ヘッダーをシリアライズ
-        serialized.push(self.header.message_type as u8);
-        serialized.extend_from_slice(&self.header.sequence_id.to_le_bytes());
-        serialized.extend_from_slice(&self.header.frame_id.to_le_bytes());
-        serialized.extend_from_slice(&self.header.chunk_index.to_le_bytes());
-        serialized.extend_from_slice(&self.header.total_chunks.to_le_bytes());
-        serialized.extend_from_slice(&self.header.data_length.to_le_bytes());
-        serialized.extend_from_slice(&self.header.checksum.to_le_bytes());
-        
-        // データを追加
-        serialized.extend_from_slice(&self.data);
-        
-        serialized
-    }
-    
-    /// バイト配列からメッセージをデシリアライズする
-    pub fn deserialize(data: &[u8]) -> Result<Self, StreamingError> {
-        if data.len() < 15 { // 最小ヘッダーサイズ
-            return Err(StreamingError::InvalidFrame("Data too short for header".to_string()));
-        }
-        
-        let mut offset = 0;
-        
-        // ヘッダーをデシリアライズ
-        let message_type = MessageType::from_u8(data[offset])
-            .ok_or_else(|| StreamingError::InvalidFrame("Invalid message type".to_string()))?;
-        offset += 1;
-        
-        let sequence_id = u16::from_le_bytes([data[offset], data[offset + 1]]);
-        offset += 2;
-        
-        let frame_id = u32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]);
-        offset += 4;
-        
-        let chunk_index = u16::from_le_bytes([data[offset], data[offset + 1]]);
-        offset += 2;
-        
-        let total_chunks = u16::from_le_bytes([data[offset], data[offset + 1]]);
-        offset += 2;
-        
-        let data_length = u16::from_le_bytes([data[offset], data[offset + 1]]);
-        offset += 2;
-        
-        let checksum = u32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]);
-        offset += 4;
-        
-        // データ部分を抽出
-        let payload = if offset < data.len() {
-            data[offset..].to_vec()
-        } else {
-            Vec::new()
-        };
-        
-        let header = StreamingHeader {
-            message_type,
-            sequence_id,
-            frame_id,
-            chunk_index,
-            total_chunks,
-            data_length,
-            checksum,
-        };
-        
-        Ok(StreamingMessage::new(header, payload))
-    }
-    
     pub fn start_frame(frame_id: u32, sequence_id: u16) -> Self {
         let header = StreamingHeader::new(
             MessageType::StartFrame,
@@ -245,25 +106,6 @@ impl StreamingMessage {
             0,
         );
         Self::new(header, Vec::new())
-    }
-}
-
-/// ストリーミング送信エラー
-#[derive(Debug, PartialEq)]
-pub enum StreamingError {
-    ChunkSizeInvalid,
-    SendTimeout,
-    AckTimeout,
-    ChecksumMismatch,
-    MaxRetriesExceeded,
-    CameraError(&'static str),
-    InvalidFrame(String),
-    EspNowError(EspNowError),
-}
-
-impl From<EspNowError> for StreamingError {
-    fn from(error: EspNowError) -> Self {
-        StreamingError::EspNowError(error)
     }
 }
 
@@ -479,268 +321,71 @@ pub fn reconstruct_image_from_chunks(chunks: &[Vec<u8>]) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    // 基本的なシリアライゼーション/デシリアライゼーションのテストは
+    // src/utils/streaming_protocol.rs で実施済み
+    //
+    // ここでは streaming.rs 固有の機能（ヘルパー関数、StreamingSender等）をテスト
+
     #[test]
-    fn test_message_type_conversion() {
-        assert_eq!(MessageType::from_u8(1), Some(MessageType::StartFrame));
-        assert_eq!(MessageType::from_u8(2), Some(MessageType::DataChunk));
-        assert_eq!(MessageType::from_u8(3), Some(MessageType::EndFrame));
-        assert_eq!(MessageType::from_u8(4), Some(MessageType::Ack));
-        assert_eq!(MessageType::from_u8(5), Some(MessageType::Nack));
-        assert_eq!(MessageType::from_u8(99), None);
+    fn test_helper_start_frame() {
+        let msg = StreamingMessage::start_frame(123, 456);
+        assert_eq!(msg.header.message_type, MessageType::StartFrame);
+        assert_eq!(msg.header.frame_id, 123);
+        assert_eq!(msg.header.sequence_id, 456);
+        assert_eq!(msg.data.len(), 0);
     }
 
     #[test]
-    fn test_streaming_header_creation() {
-        let header = StreamingHeader::new(
-            MessageType::DataChunk,
-            100,  // sequence_id
-            1,    // frame_id
-            5,    // chunk_index
-            10,   // total_chunks
-            200,  // data_length
-        );
-        
-        assert_eq!(header.message_type, MessageType::DataChunk);
-        assert_eq!(header.sequence_id, 100);
-        assert_eq!(header.frame_id, 1);
-        assert_eq!(header.chunk_index, 5);
-        assert_eq!(header.total_chunks, 10);
-        assert_eq!(header.data_length, 200);
-        assert_eq!(header.checksum, 0); // Not yet calculated
+    fn test_helper_end_frame() {
+        let msg = StreamingMessage::end_frame(789, 101);
+        assert_eq!(msg.header.message_type, MessageType::EndFrame);
+        assert_eq!(msg.header.frame_id, 789);
+        assert_eq!(msg.header.sequence_id, 101);
+        assert_eq!(msg.data.len(), 0);
     }
 
     #[test]
-    fn test_checksum_calculation() {
-        let mut header = StreamingHeader::new(
-            MessageType::DataChunk,
-            100,
-            1,
-            5,
-            10,
-            3, // data_length should match actual data
-        );
+    fn test_helper_data_chunk() {
+        let data = vec![1, 2, 3, 4, 5];
+        let msg = StreamingMessage::data_chunk(10, 20, 3, 10, data.clone());
         
-        let data = vec![0x01, 0x02, 0x03];
-        header.calculate_checksum(&data);
-        
-        // Checksum should be non-zero after calculation
-        assert_ne!(header.checksum, 0);
-        
-        // Verify checksum matches
-        assert!(header.verify_checksum(&data));
+        assert_eq!(msg.header.message_type, MessageType::DataChunk);
+        assert_eq!(msg.header.frame_id, 10);
+        assert_eq!(msg.header.sequence_id, 20);
+        assert_eq!(msg.header.chunk_index, 3);
+        assert_eq!(msg.header.total_chunks, 10);
+        assert_eq!(msg.header.data_length, 5);
+        assert_eq!(msg.data, data);
+        assert!(msg.header.verify_checksum(&msg.data));
     }
 
     #[test]
-    fn test_checksum_verification_fail() {
-        let mut header = StreamingHeader::new(
-            MessageType::DataChunk,
-            100,
-            1,
-            5,
-            10,
-            3,
-        );
-        
-        let data = vec![0x01, 0x02, 0x03];
-        header.calculate_checksum(&data);
-        
-        // Different data should fail verification
-        let wrong_data = vec![0x04, 0x05, 0x06];
-        assert!(!header.verify_checksum(&wrong_data));
+    fn test_helper_ack() {
+        let msg = StreamingMessage::ack(555);
+        assert_eq!(msg.header.message_type, MessageType::Ack);
+        assert_eq!(msg.header.sequence_id, 555);
+        assert_eq!(msg.data.len(), 0);
     }
 
     #[test]
-    fn test_streaming_message_serialization() {
-        let mut header = StreamingHeader::new(
-            MessageType::DataChunk,
-            256,   // sequence_id
-            1000,  // frame_id
-            5,     // chunk_index
-            10,    // total_chunks
-            4,     // data_length
-        );
-        
-        let data = vec![0xAA, 0xBB, 0xCC, 0xDD];
-        header.calculate_checksum(&data);
-        
-        let message = StreamingMessage::new(header.clone(), data.clone());
-        let serialized = message.serialize();
-        
-        // Check serialized size
-        // Header: 1 (type) + 2 (seq) + 4 (frame) + 2 (chunk_idx) + 2 (total) + 2 (len) + 4 (checksum) = 17 bytes
-        // Data: 4 bytes
-        // Total: 21 bytes
-        assert_eq!(serialized.len(), 17 + 4);
-        
-        // Check message type (first byte)
-        assert_eq!(serialized[0], MessageType::DataChunk as u8);
-        
-        // Check sequence_id (little-endian)
-        assert_eq!(u16::from_le_bytes([serialized[1], serialized[2]]), 256);
-        
-        // Check data at the end
-        assert_eq!(&serialized[17..21], &[0xAA, 0xBB, 0xCC, 0xDD]);
+    fn test_helper_nack() {
+        let msg = StreamingMessage::nack(666);
+        assert_eq!(msg.header.message_type, MessageType::Nack);
+        assert_eq!(msg.header.sequence_id, 666);
+        assert_eq!(msg.data.len(), 0);
     }
 
     #[test]
-    fn test_streaming_message_deserialization() {
-        // Create a valid message first
-        let mut header = StreamingHeader::new(
-            MessageType::StartFrame,
-            512,
-            2000,
-            0,
-            1,
-            5,
-        );
-        
-        let data = vec![0x10, 0x20, 0x30, 0x40, 0x50];
-        header.calculate_checksum(&data);
-        
-        let original_message = StreamingMessage::new(header.clone(), data.clone());
-        let serialized = original_message.serialize();
-        
-        // Deserialize
-        let deserialized = StreamingMessage::deserialize(&serialized)
-            .expect("Deserialization should succeed");
-        
-        // Verify header fields
-        assert_eq!(deserialized.header.message_type, MessageType::StartFrame);
-        assert_eq!(deserialized.header.sequence_id, 512);
-        assert_eq!(deserialized.header.frame_id, 2000);
-        assert_eq!(deserialized.header.chunk_index, 0);
-        assert_eq!(deserialized.header.total_chunks, 1);
-        assert_eq!(deserialized.header.data_length, 5);
-        assert_eq!(deserialized.header.checksum, header.checksum);
-        
-        // Verify data
-        assert_eq!(deserialized.data, data);
-    }
-
-    #[test]
-    fn test_deserialization_too_short() {
-        let short_data = vec![0x01, 0x02]; // Only 2 bytes (minimum is 15 for header)
-        
+    fn test_deserialize_error_conversion() {
+        // DeserializeErrorからStreamingErrorへの変換テスト
+        let short_data = vec![1, 2, 3]; // Too short
         let result = StreamingMessage::deserialize(&short_data);
+        
         assert!(result.is_err());
-        
         match result {
-            Err(StreamingError::InvalidFrame(msg)) => {
-                assert!(msg.contains("too short"));
-            }
-            _ => panic!("Expected InvalidFrame error"),
+            Err(StreamingError::InvalidFrame(_)) => {}, // Expected
+            _ => panic!("Expected StreamingError::InvalidFrame"),
         }
-    }
-
-    #[test]
-    fn test_deserialization_invalid_message_type() {
-        // Create invalid message with unknown type (99)
-        let invalid_data = vec![
-            99,  // Invalid message type
-            0x00, 0x01,  // sequence_id
-            0x00, 0x00, 0x00, 0x01,  // frame_id
-            0x00, 0x00,  // chunk_index
-            0x00, 0x01,  // total_chunks
-            0x00, 0x00,  // data_length
-            0x00, 0x00, 0x00, 0x00,  // checksum
-        ];
-        
-        let result = StreamingMessage::deserialize(&invalid_data);
-        assert!(result.is_err());
-        
-        match result {
-            Err(StreamingError::InvalidFrame(msg)) => {
-                assert!(msg.contains("Invalid message type"));
-            }
-            _ => panic!("Expected InvalidFrame error"),
-        }
-    }
-
-    #[test]
-    fn test_round_trip_serialization() {
-        // Test all message types
-        let message_types = vec![
-            MessageType::StartFrame,
-            MessageType::DataChunk,
-            MessageType::EndFrame,
-            MessageType::Ack,
-            MessageType::Nack,
-        ];
-        
-        for msg_type in message_types {
-            let mut header = StreamingHeader::new(
-                msg_type,
-                1024,
-                5000,
-                3,
-                7,
-                8,
-            );
-            
-            let data = vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
-            header.calculate_checksum(&data);
-            
-            let original = StreamingMessage::new(header.clone(), data.clone());
-            let serialized = original.serialize();
-            let deserialized = StreamingMessage::deserialize(&serialized)
-                .expect("Round-trip deserialization should succeed");
-            
-            assert_eq!(deserialized.header.message_type, msg_type);
-            assert_eq!(deserialized.data, data);
-            assert!(deserialized.header.verify_checksum(&deserialized.data));
-        }
-    }
-
-    #[test]
-    fn test_empty_data_message() {
-        let mut header = StreamingHeader::new(
-            MessageType::Ack,
-            0,
-            0,
-            0,
-            0,
-            0,  // data_length = 0
-        );
-        
-        let data = vec![];
-        header.calculate_checksum(&data);
-        
-        let message = StreamingMessage::new(header.clone(), data.clone());
-        let serialized = message.serialize();
-        let deserialized = StreamingMessage::deserialize(&serialized)
-            .expect("Empty data deserialization should succeed");
-        
-        assert_eq!(deserialized.data.len(), 0);
-        assert!(deserialized.header.verify_checksum(&deserialized.data));
-    }
-
-    #[test]
-    fn test_max_chunk_size() {
-        // ESP-NOW has 250 byte limit
-        // Header is 17 bytes, so max data is 233 bytes
-        let mut header = StreamingHeader::new(
-            MessageType::DataChunk,
-            1,
-            1,
-            0,
-            1,
-            233,
-        );
-        
-        let data = vec![0xAB; 233];  // 233 bytes of 0xAB
-        header.calculate_checksum(&data);
-        
-        let message = StreamingMessage::new(header.clone(), data.clone());
-        let serialized = message.serialize();
-        
-        // Total should be 250 bytes (17 header + 233 data)
-        assert_eq!(serialized.len(), 250);
-        
-        let deserialized = StreamingMessage::deserialize(&serialized)
-            .expect("Max chunk size deserialization should succeed");
-        
-        assert_eq!(deserialized.data.len(), 233);
-        assert!(deserialized.header.verify_checksum(&deserialized.data));
     }
 
     #[test]
