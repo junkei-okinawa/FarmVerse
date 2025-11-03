@@ -198,7 +198,7 @@ probe-rs list
 
 ```bash
 # プロジェクトルートで実行
-cd /Users/junkei/Documents/FarmVerse/devices/xiao_esp32s3_sense
+cd ~/Documents/FarmVerse/devices/xiao_esp32s3_sense
 
 # テストのビルドと実行
 cargo test --test hardware_test

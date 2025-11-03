@@ -381,7 +381,7 @@ echo "  cargo test --test sensor_integration --features device-test"
 - `tests/docs/PHASE5_PLAN.md`: Phase 5プラン
 - `tests/docs/PHASE5_IMPLEMENTATION_REPORT.md`: Phase 5実装レポート
 - `server/sensor_data_receiver/protocol/frame_parser.py`: USB CDCプロトコルの参考実装
-- `/Users/junkei/esp/v5.1.6/esp-idf/export.sh`: ESP-IDF環境設定（実機テスト時に使用）
+- `~/esp/v5.1.6/esp-idf/export.sh`: ESP-IDF環境設定（実機テスト時に使用）
 
 ## 用語補足
 
