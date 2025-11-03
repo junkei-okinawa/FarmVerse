@@ -12,6 +12,7 @@ mod core;
 mod hardware;
 mod mac_address;
 mod power;
+mod utils;
 
 // 使用するモジュールのインポート
 use communication::{NetworkManager, esp_now::{EspNowSender}};
