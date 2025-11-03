@@ -119,7 +119,7 @@ Phase 3では、ESP-NOWストリーミングプロトコルの**ハードウェ�
 2. **Phase 4B**: 他のハードウェア非依存モジュールのテスト追加
 3. **Phase 5**: probe-rsを使用した実機ユニットテスト実装
 
-推奨: まず**Phase 4B**で他のテスト可能なモジュールを先に完了させ、その後Phase 4Aまたはphase 5に進む。
+推奨: まず**Phase 4B**で他のテスト可能なモジュールを先に完了させ、その後Phase 4AまたはPhase 5に進む。
 
 ## テストコード追加場所
 `devices/xiao_esp32s3_sense/src/communication/esp_now/streaming.rs`  
