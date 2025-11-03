@@ -1,6 +1,27 @@
 /// ESP-NOW ストリーミングプロトコル（ハードウェア非依存部分）
 /// テスト可能な純粋関数を提供
 
+/// デシリアライゼーションエラー型(ハードウェア非依存)
+/// 
+/// ストリーミングメッセージのデシリアライズ時に発生するエラー。
+/// ハードウェア非依存のため、`no_std`環境でも使用可能。
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum DeserializeError {
+    /// データ長がヘッダーサイズ(17バイト)未満
+    DataTooShort,
+    /// 無効なメッセージタイプ値を検出(値を含む)
+    InvalidMessageType(u8),
+}
+
+impl core::fmt::Display for DeserializeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            DeserializeError::DataTooShort => write!(f, "Data too short for header"),
+            DeserializeError::InvalidMessageType(value) => write!(f, "Invalid message type: {}", value),
+        }
+    }
+}
+
 /// メッセージタイプ
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
@@ -123,16 +144,16 @@ impl StreamingMessage {
     }
     
     /// バイト配列からメッセージをデシリアライズする
-    pub fn deserialize(data: &[u8]) -> Result<Self, &'static str> {
+    pub fn deserialize(data: &[u8]) -> Result<Self, DeserializeError> {
         if data.len() < 17 {
-            return Err("Data too short for header");
+            return Err(DeserializeError::DataTooShort);
         }
         
         let mut offset = 0;
         
         // ヘッダーをデシリアライズ
         let message_type = MessageType::from_u8(data[offset])
-            .ok_or("Invalid message type")?;
+            .ok_or(DeserializeError::InvalidMessageType(data[offset]))?;
         offset += 1;
         
         let sequence_id = u16::from_le_bytes([data[offset], data[offset + 1]]);
@@ -369,7 +390,7 @@ mod tests {
         let result = StreamingMessage::deserialize(&short_data);
         
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Data too short for header");
+        assert_eq!(result.unwrap_err(), DeserializeError::DataTooShort);
     }
 
     #[test]
@@ -379,7 +400,7 @@ mod tests {
         
         let result = StreamingMessage::deserialize(&invalid_data);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Invalid message type");
+        assert_eq!(result.unwrap_err(), DeserializeError::InvalidMessageType(99));
     }
 
     #[test]
