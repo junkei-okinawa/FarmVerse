@@ -34,7 +34,7 @@ impl From<EspNowError> for StreamingError {
 
 impl From<DeserializeError> for StreamingError {
     fn from(error: DeserializeError) -> Self {
-        StreamingError::InvalidFrame(error.as_str().to_string())
+        StreamingError::InvalidFrame(error.to_string())
     }
 }
 
