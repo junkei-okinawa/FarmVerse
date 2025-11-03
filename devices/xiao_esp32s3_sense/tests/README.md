@@ -57,7 +57,7 @@ members = [
 
 ```bash
 # ESP-IDF環境の有効化
-. /Users/junkei/esp/v5.1.6/esp-idf/export.sh
+. ~/esp/v5.1.6/esp-idf/export.sh
 
 # ビルドとフラッシュ
 cd devices/xiao_esp32s3_sense
