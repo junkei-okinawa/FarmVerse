@@ -100,7 +100,7 @@ cargo test --lib integration_tests
 
 **現状の制限**:
 - 統合テスト (`src/lib.rs::integration_tests`) は ESP-IDF 依存のため、ホストマシン単体では実行不可
-- 実機でのテスト実行が必要
+- 実機でのテスト実行が必要 (esp-idf-sys が実機ターゲット必須)
 - CI/CD では現在ホストユニットテストのみ実行
 
 ### 4. lib.rsの更新
@@ -169,6 +169,7 @@ mod integration_tests {
 # Option B: 実機不要な統合テストへの再設計
 # - ハードウェア抽象化レイヤーの強化
 # - モック/スタブの充実
+# - esp-idf-sys依存を分離したホスト実行可能な設計
 ```
 
 **手動実行手順**:
@@ -177,7 +178,7 @@ mod integration_tests {
 . ~/esp/v5.1.6/esp-idf/export.sh
 
 # 2. 実機接続確認
-ls /dev/tty.usbserial-*  # macOS
+ls /dev/tty.usbmodem*    # macOS
 ls /dev/ttyUSB*          # Linux
 
 # 3. 統合テスト実行
@@ -212,7 +213,7 @@ Phase 5では以下を達成しました:
 
 **重要な発見**:
 - 統合テストは `src/lib.rs::integration_tests` に実装
-- ESP-IDF依存のため **実機が必要** (ホストマシン単体では実行不可)
+- ESP-IDF依存のため **実機が必要** (esp-idf-sys build.rs がホストターゲットを拒否)
 - ホストユニットテストは `run_tests.sh` で実行可能
 - 実機統合テストは手動実行が必要
 
