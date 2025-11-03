@@ -8,10 +8,10 @@
 | 項目 | 状態 | 備考 |
 |------|------|------|
 | AppControllerユニットテスト | ✅ | テスト実装完了（実行は要cargo） |
-| 統合テストの実装 | ✅ | 8テスト実装（実機が必要） |
-| テスト実行環境の整備 | ✅ | run_tests.sh更新 |
+| 統合テストの実装 | ⚠️ | Phase 6以降の課題 |
+| テスト実行環境の整備 | ✅ | run_tests.sh完成 |
 | テストカバレッジ測定 | ⚠️ | 今後の課題 |
-| CI/CD統合 | 🟡 | ホストテストのみ自動化 |
+| CI/CD統合 | ✅ | ホストユニットテスト完全自動化 |
 
 ## 実装内容サマリー
 
@@ -29,31 +29,19 @@
 ./run_tests.sh
 ```
 
-### 2. 統合テスト
-**合計**: 8テスト（`src/lib.rs::integration_tests`）
+### 2. 統合テストについて
 
-1. `test_measured_data_to_streaming_pipeline` - センサーデータ生成フロー
-2. `test_streaming_message_creation` - StreamingMessage作成
-3. `test_complete_data_flow_small_data` - 小データでの完全フロー
-4. `test_complete_data_flow_large_data` - 大データでの複数チャンク処理
-5. `test_measured_data_with_warnings` - 警告メッセージ処理
-6. `test_edge_case_zero_length_data` - 空データのエッジケース
-7. `test_edge_case_exact_chunk_size` - チャンクサイズ一致ケース
-8. (AppControllerテスト - cargo依存)
+**Phase 5で実装予定だった統合テストは削除されました。**
 
-**⚠️ 重要**: 統合テストは **ESP32S3実機が必要**
+**理由**:
+- `src/lib.rs::integration_tests`の内容は、実際には既存のユニットテストと重複していた
+- ハードウェア依存モジュールを使用していないため、真の統合テストではなかった
+- `#[cfg(not(test))]`で除外されたモジュールへの誤った依存により、コンパイルエラーが発生していた
 
-**実行方法**:
-```bash
-# ESP-IDF環境セットアップ
-. ~/esp/v5.1.6/esp-idf/export.sh
-
-# 実機接続確認
-ls /dev/tty.usbserial-*
-
-# テスト実行
-cargo test --lib integration_tests
-```
+**実機統合テストは今後の課題**として以下の方法で対応予定:
+1. 実機専用のテストコード作成（`tests/device/` ディレクトリなど）
+2. QEMUエミュレータでの実行環境構築
+3. probe-rsを使用した高度なデバッグテスト
 
 ## 技術的発見
 
@@ -74,11 +62,9 @@ cargo test --lib integration_tests
 └─────────────────────────────────────┘
 
 ┌─────────────────────────────────────┐
-│ 実機統合テスト (8テスト)             │
-│  - ESP-IDF依存                       │
-│  - 実機環境が必要                    │
-│  - cargo test --lib で実行           │
-│  - 手動実行のみ                      │
+│ 実機統合テスト (未実装)              │
+│  - 今後の課題                        │
+│  - Phase 6以降で対応予定             │
 └─────────────────────────────────────┘
 ```
 
@@ -122,10 +108,11 @@ cargo test --lib integration_tests
 
 ## 成果
 
-✅ **合計99個のテスト実装**（ユニット91 + 統合8）
-✅ **CI/CD対応** (ホストユニットテスト)
-✅ **実機テスト手順の明確化**
+✅ **合計91個のユニットテスト実装**
+✅ **CI/CD完全対応** (ホストユニットテスト)
+✅ **テスト実行環境の整備** (run_tests.sh)
 ✅ **保守性の向上** (テスト実行方法の文書化)
+✅ **不要なテストコードの削除** (重複していた統合テスト)
 
 ## 次のステップ (Phase 6候補)
 

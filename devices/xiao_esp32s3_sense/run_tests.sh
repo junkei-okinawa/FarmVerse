@@ -17,8 +17,6 @@ echo "  - mac_address (MACアドレス処理)"
 echo "  - core::measured_data (測定データ)"
 echo "  - core::app_controller (アプリ制御)"
 echo ""
-echo "⚠️  注意: 統合テスト (src/lib.rs::integration_tests) は実機が必要なため、このスクリプトでは実行されません"
-echo ""
 
 # targetディレクトリを作成
 mkdir -p target
