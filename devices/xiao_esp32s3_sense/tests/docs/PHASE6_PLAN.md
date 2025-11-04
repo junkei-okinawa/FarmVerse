@@ -198,6 +198,7 @@ tests/
 **実機テスト実行手順例**:
 ```bash
 # 実機を接続して実行（probe-rs使用）
+# ⚠️ 注意: 実機接続が必要
 cd devices/xiao_esp32s3_sense
 
 # 方法1: probe-rsを使用（推奨）
@@ -381,7 +382,7 @@ echo "  cargo test --test sensor_integration --features device-test"
 - `tests/docs/PHASE5_PLAN.md`: Phase 5プラン
 - `tests/docs/PHASE5_IMPLEMENTATION_REPORT.md`: Phase 5実装レポート
 - `server/sensor_data_receiver/protocol/frame_parser.py`: USB CDCプロトコルの参考実装
-- `~/esp/v5.1.6/esp-idf/export.sh`: ESP-IDF環境設定（実機テスト時に使用）
+- `~/esp/v5.1.6/esp-idf/export.sh`: ESP-IDF環境設定（実機テスト時に使用、パスは環境に応じて調整）
 
 ## 用語補足
 
