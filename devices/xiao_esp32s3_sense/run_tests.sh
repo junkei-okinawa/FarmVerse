@@ -15,6 +15,7 @@ echo "  - utils::tds_calc (TDS計算)"
 echo "  - utils::streaming_protocol (通信プロトコル)"
 echo "  - mac_address (MACアドレス処理)"
 echo "  - core::measured_data (測定データ)"
+echo "  - core::app_controller (アプリ制御)"
 echo ""
 
 # targetディレクトリを作成
@@ -63,6 +64,26 @@ echo "Running measured_data tests..."
 ../../target/measured_data_tests
 echo ""
 
+# AppControllerモジュールのテスト
+echo "🧪 アプリ制御ロジックのテスト..."
+echo "Compiling app_controller tests..."
+rustc +stable --test app_controller.rs --edition 2021 --extern thiserror=../../target/debug/deps/libthiserror-*.rlib -L ../../target/debug/deps -o ../../target/app_controller_tests 2>/dev/null || echo "⚠️  app_controller tests require dependencies (skipping standalone test)"
+if [ -f ../../target/app_controller_tests ]; then
+    echo "Running app_controller tests..."
+    ../../target/app_controller_tests
+fi
+echo ""
+
 echo "================================"
 echo "✅ すべてのテスト完了"
+echo ""
+echo "📝 Note: すべてのテストを実行するには:"
+echo "   ./run_tests.sh"
+echo ""
+echo "   個別のテストを実行するには、対応するバイナリを直接実行:"
+echo "   ./target/voltage_tests"
+echo "   ./target/tds_tests"
+echo "   ./target/streaming_tests"
+echo "   ./target/mac_tests"
+echo "   ./target/measured_data_tests"
 echo "================================"

@@ -15,8 +15,7 @@
 pub mod communication;
 #[cfg(not(test))]
 pub mod config;
-#[cfg(not(test))]
-pub mod core;
+pub mod core;  // Always public to support integration testing
 #[cfg(not(test))]
 pub mod hardware;
 pub mod mac_address;
@@ -29,8 +28,7 @@ pub mod utils;
 pub use communication::esp_now::{EspNowError, EspNowSender, EspNowReceiver};
 #[cfg(not(test))]
 pub use config::{AppConfig, ConfigError, MemoryConfig};
-#[cfg(not(test))]
-pub use core::{DataService, MeasuredData};
+pub use core::{DataService, MeasuredData};  // Always public to support integration testing
 #[cfg(not(test))]
 pub use hardware::camera::CameraController;
 #[cfg(not(test))]
