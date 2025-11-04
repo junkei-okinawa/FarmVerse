@@ -57,3 +57,97 @@ impl AppController {
         Ok(())
     }
 }
+
+#[cfg(all(test, not(target_os = "espidf")))]
+mod tests {
+    use super::*;
+    use crate::mac_address::MacAddress;
+    use crate::power::sleep::DeepSleepPlatform;
+    use std::sync::{Arc, Mutex};
+    use std::str::FromStr;
+
+    #[derive(Clone)]
+    struct MockDeepSleepPlatform {
+        sleep_calls: Arc<Mutex<Vec<u64>>>,
+    }
+
+    impl MockDeepSleepPlatform {
+        fn new() -> Self {
+            Self {
+                sleep_calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+
+        fn get_sleep_calls(&self) -> Vec<u64> {
+            self.sleep_calls.lock().unwrap().clone()
+        }
+    }
+
+    impl DeepSleepPlatform for MockDeepSleepPlatform {
+        fn deep_sleep(&self, duration_us: u64) {
+            self.sleep_calls.lock().unwrap().push(duration_us);
+        }
+    }
+
+    fn create_test_config(sleep_duration: u64, timeout: u64) -> Arc<AppConfig> {
+        Arc::new(AppConfig {
+            receiver_mac: MacAddress::from_str("AA:BB:CC:DD:EE:FF").unwrap(),
+            sleep_duration_seconds: sleep_duration,
+            sleep_command_timeout_seconds: timeout,
+            debug_mode: false,
+            bypass_voltage_threshold: false,
+            force_camera_test: false,
+            temp_sensor_enabled: false,
+            temp_sensor_power_pin: 0,
+            temp_sensor_data_pin: 0,
+            temperature_offset_celsius: 0.0,
+            camera_warmup_frames: Some(0),
+            timezone: "Asia/Tokyo".to_string(),
+            ec_tds_sensor_enabled: false,
+            ec_tds_sensor_pin: 0,
+        })
+    }
+
+    #[test]
+    fn test_fallback_sleep_success() {
+        let config = create_test_config(300, 10);
+        let mock_platform = MockDeepSleepPlatform::new();
+        let deep_sleep = DeepSleep::new(mock_platform.clone());
+
+        let result = AppController::fallback_sleep(
+            &deep_sleep,
+            &config,
+            "Test error",
+        );
+
+        assert!(result.is_ok());
+        let calls = mock_platform.get_sleep_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0], 300_000_000); // 300 seconds in microseconds
+    }
+
+    #[test]
+    fn test_fallback_sleep_with_different_durations() {
+        // Test with 60 seconds
+        let config = create_test_config(60, 10);
+        let mock_platform = MockDeepSleepPlatform::new();
+        let deep_sleep = DeepSleep::new(mock_platform.clone());
+
+        let result = AppController::fallback_sleep(&deep_sleep, &config, "Error");
+        assert!(result.is_ok());
+        
+        let calls = mock_platform.get_sleep_calls();
+        assert_eq!(calls[0], 60_000_000); // 60 seconds
+
+        // Test with 600 seconds
+        let config2 = create_test_config(600, 10);
+        let mock_platform2 = MockDeepSleepPlatform::new();
+        let deep_sleep2 = DeepSleep::new(mock_platform2.clone());
+
+        let result2 = AppController::fallback_sleep(&deep_sleep2, &config2, "Error");
+        assert!(result2.is_ok());
+        
+        let calls2 = mock_platform2.get_sleep_calls();
+        assert_eq!(calls2[0], 600_000_000); // 600 seconds
+    }
+}

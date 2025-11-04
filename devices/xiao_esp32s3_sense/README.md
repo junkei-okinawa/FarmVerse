@@ -227,9 +227,40 @@ cargo espflash flash --partition-table partitions.csv --monitor
 
 # ビルドのみ
 cargo build
+```
 
-# テスト実行
-cargo test --lib
+### ホストマシンでのユニットテスト (ハードウェア非依存部分)
+```bash
+# ホストユニットテスト実行
+./run_tests.sh
+
+# 実行されるテスト:
+# - utils::voltage_calc (電圧計算)
+# - utils::tds_calc (TDS計算)
+# - utils::streaming_protocol (通信プロトコル)
+# - mac_address (MACアドレス処理)
+# - core::measured_data (測定データ)
+```
+
+### 実機統合テスト (ESP32S3実機が必要)
+```bash
+# ⚠️ 注意: 統合テストは実機環境が必要
+
+# 1. ESP-IDF環境のセットアップ
+# ESP-IDFのインストールパスは環境によって異なります
+# 例: . ~/esp/v5.1.6/esp-idf/export.sh
+# または環境変数を使用: . $IDF_PATH/export.sh
+. ~/esp/v5.1.6/esp-idf/export.sh
+
+# 2. 実機接続確認
+ls /dev/tty.usbserial-*  # macOS
+ls /dev/ttyUSB*          # Linux
+
+# 3. 統合テスト実行 (実機ビルド・テスト)
+cargo test --lib integration_tests
+
+# Note: 統合テストは src/lib.rs::integration_tests モジュールに実装
+# ESP-IDF 依存のため、実機が必要
 ```
 
 ## 📊 動作フロー
