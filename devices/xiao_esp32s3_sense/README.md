@@ -201,6 +201,9 @@ cargo build
 # ⚠️ 注意: 統合テストは実機環境が必要
 
 # 1. ESP-IDF環境のセットアップ
+# ESP-IDFのインストールパスは環境によって異なります
+# 例: . ~/esp/v5.1.6/esp-idf/export.sh
+# または環境変数を使用: . $IDF_PATH/export.sh
 . ~/esp/v5.1.6/esp-idf/export.sh
 
 # 2. 実機接続確認
