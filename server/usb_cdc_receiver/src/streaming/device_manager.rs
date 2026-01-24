@@ -96,7 +96,7 @@ impl DeviceStreamManager {
 
                 let processed_frame = ProcessedFrame {
                     sequence,
-                    payload,
+                    payload: data[.._size].to_vec(), // Use full frame bytes for USB forwarding
                     mac: mac_address,
                 };
                 
@@ -112,10 +112,9 @@ impl DeviceStreamManager {
                     _ => {}, // その他のエラーも frames_error には含まれる
                 }
 
-                // ここではエラーを返さず、空のベクタを返して処理を継続させる（ログは上位で出すなど）
-                // ただし、呼び出し元がエラーを知る必要がある場合はErrを返すべき
-                // 今回はストリーミング全体を止めないため、処理済みフレームなしとして扱う
-                Err(StreamingError::InvalidData)
+                // エラーが発生してもストリームを停止させないため、空のベクタを返す
+                // これにより上位のループは継続できる
+                Ok(vec![])
             }
         }
     }

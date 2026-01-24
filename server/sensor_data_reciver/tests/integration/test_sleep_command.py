@@ -118,9 +118,14 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
     # データ受信をシミュレート
     protocol.data_received(hash_frame)
     
-    # プロトコル内の遅延(2秒)をスキップするためにパッチを適用
-    # 注意: このパッチは protocol.serial_handler モジュール内の asyncio.sleep にのみ影響する
-    with patch('protocol.serial_handler.asyncio.sleep', new_callable=AsyncMock):
+    # プロトコル内の遅延(2秒)をスキップするために _delayed_sleep_command_send をパッチ
+    # これによりグローバルな asyncio.sleep への影響を回避
+    async def fast_delayed_send(sender_mac, voltage):
+        # 2秒の待機をスキップして直接送信
+        protocol._send_sleep_command(sender_mac, voltage)
+        protocol._cleanup_device_cache(sender_mac)
+
+    with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send):
         # EOFフレームも送信
         eof_frame = create_eof_frame(test_mac)
         protocol.data_received(eof_frame)
@@ -171,7 +176,11 @@ async def test_multiple_devices_sleep_commands(mock_transport):
         hash_frame = create_hash_frame(mac, voltage, temp, "2024/01/01 12:00:00.000")
         protocol.data_received(hash_frame)
         
-        with patch('protocol.serial_handler.asyncio.sleep', new_callable=AsyncMock):
+        async def fast_delayed_send(sender_mac, voltage):
+            protocol._send_sleep_command(sender_mac, voltage)
+            protocol._cleanup_device_cache(sender_mac)
+
+        with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send):
             # EOFフレームも送信
             eof_frame = create_eof_frame(mac)
             protocol.data_received(eof_frame)
@@ -302,7 +311,11 @@ async def test_low_voltage_sleep_commands(mock_transport):
         # データ受信をシミュレート
         protocol.data_received(hash_frame)
         
-        with patch('protocol.serial_handler.asyncio.sleep', new_callable=AsyncMock):
+        async def fast_delayed_send(sender_mac, voltage):
+            protocol._send_sleep_command(sender_mac, voltage)
+            protocol._cleanup_device_cache(sender_mac)
+
+        with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send):
             # EOFフレームも送信
             eof_frame = create_eof_frame(test_mac)
             protocol.data_received(eof_frame)
@@ -338,7 +351,11 @@ async def test_low_voltage_sleep_commands(mock_transport):
         # データ受信をシミュレート
         protocol.data_received(hash_frame)
         
-        with patch('protocol.serial_handler.asyncio.sleep', new_callable=AsyncMock):
+        async def fast_delayed_send(sender_mac, voltage):
+            protocol._send_sleep_command(sender_mac, voltage)
+            protocol._cleanup_device_cache(sender_mac)
+
+        with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send):
             # EOFフレームも送信
             eof_frame = create_eof_frame(test_mac)
             protocol.data_received(eof_frame)
