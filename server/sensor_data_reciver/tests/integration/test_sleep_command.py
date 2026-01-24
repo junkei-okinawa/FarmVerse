@@ -8,7 +8,7 @@ import pytest_asyncio
 # テストファイルから見た app.py への正しいパス
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from app import (FRAME_TYPE_HASH, LENGTH_FIELD_BYTES,
+from app import (FRAME_TYPE_HASH, FRAME_TYPE_EOF, LENGTH_FIELD_BYTES, CHECKSUM_LENGTH,
                  SEQUENCE_NUM_LENGTH, START_MARKER, END_MARKER,
                  SerialProtocol, config, format_sleep_command_to_gateway)
 
@@ -58,9 +58,35 @@ def create_hash_frame(sender_mac_str: str, voltage: int, temperature: float, tim
         START_MARKER +
         mac_bytes +
         bytes([frame_type]) +
-        seq_num.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="big") +
-        data_len.to_bytes(LENGTH_FIELD_BYTES, byteorder="big") +
+        seq_num.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+        data_len.to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
         payload_bytes +
+        checksum +
+        END_MARKER
+    )
+    
+    return frame
+
+
+def create_eof_frame(sender_mac_str: str):
+    """EOFフレームを生成するヘルパー関数"""
+    # MACアドレスをバイト列に変換
+    mac_parts = sender_mac_str.split(':')
+    mac_bytes = bytes([int(part, 16) for part in mac_parts])
+    
+    # フレーム構造: START_MARKER + MAC + FRAME_TYPE + SEQ + DATA_LEN + DATA + CHECKSUM + END_MARKER
+    frame_type = FRAME_TYPE_EOF
+    seq_num = 2  # 適当なシーケンス番号
+    data_len = 0
+    checksum = b'\x00' * CHECKSUM_LENGTH
+    
+    frame = (
+        START_MARKER +
+        mac_bytes +
+        bytes([frame_type]) +
+        seq_num.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+        data_len.to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
+        b'' +  # データなし
         checksum +
         END_MARKER
     )
@@ -91,8 +117,12 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
     # データ受信をシミュレート
     protocol.data_received(hash_frame)
     
+    # EOFフレームも送信
+    eof_frame = create_eof_frame(test_mac)
+    protocol.data_received(eof_frame)
+    
     # 少し待機してプロトコル処理を完了させる
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(2.5)
     
     # スリープコマンドが送信されたかを確認
     written_commands = mock_transport.get_written_commands()
@@ -124,10 +154,13 @@ async def test_multiple_devices_sleep_commands(mock_transport):
     for mac, voltage, temp in devices:
         hash_frame = create_hash_frame(mac, voltage, temp, "2024/01/01 12:00:00.000")
         protocol.data_received(hash_frame)
+        # EOFフレームも送信
+        eof_frame = create_eof_frame(mac)
+        protocol.data_received(eof_frame)
         await asyncio.sleep(0.05)  # フレーム間の小さな間隔
     
     # 処理完了を待機
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(2.5)
     
     # 各デバイスに対してスリープコマンドが送信されたかを確認
     written_commands = mock_transport.get_written_commands()
@@ -194,8 +227,8 @@ async def test_invalid_hash_frame_no_sleep_command(mock_transport):
         START_MARKER +
         mac_bytes +
         bytes([FRAME_TYPE_HASH]) +
-        (1).to_bytes(SEQUENCE_NUM_LENGTH, byteorder="big") +
-        len(invalid_payload).to_bytes(LENGTH_FIELD_BYTES, byteorder="big") +
+        (1).to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+        len(invalid_payload).to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
         invalid_payload +
         b'\x00\x00\x00\x00' +  # ダミーチェックサム
         END_MARKER
@@ -239,8 +272,11 @@ async def test_low_voltage_sleep_commands(mock_transport):
         
         # データ受信をシミュレート
         protocol.data_received(hash_frame)
-        await asyncio.sleep(0.1)
-        
+        # EOFフレームも送信
+        eof_frame = create_eof_frame(test_mac)
+        protocol.data_received(eof_frame)
+        await asyncio.sleep(2.5)
+    
         # 午前中の低電圧では MEDIUM_SLEEP_DURATION_S（1時間）が適用される
         written_commands = mock_transport.get_written_commands()
         assert len(written_commands) == 1
@@ -249,6 +285,8 @@ async def test_low_voltage_sleep_commands(mock_transport):
     
     # リセット
     mock_transport.reset()
+    protocol.eof_processed.clear()  # Clear duplicate check
+    protocol.sleep_command_sent.clear()  # Clear duplicate send check
     
     # 午後（14時）をシミュレート
     with patch('processors.sleep_controller.datetime') as mock_datetime:
@@ -257,7 +295,10 @@ async def test_low_voltage_sleep_commands(mock_transport):
         
         # データ受信をシミュレート
         protocol.data_received(hash_frame)
-        await asyncio.sleep(0.1)
+        # EOFフレームも送信
+        eof_frame = create_eof_frame(test_mac)
+        protocol.data_received(eof_frame)
+        await asyncio.sleep(2.5)
         
         # 午後の低電圧では LONG_SLEEP_DURATION_S（9時間）が適用される
         written_commands = mock_transport.get_written_commands()

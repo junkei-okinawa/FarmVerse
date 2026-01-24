@@ -23,8 +23,8 @@ def test_parse_header_valid():
         START_MARKER +
         mac_bytes +
         bytes([frame_type]) +
-        seq_num.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="big") +
-        data_len.to_bytes(LENGTH_FIELD_BYTES, byteorder="big")
+        seq_num.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+        data_len.to_bytes(LENGTH_FIELD_BYTES, byteorder="little")
     )
 
     parsed_mac, parsed_type, parsed_seq, parsed_len = FrameParser.parse_header(header_bytes, 0)
