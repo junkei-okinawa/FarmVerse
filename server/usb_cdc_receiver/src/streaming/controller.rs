@@ -222,6 +222,13 @@ impl StreamingController {
         // デバイスストリーム管理者でデータを処理
         let processed_frames = self.device_manager.process_data(mac_address, data)?;
         
+        // 基本統計のフレーム処理数を更新
+        for _ in 0..processed_frames.len() {
+             // バイト数は転送時に加算されるため、ここではフレーム数のみカウント
+             // ダミーのバイト数0を渡してフレーム数をインクリメント
+             self.stats.basic.count_frame_processed(0);
+        }
+
         // 処理されたフレームを即座にUSB CDCに転送
         for frame in &processed_frames {
             match self.transfer_frame_to_usb(&frame, usb_cdc) {
