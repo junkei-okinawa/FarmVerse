@@ -6,11 +6,16 @@
 /// 
 /// - **BufferedData**: 受信データのバッファリング
 
+#[cfg(feature = "esp")]
 pub mod controller;
 pub mod device_manager;
+#[cfg(feature = "esp")]
 pub mod buffer;
+
+#[cfg(feature = "esp")]
 pub use controller::{StreamingController, StreamingConfig};
 pub use device_manager::{DeviceStreamManager, ProcessedFrame, StreamManagerConfig};
+#[cfg(feature = "esp")]
 pub use buffer::BufferedData;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
