@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use super::{StreamingResult, StreamingError, StreamingStatistics};
+use crate::esp_now::frame::Frame;
 
 #[derive(Debug, Clone)]
 pub struct StreamManagerConfig {
@@ -16,7 +17,7 @@ impl Default for StreamManagerConfig {
 
 #[derive(Debug, Clone)]
 pub struct ProcessedFrame {
-    pub sequence: u16,
+    pub sequence: u32,
     pub payload: Vec<u8>,
     pub mac: [u8; 6],
 }
@@ -79,45 +80,39 @@ impl DeviceStreamManager {
         // In a real app we might want explicit registration or auto-discovery logic.
         // Here we just ensure stats entry exists.
         let dev_stats = self.device_stats.entry(mac_address).or_insert_with(StreamingStatistics::default);
-        dev_stats.frames_processed += 1;
-        dev_stats.bytes_transferred += data.len() as u64;
+        dev_stats.count_frame_received();
 
-        // In this layer, `data` is treated as the raw payload. The framing (including
-        // any sequence number) should have been handled by higher-level code before
-        // calling this function, so we do not attempt to parse a sequence number here.
-        // 
-        // しかし、ACKを正しく返信するためには、送信元が設定したシーケンス番号が必要です。
-        // 現在の実装では `data` はESP-NOWのペイロードそのものであり、
-        // 送信側が `Frame::to_bytes` でフレーム化したデータそのものであると仮定します。
-        // したがって、ここからシーケンス番号を抽出する試みを行います。
-        
-        // シーケンス番号のオフセット (START_MARKER(4) + MAC(6) + TYPE(1) = 11バイト目から4バイト)
-        // ※ esp_now/frame.rs の Frame::to_bytes 参照
-        let sequence: u16 = if data.len() >= 15 {
-            // Little-endian u32としてパースされるが、ACK用にはu16が必要
-            let seq_bytes = &data[11..15];
-            let seq_u32 = u32::from_le_bytes([seq_bytes[0], seq_bytes[1], seq_bytes[2], seq_bytes[3]]);
-            seq_u32 as u16
-        } else {
-            // フレーム形式でない、または短すぎる場合は0とする
-            // これは既存の "raw payload" としての扱いとの互換性を保つ
-            0
-        };
+        // ESP-NOWフレームとしてパースを試みる
+        // これによりシーケンス番号の抽出とチェックサム検証を行う
+        match Frame::from_bytes(data) {
+            Some((frame, _size)) => {
+                // パース成功
+                let sequence = frame.sequence_number();
+                let payload = frame.data().to_vec();
+                
+                // 統計更新
+                dev_stats.count_frame_processed(payload.len());
+                self.stats.frames_processed += 1;
 
-        let payload = data.to_vec();
-
-        // If sequence information is required for ACKs, it should be passed in
-        // explicitly by the caller rather than inferred from the raw bytes.
-
-        let frame = ProcessedFrame {
-            sequence,
-            payload,
-            mac: mac_address,
-        };
-        
-        self.stats.frames_processed += 1;
-        
-        Ok(vec![frame])
+                let processed_frame = ProcessedFrame {
+                    sequence,
+                    payload,
+                    mac: mac_address,
+                };
+                
+                Ok(vec![processed_frame])
+            },
+            None => {
+                // パース失敗（チェックサムエラー、フォーマットエラーなど）
+                // 詳細なエラータイプはFrame::from_bytesが返さないため、一般エラーとしてカウント
+                // 必要であればFrame::from_bytesをResultを返すように変更することも検討
+                self.stats.frames_error += 1;
+                // ここではエラーを返さず、空のベクタを返して処理を継続させる（ログは上位で出すなど）
+                // ただし、呼び出し元がエラーを知る必要がある場合はErrを返すべき
+                // 今回はストリーミング全体を止めないため、処理済みフレームなしとして扱う
+                Err(StreamingError::InvalidData)
+            }
+        }
     }
 
     pub fn cleanup_all_buffers(&mut self) -> usize {

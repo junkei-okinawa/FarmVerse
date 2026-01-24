@@ -26,10 +26,15 @@ pub enum StreamingError {
 #[derive(Debug, Clone, Default)]
 pub struct StreamingStatistics {
     pub bytes_transferred: u64,
+    pub frames_received: u64,
     pub frames_processed: u64,
 }
 
 impl StreamingStatistics {
+    pub fn count_frame_received(&mut self) {
+        self.frames_received += 1;
+    }
+
     pub fn count_frame_processed(&mut self, bytes: usize) {
          self.frames_processed += 1;
          self.bytes_transferred += bytes as u64;
