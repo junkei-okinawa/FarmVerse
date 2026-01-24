@@ -120,28 +120,20 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
     
     # プロトコル内の遅延(2秒)をスキップするために _delayed_sleep_command_send をパッチ
     # これによりグローバルな asyncio.sleep への影響を回避
-    async def fast_delayed_send(sender_mac, voltage):
-        # 2秒の待機をスキップして直接送信
+    def fast_delayed_send(sender_mac, voltage):
+        # 2秒の待機をスキップして直接送信し、完了済みの awaitable を返す
         protocol._send_sleep_command(sender_mac, voltage)
         protocol._cleanup_device_cache(sender_mac)
+        loop = asyncio.get_running_loop()
+        fut = loop.create_future()
+        fut.set_result(None)
+        return fut
 
     with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send):
         # EOFフレームも送信
         eof_frame = create_eof_frame(test_mac)
         protocol.data_received(eof_frame)
 
-        # バックグラウンドタスクが完了するのを待つ
-        # すべてのペンディング中のタスクを実行させる（現在のテストタスクを除く）
-        current_task = asyncio.current_task()
-        pending = {task for task in asyncio.all_tasks() if task is not current_task}
-        for task in pending:
-            try:
-                await asyncio.wait_for(task, timeout=1.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
-                # テスト失敗とはみなさないため、これらの例外は意図的に無視する
-                pass
-        
         # 念のため少し待つ
         await asyncio.sleep(0.1)
     
@@ -180,21 +172,25 @@ async def test_multiple_devices_sleep_commands(mock_transport):
             protocol._send_sleep_command(sender_mac, voltage)
             protocol._cleanup_device_cache(sender_mac)
 
-        with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send):
+        # SerialProtocol 内で生成されるタスクのみを追跡するために asyncio.create_task をパッチする
+        created_tasks = []
+        original_create_task = asyncio.create_task
+
+        def tracking_create_task(coro, *args, **kwargs):
+            task = original_create_task(coro, *args, **kwargs)
+            created_tasks.append(task)
+            return task
+
+        with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send), \
+             patch("asyncio.create_task", side_effect=tracking_create_task):
             # EOFフレームも送信
             eof_frame = create_eof_frame(mac)
             protocol.data_received(eof_frame)
     
-            # バックグラウンドタスクの完了を待機（現在のタスク以外の全タスクを対象）
-            current_task = asyncio.current_task()
-            pending = {task for task in asyncio.all_tasks() if task is not current_task}
-            for task in pending:
-                try:
-                    await asyncio.wait_for(task, timeout=1.0)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
-                    # テスト失敗とはみなさないため、これらの例外は意図的に無視する
-                    pass
+            # SerialProtocol によって生成されたタスクのみを待機する
+            if created_tasks:
+                await asyncio.wait_for(asyncio.gather(*created_tasks), timeout=1.0)
+            
             await asyncio.sleep(0.05)
     
     # 処理完了を待機
@@ -320,16 +316,10 @@ async def test_low_voltage_sleep_commands(mock_transport):
             eof_frame = create_eof_frame(test_mac)
             protocol.data_received(eof_frame)
             
-            # バックグラウンドタスクの完了を待機（現在のタスク以外の全タスクを対象）
-            current_task = asyncio.current_task()
-            pending = {task for task in asyncio.all_tasks() if task is not current_task}
-            for task in pending:
-                try:
-                    await asyncio.wait_for(task, timeout=1.0)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
-                    # テスト失敗とはみなさないため、これらの例外は意図的に無視する
-                    pass
+            # _delayed_sleep_command_send はテスト内で同期的に実行されるため、
+            # 明示的にすべてのタスクを待機する必要はない。
+            # ここではイベントループに一度制御を返すだけにとどめる。
+            await asyncio.sleep(0)
             await asyncio.sleep(0.1)
     
         # 午前中の低電圧では MEDIUM_SLEEP_DURATION_S（1時間）が適用される
@@ -360,16 +350,10 @@ async def test_low_voltage_sleep_commands(mock_transport):
             eof_frame = create_eof_frame(test_mac)
             protocol.data_received(eof_frame)
             
-            # バックグラウンドタスクの完了を待機（現在のタスク以外の全タスクを対象）
-            current_task = asyncio.current_task()
-            pending = {task for task in asyncio.all_tasks() if task is not current_task}
-            for task in pending:
-                try:
-                    await asyncio.wait_for(task, timeout=1.0)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
-                    # テスト失敗とはみなさないため、これらの例外は意図的に無視する
-                    pass
+            # _delayed_sleep_command_send はテスト内で同期的に実行されるため、
+            # 明示的にすべてのタスクを待機する必要はない。
+            # ここではイベントループに一度制御を返すだけにとどめる。
+            await asyncio.sleep(0)
             await asyncio.sleep(0.1)
         
         # 午後の低電圧では LONG_SLEEP_DURATION_S（9時間）が適用される
