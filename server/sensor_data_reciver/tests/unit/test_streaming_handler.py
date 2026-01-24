@@ -77,21 +77,19 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
         seq_num = 100
         
         # 内部フレーム（本来送りたかったHASHフレーム）を作成
+        # フッター検証のために完全なフレーム構造が必要
         inner_payload = b"HASH:dummy_hash,VOLT:100"
         inner_frame = self.create_frame_bytes(FRAME_TYPE_HASH, inner_payload, seq_num=200)
         
         # これをDATAフレームのペイロードとして渡す
-        # ストリーミングハンドラは chunk_data としてペイロード部分のみを受け取る
         chunk_data = inner_frame
         
         # テスト実行
         await self.protocol._process_streaming_data_frame(sender_mac, chunk_data, seq_num)
         
         # 検証
-        # 1. _process_frame_by_type が内部フレームの情報で呼び出されたことを確認
         self.protocol._process_frame_by_type.assert_called_once()
         
-        # 呼び出し引数を検証
         args = self.protocol._process_frame_by_type.call_args[0]
         called_mac, called_type, called_seq, called_payload = args
         
@@ -100,7 +98,6 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(called_seq, 200)
         self.assertEqual(called_payload, inner_payload)
         
-        # 2. 通常の process_chunk は呼び出されていないことを確認（ネスト解除成功時はスキップされる）
         self.protocol.streaming_processor.process_chunk.assert_not_called()
 
     async def test_raw_data_processing(self):
