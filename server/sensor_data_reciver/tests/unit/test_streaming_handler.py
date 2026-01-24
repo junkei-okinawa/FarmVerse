@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 import sys
 import os
 
@@ -9,32 +9,41 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from protocol.streaming_handler import StreamingSerialProtocol
 from protocol.constants import (
-    START_MARKER, MAC_ADDRESS_LENGTH, FRAME_TYPE_LENGTH, SEQUENCE_NUM_LENGTH, 
+    START_MARKER, SEQUENCE_NUM_LENGTH, 
     LENGTH_FIELD_BYTES, CHECKSUM_LENGTH, END_MARKER,
-    FRAME_TYPE_DATA, FRAME_TYPE_HASH, HEADER_LENGTH
+    FRAME_TYPE_HASH
 )
 
 class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
     
-    def setUp(self):
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+    async def asyncSetUp(self):
+        # IsolatedAsyncioTestCase が管理するイベントループを使用する
+        self.loop = asyncio.get_running_loop()
         
         self.mock_future = self.loop.create_future()
         self.stats = {}
         
         # モックの作成
-        with patch('protocol.streaming_handler.StreamingImageProcessor'), \
-             patch('protocol.streaming_handler.VoltageDataProcessor'), \
-             patch('protocol.streaming_handler.influx_client'):
+        self.patchers = [
+            patch('protocol.streaming_handler.StreamingImageProcessor'),
+            patch('protocol.streaming_handler.VoltageDataProcessor'),
+            patch('protocol.streaming_handler.influx_client')
+        ]
+        
+        for p in self.patchers:
+            p.start()
             
-            self.protocol = StreamingSerialProtocol(self.mock_future, self.stats)
-            
-            # _process_frame_by_type をモック化して呼び出しを検知
-            self.protocol._process_frame_by_type = AsyncMock()
-            
-            # process_chunk もモック化（通常のデータ処理用）
-            self.protocol.streaming_processor.process_chunk = AsyncMock(return_value=True)
+        self.protocol = StreamingSerialProtocol(self.mock_future, self.stats)
+        
+        # _process_frame_by_type をモック化して呼び出しを検知
+        self.protocol._process_frame_by_type = AsyncMock()
+        
+        # process_chunk もモック化（通常のデータ処理用）
+        self.protocol.streaming_processor.process_chunk = AsyncMock(return_value=True)
+
+    async def asyncTearDown(self):
+        for p in self.patchers:
+            p.stop()
 
     def create_frame_bytes(self, frame_type, payload, seq_num=1):
         """フレームのバイト列を作成するヘルパー"""

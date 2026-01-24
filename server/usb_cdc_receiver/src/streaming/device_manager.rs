@@ -82,18 +82,14 @@ impl DeviceStreamManager {
         dev_stats.frames_processed += 1;
         dev_stats.bytes_transferred += data.len() as u64;
 
-        // Parse sequence number from the incoming frame data.
-        // Assume the first 4 bytes (if present) contain a little-endian u32 sequence.
-        // We truncate u32 to u16 for ACK compatibility.
-        let (sequence, payload) = if data.len() >= 4 {
-            let seq_bytes = [data[0], data[1], data[2], data[3]];
-            let seq = u32::from_le_bytes(seq_bytes);
-            (seq as u16, data[4..].to_vec())
-        } else {
-            // If the frame is too short to contain an explicit sequence number,
-            // fall back to a default sequence value and keep the entire buffer as payload.
-            (0u16, data.to_vec())
-        };
+        // In this layer, `data` is treated as the raw payload. The framing (including
+        // any sequence number) should have been handled by higher-level code before
+        // calling this function, so we do not attempt to parse a sequence number here.
+        let sequence: u16 = 0;
+        let payload = data.to_vec();
+
+        // If sequence information is required for ACKs, it should be passed in
+        // explicitly by the caller rather than inferred from the raw bytes.
 
         let frame = ProcessedFrame {
             sequence,

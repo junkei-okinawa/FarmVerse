@@ -13,7 +13,6 @@
 use super::{StreamingError, StreamingResult, StreamingStatistics};
 use super::device_manager::{DeviceStreamManager, ProcessedFrame, StreamManagerConfig};
 use crate::usb::cdc::UsbCdc;
-use crate::usb::UsbInterface;
 use crate::esp_now::sender::EspNowSender;
 use crate::esp_now::{AckMessage, MessageType, AckStatus};
 use log::{debug, info, warn, error};
