@@ -120,14 +120,12 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
     
     # プロトコル内の遅延(2秒)をスキップするために _delayed_sleep_command_send をパッチ
     # これによりグローバルな asyncio.sleep への影響を回避
-    def fast_delayed_send(sender_mac, voltage):
-        # 2秒の待機をスキップして直接送信し、完了済みの awaitable を返す
+    async def fast_delayed_send(sender_mac, voltage):
+        # 2秒の待機をスキップして直接送信し、非同期関数として即座に完了させる
         protocol._send_sleep_command(sender_mac, voltage)
         protocol._cleanup_device_cache(sender_mac)
-        loop = asyncio.get_running_loop()
-        fut = loop.create_future()
-        fut.set_result(None)
-        return fut
+        # 本来は遅延後に実行される処理だが、テストでは即時に完了させる
+        return None
 
     with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send):
         # EOFフレームも送信
