@@ -77,7 +77,7 @@ pub struct Config {
     #[default(true)]
     tds_sensor_enabled: bool,
 
-    #[default(4)]
+    #[default(5)]
     tds_sensor_power_pin: u8,
 
     #[default(1)]
