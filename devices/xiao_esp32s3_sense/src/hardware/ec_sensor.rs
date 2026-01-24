@@ -150,7 +150,7 @@ impl EcTdsSensor {
             let voltage = sensor.adc_to_voltage(adc_value);
             match voltage {
                 Ok(voltage) => {
-                    info!("✓ ADC電圧測定成功: {:.2} mV", voltage);
+                    info!("✓ ADC電圧測定成功: {:.2} V", voltage);
                     Ok(Some(voltage))
                 }
                 Err(e) => {

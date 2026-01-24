@@ -16,14 +16,14 @@ impl Default for StreamManagerConfig {
 
 #[derive(Debug, Clone)]
 pub struct ProcessedFrame {
-    pub sequence: u32,
+    pub sequence: u16,
     pub payload: Vec<u8>,
     pub mac: [u8; 6],
 }
 
 impl ProcessedFrame {
     pub fn mac_string(&self) -> String {
-        format!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+        format!("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
                 self.mac[0], self.mac[1], self.mac[2],
                 self.mac[3], self.mac[4], self.mac[5])
     }
@@ -82,9 +82,22 @@ impl DeviceStreamManager {
         dev_stats.frames_processed += 1;
         dev_stats.bytes_transferred += data.len() as u64;
 
+        // Parse sequence number from the incoming frame data.
+        // Assume the first 4 bytes (if present) contain a little-endian u32 sequence.
+        // We truncate u32 to u16 for ACK compatibility.
+        let (sequence, payload) = if data.len() >= 4 {
+            let seq_bytes = [data[0], data[1], data[2], data[3]];
+            let seq = u32::from_le_bytes(seq_bytes);
+            (seq as u16, data[4..].to_vec())
+        } else {
+            // If the frame is too short to contain an explicit sequence number,
+            // fall back to a default sequence value and keep the entire buffer as payload.
+            (0u16, data.to_vec())
+        };
+
         let frame = ProcessedFrame {
-            sequence: self.stats.frames_received as u32,
-            payload: data.to_vec(),
+            sequence,
+            payload,
             mac: mac_address,
         };
         
@@ -102,7 +115,7 @@ impl DeviceStreamManager {
     }
 
     pub fn device_count(&self) -> usize {
-        self.devices.len() // Or device_stats.len() if we count seen devices
+        self.device_stats.len()
     }
 
     pub fn total_buffer_usage(&self) -> (usize, usize) {

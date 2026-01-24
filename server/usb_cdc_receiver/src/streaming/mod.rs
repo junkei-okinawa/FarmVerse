@@ -18,23 +18,9 @@ pub enum StreamingError {
     BufferFull,
     InvalidData,
     Timeout,
-    EspNowSendError(String), // String wrapping needed? Format uses String
+    EspNowSendError(String),
     UsbTransferError(String),
 }
-
-// For EspNowSendError(String) we need String, but enum variants with data are fine.
-// Wait, the error message in controller.rs was:
-// StreamingError::EspNowSendError(format!("...")) -> this creates a String.
-// So variants should hold String.
-// However, existing variants are unit variants.
-// Let's change definition to:
-// pub enum StreamingError {
-//     BufferFull,
-//     InvalidData,
-//     Timeout,
-//     EspNowSendError(String),
-//     UsbTransferError(String),
-// }
 
 // Also define StreamingStatistics here.
 #[derive(Debug, Clone, Default)]
@@ -44,8 +30,9 @@ pub struct StreamingStatistics {
 }
 
 impl StreamingStatistics {
-    pub fn count_frame_processed(&mut self, _bytes: usize) {
+    pub fn count_frame_processed(&mut self, bytes: usize) {
          self.frames_processed += 1;
+         self.bytes_transferred += bytes as u64;
     }
 }
 
@@ -62,6 +49,8 @@ impl std::fmt::Display for StreamingError {
         }
     }
 }
+
+impl std::error::Error for StreamingError {}
 
 // 必要な型のみエクスポート
 // pub use buffer::BufferedData; // Removed duplicate

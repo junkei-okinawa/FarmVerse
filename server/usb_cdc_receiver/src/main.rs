@@ -23,17 +23,14 @@ use esp_now::sender::EspNowSender;
 use log::{debug, error, info, warn};
 use mac_address::format_mac_address;
 use sleep_command_queue::{init_sleep_command_queue, enqueue_sleep_command, process_sleep_command_queue};
-use usb::{cdc::UsbCdc, UsbInterface};
-use streaming::buffer::StreamingBuffer;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
-use streaming::{StreamingController, StreamingConfig};
+use usb::cdc::UsbCdc;
 
 // PythonからのコマンドやESP-NOWのデータを橋渡しするグローバルコントローラー
-static STREAMING_CONTROLLER: Lazy<Mutex<StreamingController>> = Lazy::new(|| {
-    let config = StreamingConfig::default();
-    Mutex::new(StreamingController::new(config))
-});
+// NOTE: A global `STREAMING_CONTROLLER` was previously defined here to bridge
+// Python commands and ESP-NOW data, but it is not currently used in the
+// actual ESP-NOW/USB data forwarding path. It has been removed to avoid
+// confusion and unnecessary binary size. Reintroduce it here only when the
+// streaming controller is actually wired into the main data-processing loop.
 
 /// ESP-NOWの受信コールバック関数
 ///
@@ -329,10 +326,10 @@ fn main() -> Result<()> {
     }
     
     // デバイス登録数を確認
-    {
-        let global_controller = STREAMING_CONTROLLER.lock().unwrap();
-        info!("Streaming Controller: {} devices registered", global_controller.list_devices().len());
-    }
+    // {
+    //     let global_controller = STREAMING_CONTROLLER.lock().unwrap();
+    //     info!("Streaming Controller: {} devices registered", global_controller.list_devices().len());
+    // }
 
     // ESP-NOW初期化
     initialize_esp_now()?;

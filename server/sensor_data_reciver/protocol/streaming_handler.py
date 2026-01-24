@@ -13,7 +13,7 @@ from typing import Dict
 from .constants import (
     START_MARKER, END_MARKER, FRAME_TYPE_HASH, FRAME_TYPE_DATA, FRAME_TYPE_EOF,
     MAC_ADDRESS_LENGTH, FRAME_TYPE_LENGTH, SEQUENCE_NUM_LENGTH, LENGTH_FIELD_BYTES,
-    CHECKSUM_LENGTH
+    CHECKSUM_LENGTH, HEADER_LENGTH
 )
 from .frame_parser import FrameParser
 
@@ -330,7 +330,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
         # 二重カプセル化（Double Framing）の検出と解除
         # ゲートウェイがSenderのフレームをそのままDATAフレームのペイロードとして
         # カプセル化してしまっている場合に対応
-        if len(chunk_data) > 19 and chunk_data.startswith(START_MARKER):
+        if len(chunk_data) > HEADER_LENGTH and chunk_data.startswith(START_MARKER):
             # 最初のチャンクか、どうかの判定は難しいが、START_MARKERで始まる場合は試行する
             if config.DEBUG_FRAME_PARSING:
                 logger.debug(f"Possible nested frame detected in DATA payload from {sender_mac}")
@@ -340,7 +340,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 inner_mac, inner_type, inner_seq, inner_len = FrameParser.parse_header(chunk_data, 0)
                 
                 # ヘッダー長
-                header_len = 19
+                header_len = HEADER_LENGTH
                 
                 # データ長チェック（最低限ヘッダー＋データ長）
                 if len(chunk_data) >= header_len + inner_len:
