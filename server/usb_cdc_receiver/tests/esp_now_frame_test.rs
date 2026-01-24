@@ -81,7 +81,7 @@ fn test_frame_types() {
 #[test]
 fn test_invalid_frame_too_short() {
     let short_data = vec![0xFF; 10]; // 最小フレームサイズ以下
-    assert!(Frame::from_bytes(&short_data).is_none(), "Short data should fail parsing");
+    assert!(Frame::from_bytes(&short_data).is_err(), "Short data should fail parsing");
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn test_invalid_start_marker() {
     // 開始マーカーを破壊
     bytes[0] = 0x00;
     
-    assert!(Frame::from_bytes(&bytes).is_none(), "Invalid start marker should fail");
+    assert!(Frame::from_bytes(&bytes).is_err(), "Invalid start marker should fail");
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn test_invalid_checksum() {
     let checksum_pos = bytes.len() - 8;
     bytes[checksum_pos] ^= 0xFF;
     
-    assert!(Frame::from_bytes(&bytes).is_none(), "Invalid checksum should fail");
+    assert!(Frame::from_bytes(&bytes).is_err(), "Invalid checksum should fail");
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn test_invalid_end_marker() {
     let last_pos = bytes.len() - 1;
     bytes[last_pos] = 0x00;
     
-    assert!(Frame::from_bytes(&bytes).is_none(), "Invalid end marker should fail");
+    assert!(Frame::from_bytes(&bytes).is_err(), "Invalid end marker should fail");
 }
 
 #[test]
