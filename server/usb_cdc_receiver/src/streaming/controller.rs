@@ -372,7 +372,7 @@ impl StreamingController {
     /// 統計レポートを出力
     fn report_statistics(&self) {
         let device_count = self.device_manager.device_count();
-        let (buffer_used, buffer_total) = self.device_manager.total_buffer_usage();
+        let buffer_usage = self.device_manager.total_buffer_usage();
         let global_stats = self.device_manager.global_statistics();
         
         info!("=== Streaming Statistics ===");
@@ -383,9 +383,15 @@ impl StreamingController {
         info!("USB transfers: {}", self.stats.usb_transfers);
         info!("USB success rate: {:.1}%", self.stats.usb_success_rate());
         info!("Total bytes transferred: {} bytes", self.stats.basic.bytes_transferred);
-        info!("Buffer usage: {} / {} bytes ({:.1}%)", 
-              buffer_used, buffer_total, 
-              if buffer_total > 0 { (buffer_used as f32 / buffer_total as f32) * 100.0 } else { 0.0 });
+        
+        if let Some((buffer_used, buffer_total)) = buffer_usage {
+            info!("Buffer usage: {} / {} bytes ({:.1}%)", 
+                  buffer_used, buffer_total, 
+                  if buffer_total > 0 { (buffer_used as f32 / buffer_total as f32) * 100.0 } else { 0.0 });
+        } else {
+            info!("Buffer usage: N/A (not tracked)");
+        }
+        
         info!("Average processing time: {:.2}ms", self.stats.average_processing_time_ms());
         info!("Max processing time: {}ms", self.stats.max_processing_time_ms);
         
