@@ -7,7 +7,6 @@ use esp_idf_svc::hal::{
         },
         ADC1,
     },
-    gpio::Gpio4,
 };
 use log::{error, info};
 use crate::config::CONFIG;
@@ -55,7 +54,7 @@ impl VoltageSensor {
         mut adc: ADC1,
         gpio_pin: T,
     ) -> anyhow::Result<(u8, ADC1)> {
-        info!("ADC1を初期化しています (GPIO4, WiFi競合回避)");
+        info!("ADC1を初期化しています (WiFi競合回避)");
         let adc_driver = AdcDriver::new(&mut adc)?;
         let adc_config = AdcChannelConfig {
             attenuation: DB_11,

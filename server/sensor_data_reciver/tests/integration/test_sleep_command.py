@@ -4,7 +4,7 @@ import sys
 
 import pytest
 import pytest_asyncio
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 # テストファイルから見た app.py への正しいパス
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -118,13 +118,13 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
     # データ受信をシミュレート
     protocol.data_received(hash_frame)
     
-    # EOFフレームも送信
-    eof_frame = create_eof_frame(test_mac)
-    protocol.data_received(eof_frame)
-    
     # プロトコル内の遅延(2秒)をスキップするためにパッチを適用
     # 注意: このパッチは protocol.serial_handler モジュール内の asyncio.sleep にのみ影響する
-    with patch('protocol.serial_handler.asyncio.sleep', return_value=None):
+    with patch('protocol.serial_handler.asyncio.sleep', new_callable=AsyncMock):
+        # EOFフレームも送信
+        eof_frame = create_eof_frame(test_mac)
+        protocol.data_received(eof_frame)
+
         # バックグラウンドタスクが完了するのを待つ
         # すべてのペンディング中のタスクを実行させる
         pending = asyncio.all_tasks()
@@ -133,6 +133,8 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
                 try:
                     await asyncio.wait_for(task, timeout=1.0)
                 except (asyncio.TimeoutError, asyncio.CancelledError):
+                    # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
+                    # テスト失敗とはみなさないため、これらの例外は意図的に無視する
                     pass
         
         # 念のため少し待つ
@@ -168,11 +170,12 @@ async def test_multiple_devices_sleep_commands(mock_transport):
     for mac, voltage, temp in devices:
         hash_frame = create_hash_frame(mac, voltage, temp, "2024/01/01 12:00:00.000")
         protocol.data_received(hash_frame)
-        # EOFフレームも送信
-        eof_frame = create_eof_frame(mac)
-        protocol.data_received(eof_frame)
         
-        with patch('protocol.serial_handler.asyncio.sleep', return_value=None):
+        with patch('protocol.serial_handler.asyncio.sleep', new_callable=AsyncMock):
+            # EOFフレームも送信
+            eof_frame = create_eof_frame(mac)
+            protocol.data_received(eof_frame)
+    
             # バックグラウンドタスクの完了を待機
             pending = asyncio.all_tasks()
             for task in pending:
@@ -180,6 +183,8 @@ async def test_multiple_devices_sleep_commands(mock_transport):
                     try:
                         await asyncio.wait_for(task, timeout=1.0)
                     except (asyncio.TimeoutError, asyncio.CancelledError):
+                        # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
+                        # テスト失敗とはみなさないため、これらの例外は意図的に無視する
                         pass
             await asyncio.sleep(0.05)
     
@@ -271,7 +276,7 @@ async def test_invalid_hash_frame_no_sleep_command(mock_transport):
 async def test_low_voltage_sleep_commands(mock_transport):
     """低電圧時の時刻ベースのスリープコマンドをテスト"""
     import datetime
-    from unittest.mock import patch
+    from unittest.mock import patch, AsyncMock
     
     test_mac = "aa:bb:cc:dd:ee:ff"
     test_voltage = 5  # 8%未満の低電圧
@@ -296,11 +301,12 @@ async def test_low_voltage_sleep_commands(mock_transport):
         
         # データ受信をシミュレート
         protocol.data_received(hash_frame)
-        # EOFフレームも送信
-        eof_frame = create_eof_frame(test_mac)
-        protocol.data_received(eof_frame)
         
-        with patch('protocol.serial_handler.asyncio.sleep', return_value=None):
+        with patch('protocol.serial_handler.asyncio.sleep', new_callable=AsyncMock):
+            # EOFフレームも送信
+            eof_frame = create_eof_frame(test_mac)
+            protocol.data_received(eof_frame)
+            
             # バックグラウンドタスクの完了を待機
             pending = asyncio.all_tasks()
             for task in pending:
@@ -308,6 +314,8 @@ async def test_low_voltage_sleep_commands(mock_transport):
                     try:
                         await asyncio.wait_for(task, timeout=1.0)
                     except (asyncio.TimeoutError, asyncio.CancelledError):
+                        # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
+                        # テスト失敗とはみなさないため、これらの例外は意図的に無視する
                         pass
             await asyncio.sleep(0.1)
     
@@ -329,11 +337,12 @@ async def test_low_voltage_sleep_commands(mock_transport):
         
         # データ受信をシミュレート
         protocol.data_received(hash_frame)
-        # EOFフレームも送信
-        eof_frame = create_eof_frame(test_mac)
-        protocol.data_received(eof_frame)
         
-        with patch('protocol.serial_handler.asyncio.sleep', return_value=None):
+        with patch('protocol.serial_handler.asyncio.sleep', new_callable=AsyncMock):
+            # EOFフレームも送信
+            eof_frame = create_eof_frame(test_mac)
+            protocol.data_received(eof_frame)
+            
             # バックグラウンドタスクの完了を待機
             pending = asyncio.all_tasks()
             for task in pending:
@@ -341,6 +350,8 @@ async def test_low_voltage_sleep_commands(mock_transport):
                     try:
                         await asyncio.wait_for(task, timeout=1.0)
                     except (asyncio.TimeoutError, asyncio.CancelledError):
+                        # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
+                        # テスト失敗とはみなさないため、これらの例外は意図的に無視する
                         pass
             await asyncio.sleep(0.1)
         
