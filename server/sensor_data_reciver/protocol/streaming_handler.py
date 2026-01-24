@@ -326,6 +326,38 @@ class StreamingSerialProtocol(asyncio.Protocol):
     async def _process_streaming_data_frame(self, sender_mac: str, 
                                           chunk_data: bytes, seq_num: int):
         """DATAフレーム処理（ストリーミング対応）"""
+        
+        # 二重カプセル化（Double Framing）の検出と解除
+        # ゲートウェイがSenderのフレームをそのままDATAフレームのペイロードとして
+        # カプセル化してしまっている場合に対応
+        if len(chunk_data) > 19 and chunk_data.startswith(START_MARKER):
+            # 最初のチャンクか、どうかの判定は難しいが、START_MARKERで始まる場合は試行する
+            if config.DEBUG_FRAME_PARSING:
+                logger.debug(f"Possible nested frame detected in DATA payload from {sender_mac}")
+            
+            try:
+                # 内部フレームのヘッダー解析
+                inner_mac, inner_type, inner_seq, inner_len = FrameParser.parse_header(chunk_data, 0)
+                
+                # ヘッダー長
+                header_len = 19
+                
+                # データ長チェック（最低限ヘッダー＋データ長）
+                if len(chunk_data) >= header_len + inner_len:
+                    inner_payload = chunk_data[header_len : header_len + inner_len]
+                    
+                    if config.DEBUG_FRAME_PARSING:
+                        logger.info(f"Successfully unpacked nested frame: type={inner_type}, len={inner_len} from {sender_mac}")
+                    
+                    # 再帰的に処理（内部フレームのタイプに従って処理）
+                    # 注意: 再帰呼び出しになるが、通常は1段階のみ
+                    await self._process_frame_by_type(inner_mac, inner_type, inner_seq, inner_payload)
+                    return
+            except Exception as e:
+                # パース失敗時は通常のデータとして扱う（偶然START_MARKERと一致した場合など）
+                if config.DEBUG_FRAME_PARSING:
+                    logger.debug(f"Failed to unpack nested frame, treating as raw data: {e}")
+
         # ストリーミングプロセッサーでチャンク処理
         success = await self.streaming_processor.process_chunk(
             sender_mac, chunk_data, seq_num, 
