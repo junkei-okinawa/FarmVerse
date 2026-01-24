@@ -117,10 +117,12 @@ impl DeviceStreamManager {
         self.device_stats.len()
     }
 
-    pub fn total_buffer_usage(&self) -> (usize, usize) {
-        // (使用量, 合計容量) - 現在は正確な追跡が未実装のため (0, 0) を返す
-        // これにより、誤った統計情報が表示されるのを防ぐ
-        (0, 0) 
+    /// Returns total buffer usage as (used_bytes, capacity_bytes) if available.
+    ///
+    /// Currently, `DeviceManager` does not track any concrete buffers, so this
+    /// returns `None` to avoid reporting misleading utilization figures.
+    pub fn total_buffer_usage(&self) -> Option<(usize, usize)> {
+        None
     }
 
     pub fn global_statistics(&self) -> &GlobalStatistics {
