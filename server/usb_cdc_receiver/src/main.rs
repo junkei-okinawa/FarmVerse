@@ -325,12 +325,6 @@ fn main() -> Result<()> {
         info!("  カメラ{}: {} ({})", i + 1, camera.name, camera.mac_address);
     }
     
-    // デバイス登録数を確認
-    // {
-    //     let global_controller = STREAMING_CONTROLLER.lock().unwrap();
-    //     info!("Streaming Controller: {} devices registered", global_controller.list_devices().len());
-    // }
-
     // ESP-NOW初期化
     initialize_esp_now()?;
 

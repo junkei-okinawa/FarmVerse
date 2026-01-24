@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use super::{StreamingResult, StreamingError, StreamingStatistics};
-use crate::esp_now::frame::Frame;
+use crate::esp_now::frame::{Frame, FrameParseError};
 
 #[derive(Debug, Clone)]
 pub struct StreamManagerConfig {
@@ -85,7 +85,7 @@ impl DeviceStreamManager {
         // ESP-NOWフレームとしてパースを試みる
         // これによりシーケンス番号の抽出とチェックサム検証を行う
         match Frame::from_bytes(data) {
-            Some((frame, _size)) => {
+            Ok((frame, _size)) => {
                 // パース成功
                 let sequence = frame.sequence_number();
                 let payload = frame.data().to_vec();
@@ -102,11 +102,16 @@ impl DeviceStreamManager {
                 
                 Ok(vec![processed_frame])
             },
-            None => {
+            Err(e) => {
                 // パース失敗（チェックサムエラー、フォーマットエラーなど）
-                // 詳細なエラータイプはFrame::from_bytesが返さないため、一般エラーとしてカウント
-                // 必要であればFrame::from_bytesをResultを返すように変更することも検討
                 self.stats.frames_error += 1;
+                
+                // エラータイプに応じて詳細なカウンタを更新
+                match e {
+                    FrameParseError::InvalidChecksum { .. } => self.stats.checksum_error_count += 1,
+                    _ => {}, // その他のエラーも frames_error には含まれる
+                }
+
                 // ここではエラーを返さず、空のベクタを返して処理を継続させる（ログは上位で出すなど）
                 // ただし、呼び出し元がエラーを知る必要がある場合はErrを返すべき
                 // 今回はストリーミング全体を止めないため、処理済みフレームなしとして扱う
