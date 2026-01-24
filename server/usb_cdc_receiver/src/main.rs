@@ -211,10 +211,10 @@ fn process_data_loop(
         
         // 2. USBコマンドの処理（スリープコマンドなど）
         match usb_cdc.read_command(10) { // 10ms timeout
-            Ok(Some(ref command_str)) => {
+            Ok(Some(command_str)) => {
                 info!("=== Received USB command: '{}' ===", command_str);
                 
-                match parse_command(&command_str) {
+                match parse_command(command_str.as_str()) {
                     Ok(Command::SendEspNow { mac_address, sleep_seconds }) => {
                         info!("Processing ESP-NOW send command: {} -> {}s", mac_address, sleep_seconds);
                         
