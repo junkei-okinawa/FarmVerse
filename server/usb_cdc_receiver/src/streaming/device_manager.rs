@@ -88,10 +88,11 @@ impl DeviceStreamManager {
             Ok((frame, _size)) => {
                 // パース成功
                 let sequence = frame.sequence_number();
-                let payload = frame.data().to_vec();
+                // 統計更新のみにデータサイズを使用するため、コピーを避ける
+                let payload_len = frame.data().len();
                 
                 // 統計更新
-                dev_stats.count_frame_processed(payload.len());
+                dev_stats.count_frame_processed(payload_len);
                 self.stats.frames_processed += 1;
 
                 let processed_frame = ProcessedFrame {

@@ -5,7 +5,14 @@ import sys
 import os
 
 # テスト対象へのパスを通す
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+# Use absolute path to project root to allow running from any directory
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..')) # To tests/.. (server/sensor_data_reciver)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..')) # To server/
+
+# Also ensure 'server/sensor_data_reciver' is in path to find 'protocol' if running from root
+sensor_data_receiver_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if sensor_data_receiver_path not in sys.path:
+    sys.path.insert(0, sensor_data_receiver_path)
 
 from protocol.streaming_handler import StreamingSerialProtocol
 from protocol.constants import (
