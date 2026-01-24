@@ -73,8 +73,12 @@ fn main() -> anyhow::Result<()> {
 
     // 低電圧チェック (要件: 3.3V=0%以下ならDeepSleep 10分)
     // voltage_sensor.rsの実装により、min_mv (3300mV) 以下は 0% となる
-    if voltage_percent == 0 {
-        warn!("バッテリー電圧が低下しています (0%)。処理をスキップしてDeepSleepに入ります。");
+    // また、255 は測定失敗を示すセントネル値として扱う
+    if voltage_percent == 0 || voltage_percent == u8::MAX {
+        warn!(
+            "バッテリー電圧が低下しているか、電圧測定に失敗しました (値: {})。処理をスキップしてDeepSleepに入ります。",
+            voltage_percent
+        );
         
         // 安全のためLEDを消灯
         led.turn_off()?;

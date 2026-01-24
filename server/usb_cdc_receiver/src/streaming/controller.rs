@@ -318,7 +318,7 @@ impl StreamingController {
         let mut retry_count = 0;
         
         loop {
-            match usb_cdc.send_frame(&frame.payload, &mac_str) {
+            match usb_cdc.send_frame(&frame.full_frame, &mac_str) {
                 Ok(bytes_sent) => {
                     if retry_count > 0 {
                         self.stats.count_usb_retry();

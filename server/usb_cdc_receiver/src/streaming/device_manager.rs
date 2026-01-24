@@ -18,7 +18,9 @@ impl Default for StreamManagerConfig {
 #[derive(Debug, Clone)]
 pub struct ProcessedFrame {
     pub sequence: u32,
-    pub payload: Vec<u8>,
+    /// Contains the full raw ESP-NOW frame bytes (including header/checksum)
+    /// ready to be forwarded over USB.
+    pub full_frame: Vec<u8>,
     pub mac: [u8; 6],
 }
 
@@ -97,7 +99,7 @@ impl DeviceStreamManager {
 
                 let processed_frame = ProcessedFrame {
                     sequence,
-                    payload: data[.._size].to_vec(), // Use full frame bytes for USB forwarding
+                    full_frame: data[.._size].to_vec(), // Use full frame bytes for USB forwarding
                     mac: mac_address,
                 };
                 
