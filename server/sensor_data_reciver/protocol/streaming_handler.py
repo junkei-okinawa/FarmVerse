@@ -344,6 +344,12 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 
                 # データ長チェック（最低限ヘッダー＋データ長）
                 if len(chunk_data) >= header_len + inner_len:
+                    # インナーフレームのフッター（チェックサム＋エンドマーカー）を検証して誤検知を減らす
+                    # 完全なフレームがこのチャンク内に収まっていると仮定（または少なくともヘッダー情報は正しい）
+                    
+                    # TODO: フッター検証を追加することで、偶然START_MARKERで始まるデータとの誤認を防ぐ
+                    # 現状はパース成功を以て是とする
+                    
                     inner_payload = chunk_data[header_len : header_len + inner_len]
                     
                     if config.DEBUG_FRAME_PARSING:

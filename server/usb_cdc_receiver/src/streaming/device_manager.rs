@@ -107,10 +107,13 @@ impl DeviceStreamManager {
     }
 
     pub fn cleanup_all_buffers(&mut self) -> usize {
+        // 現在はバッファの自動クリーンアップは未実装
+        // 将来的にはタイムアウトしたバッファを削除するロジックを実装予定
         0 
     }
 
     pub fn cleanup_inactive_devices(&mut self) -> usize {
+        // 現在は非アクティブデバイスの自動削除は未実装
         0
     }
 
@@ -119,7 +122,9 @@ impl DeviceStreamManager {
     }
 
     pub fn total_buffer_usage(&self) -> (usize, usize) {
-        (0, 1024 * 1024) 
+        // (使用量, 合計容量) - 現在は正確な追跡が未実装のため (0, 0) を返す
+        // これにより、誤った統計情報が表示されるのを防ぐ
+        (0, 0) 
     }
 
     pub fn global_statistics(&self) -> &GlobalStatistics {

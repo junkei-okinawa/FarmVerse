@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     // 必要なピンを先に抽出
     let pins = peripherals.pins;
     let led_pin = pins.gpio21;
-    let voltage_pin = pins.gpio4; // D3
+    let voltage_pin = pins.gpio5; // D4 (変更: GPIO4との競合を回避)
 
     // RMTチャンネルを分離（温度センサー用）
     let rmt_channel = peripherals.rmt.channel0;

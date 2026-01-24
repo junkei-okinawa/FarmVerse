@@ -4,6 +4,7 @@ import sys
 
 import pytest
 import pytest_asyncio
+from unittest.mock import patch
 
 # テストファイルから見た app.py への正しいパス
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -121,8 +122,21 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
     eof_frame = create_eof_frame(test_mac)
     protocol.data_received(eof_frame)
     
-    # 少し待機してプロトコル処理を完了させる
-    await asyncio.sleep(2.5)
+    # プロトコル内の遅延(2秒)をスキップするためにパッチを適用
+    # 注意: このパッチは protocol.serial_handler モジュール内の asyncio.sleep にのみ影響する
+    with patch('protocol.serial_handler.asyncio.sleep', return_value=None):
+        # バックグラウンドタスクが完了するのを待つ
+        # すべてのペンディング中のタスクを実行させる
+        pending = asyncio.all_tasks()
+        for task in pending:
+            if "delayed_sleep_command_send" in str(task):
+                try:
+                    await asyncio.wait_for(task, timeout=1.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    pass
+        
+        # 念のため少し待つ
+        await asyncio.sleep(0.1)
     
     # スリープコマンドが送信されたかを確認
     written_commands = mock_transport.get_written_commands()
@@ -157,10 +171,20 @@ async def test_multiple_devices_sleep_commands(mock_transport):
         # EOFフレームも送信
         eof_frame = create_eof_frame(mac)
         protocol.data_received(eof_frame)
-        await asyncio.sleep(0.05)  # フレーム間の小さな間隔
+        
+        with patch('protocol.serial_handler.asyncio.sleep', return_value=None):
+            # バックグラウンドタスクの完了を待機
+            pending = asyncio.all_tasks()
+            for task in pending:
+                if "delayed_sleep_command_send" in str(task):
+                    try:
+                        await asyncio.wait_for(task, timeout=1.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        pass
+            await asyncio.sleep(0.05)
     
     # 処理完了を待機
-    await asyncio.sleep(2.5)
+    await asyncio.sleep(0.1)
     
     # 各デバイスに対してスリープコマンドが送信されたかを確認
     written_commands = mock_transport.get_written_commands()
@@ -275,7 +299,17 @@ async def test_low_voltage_sleep_commands(mock_transport):
         # EOFフレームも送信
         eof_frame = create_eof_frame(test_mac)
         protocol.data_received(eof_frame)
-        await asyncio.sleep(2.5)
+        
+        with patch('protocol.serial_handler.asyncio.sleep', return_value=None):
+            # バックグラウンドタスクの完了を待機
+            pending = asyncio.all_tasks()
+            for task in pending:
+                if "delayed_sleep_command_send" in str(task):
+                    try:
+                        await asyncio.wait_for(task, timeout=1.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        pass
+            await asyncio.sleep(0.1)
     
         # 午前中の低電圧では MEDIUM_SLEEP_DURATION_S（1時間）が適用される
         written_commands = mock_transport.get_written_commands()
@@ -298,7 +332,17 @@ async def test_low_voltage_sleep_commands(mock_transport):
         # EOFフレームも送信
         eof_frame = create_eof_frame(test_mac)
         protocol.data_received(eof_frame)
-        await asyncio.sleep(2.5)
+        
+        with patch('protocol.serial_handler.asyncio.sleep', return_value=None):
+            # バックグラウンドタスクの完了を待機
+            pending = asyncio.all_tasks()
+            for task in pending:
+                if "delayed_sleep_command_send" in str(task):
+                    try:
+                        await asyncio.wait_for(task, timeout=1.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        pass
+            await asyncio.sleep(0.1)
         
         # 午後の低電圧では LONG_SLEEP_DURATION_S（9時間）が適用される
         written_commands = mock_transport.get_written_commands()
