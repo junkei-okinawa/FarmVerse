@@ -13,6 +13,7 @@
 use super::{StreamingError, StreamingResult, StreamingStatistics};
 use super::device_manager::{DeviceStreamManager, ProcessedFrame, StreamManagerConfig};
 use crate::usb::cdc::UsbCdc;
+use crate::usb::UsbInterface;
 use crate::esp_now::sender::EspNowSender;
 use crate::esp_now::{AckMessage, MessageType, AckStatus};
 use log::{debug, info, warn, error};
@@ -261,7 +262,7 @@ impl StreamingController {
         // データフレームタイプを決定（実際のフレームタイプに基づく）
         let acked_message_type = MessageType::DataFrame; // 現在はすべてデータフレームとして扱う
         
-        let ack = AckMessage::new(frame.sequence, acked_message_type, status);
+        let ack = AckMessage::new(frame.sequence as u16, acked_message_type, status);
         let ack_data = ack.serialize();
         
         match self.esp_now_sender.send_data(mac_address, &ack_data) {

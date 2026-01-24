@@ -23,7 +23,17 @@ use esp_now::sender::EspNowSender;
 use log::{debug, error, info, warn};
 use mac_address::format_mac_address;
 use sleep_command_queue::{init_sleep_command_queue, enqueue_sleep_command, process_sleep_command_queue};
-use usb::cdc::UsbCdc;
+use usb::{cdc::UsbCdc, UsbInterface};
+use streaming::buffer::StreamingBuffer;
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
+use streaming::{StreamingController, StreamingConfig};
+
+// PythonからのコマンドやESP-NOWのデータを橋渡しするグローバルコントローラー
+static STREAMING_CONTROLLER: Lazy<Mutex<StreamingController>> = Lazy::new(|| {
+    let config = StreamingConfig::default();
+    Mutex::new(StreamingController::new(config))
+});
 
 /// ESP-NOWの受信コールバック関数
 ///
@@ -204,7 +214,7 @@ fn process_data_loop(
         
         // 2. USBコマンドの処理（スリープコマンドなど）
         match usb_cdc.read_command(10) { // 10ms timeout
-            Ok(Some(command_str)) => {
+            Ok(Some(ref command_str)) => {
                 info!("=== Received USB command: '{}' ===", command_str);
                 
                 match parse_command(&command_str) {
@@ -321,11 +331,7 @@ fn main() -> Result<()> {
     // デバイス登録数を確認
     {
         let global_controller = STREAMING_CONTROLLER.lock().unwrap();
-        if let Some(controller) = global_controller.as_ref() {
-            info!("Streaming Controller: {} devices registered", controller.list_devices().len());
-        } else {
-            warn!("Streaming Controller not initialized");
-        }
+        info!("Streaming Controller: {} devices registered", global_controller.list_devices().len());
     }
 
     // ESP-NOW初期化
