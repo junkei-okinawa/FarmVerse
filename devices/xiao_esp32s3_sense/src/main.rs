@@ -71,6 +71,27 @@ fn main() -> anyhow::Result<()> {
         voltage_pin,
     )?;
 
+    // 低電圧チェック (要件: 3.3V=0%以下ならDeepSleep 10分)
+    // voltage_sensor.rsの実装により、min_mv (3300mV) 以下は 0% となる
+    if voltage_percent == 0 {
+        warn!("バッテリー電圧が低下しています (0%)。処理をスキップしてDeepSleepに入ります。");
+        
+        // 安全のためLEDを消灯
+        led.turn_off()?;
+        
+        // 10分間 (600秒) のDeepSleepに入る
+        let sleep_duration = std::time::Duration::from_secs(600);
+        info!("DeepSleepに入ります: {}秒", sleep_duration.as_secs());
+        
+        deep_sleep_controller.enter_deep_sleep(
+            sleep_duration,
+            app_config.sleep_compensation_micros,
+        );
+        
+        // DeepSleepに入るとここには戻らない
+        return Ok(());
+    }
+
     info!("設定されている受信先MAC: {}", app_config.receiver_mac);
     info!("設定されているスリープ時間: {}秒", app_config.sleep_duration_seconds);
 
