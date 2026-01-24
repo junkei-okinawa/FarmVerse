@@ -341,24 +341,31 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 
                 # ヘッダー長
                 header_len = HEADER_LENGTH
+                footer_len = CHECKSUM_LENGTH + len(END_MARKER)
                 
-                # データ長チェック（最低限ヘッダー＋データ長）
-                if len(chunk_data) >= header_len + inner_len:
-                    # インナーフレームのフッター（チェックサム＋エンドマーカー）を検証して誤検知を減らす
-                    # 完全なフレームがこのチャンク内に収まっていると仮定（または少なくともヘッダー情報は正しい）
+                # データ長チェック（最低限ヘッダー＋データ長＋フッター）
+                required_len = header_len + inner_len + footer_len
+                
+                if len(chunk_data) >= required_len:
+                    # インナーフレームのフッター（エンドマーカー）を検証して誤検知を減らす
+                    # 完全なフレームがこのチャンク内に収まっていると仮定
                     
-                    # TODO: フッター検証を追加することで、偶然START_MARKERで始まるデータとの誤認を防ぐ
-                    # 現状はパース成功を以て是とする
+                    end_marker_pos = header_len + inner_len + CHECKSUM_LENGTH
+                    # バッファ長チェック済みなのでスライスは安全
+                    potential_end_marker = chunk_data[end_marker_pos : end_marker_pos + len(END_MARKER)]
                     
-                    inner_payload = chunk_data[header_len : header_len + inner_len]
-                    
-                    if config.DEBUG_FRAME_PARSING:
-                        logger.info(f"Successfully unpacked nested frame: type={inner_type}, len={inner_len} from {sender_mac}")
-                    
-                    # 再帰的に処理（内部フレームのタイプに従って処理）
-                    # 注意: 再帰呼び出しになるが、通常は1段階のみ
-                    await self._process_frame_by_type(inner_mac, inner_type, inner_seq, inner_payload)
-                    return
+                    if potential_end_marker == END_MARKER:
+                        inner_payload = chunk_data[header_len : header_len + inner_len]
+                        
+                        if config.DEBUG_FRAME_PARSING:
+                            logger.info(f"Successfully unpacked nested frame: type={inner_type}, len={inner_len} from {sender_mac}")
+                        
+                        # 再帰的に処理（内部フレームのタイプに従って処理）
+                        # 注意: 再帰呼び出しになるが、通常は1段階のみ
+                        await self._process_frame_by_type(inner_mac, inner_type, inner_seq, inner_payload)
+                        return
+                    elif config.DEBUG_FRAME_PARSING:
+                        logger.debug(f"Nested frame candidates failed footer check: expected {END_MARKER.hex()}, got {potential_end_marker.hex()}")
             except Exception as e:
                 # パース失敗時は通常のデータとして扱う（偶然START_MARKERと一致した場合など）
                 if config.DEBUG_FRAME_PARSING:
