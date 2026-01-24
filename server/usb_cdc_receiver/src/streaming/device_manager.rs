@@ -133,7 +133,18 @@ impl DeviceStreamManager {
         0
     }
 
+    /// Returns the number of manually registered devices.
+    ///
+    /// This count is consistent with the devices returned by `get_devices()`.
     pub fn device_count(&self) -> usize {
+        self.devices.len()
+    }
+
+    /// Returns the number of observed devices for which statistics are tracked.
+    ///
+    /// This includes auto-discovered devices that may not have been manually
+    /// registered via `register_device()`.
+    pub fn observed_device_count(&self) -> usize {
         self.device_stats.len()
     }
 
