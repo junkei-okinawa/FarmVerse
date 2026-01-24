@@ -39,7 +39,7 @@ impl MessageType {
 #[derive(Debug, Clone)]
 pub struct AckMessage {
     /// ACK対象のシーケンス番号
-    pub sequence_number: u16,
+    pub sequence_number: u32,
     /// ACK対象のメッセージタイプ
     pub acked_message_type: MessageType,
     /// 受信ステータス
@@ -79,7 +79,7 @@ impl AckStatus {
 
 impl AckMessage {
     /// 新しいACKメッセージを作成
-    pub fn new(sequence_number: u16, acked_message_type: MessageType, status: AckStatus) -> Self {
+    pub fn new(sequence_number: u32, acked_message_type: MessageType, status: AckStatus) -> Self {
         Self {
             sequence_number,
             acked_message_type,
@@ -88,7 +88,7 @@ impl AckMessage {
     }
     
     /// ACKメッセージを成功ACKとして作成
-    pub fn success(sequence_number: u16, acked_message_type: MessageType) -> Self {
+    pub fn success(sequence_number: u32, acked_message_type: MessageType) -> Self {
         Self::new(sequence_number, acked_message_type, AckStatus::Success)
     }
     
@@ -96,10 +96,10 @@ impl AckMessage {
     /// 
     /// フォーマット:
     /// ```text
-    /// [MSG_TYPE(1)] [SEQ_NUM(2)] [ACKED_TYPE(1)] [STATUS(1)]
+    /// [MSG_TYPE(1)] [SEQ_NUM(4)] [ACKED_TYPE(1)] [STATUS(1)]
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
-        let mut data = Vec::with_capacity(5);
+        let mut data = Vec::with_capacity(7);
         data.push(MessageType::Ack.to_u8());
         data.extend_from_slice(&self.sequence_number.to_le_bytes());
         data.push(self.acked_message_type.to_u8());
@@ -109,7 +109,7 @@ impl AckMessage {
     
     /// バイナリデータからACKメッセージをデシリアライズ
     pub fn deserialize(data: &[u8]) -> Option<Self> {
-        if data.len() < 5 {
+        if data.len() < 7 {
             warn!("ACK message too short: {} bytes", data.len());
             return None;
         }
@@ -120,9 +120,9 @@ impl AckMessage {
             return None;
         }
         
-        let sequence_number = u16::from_le_bytes([data[1], data[2]]);
-        let acked_message_type = MessageType::from_u8(data[3])?;
-        let status = AckStatus::from_u8(data[4])?;
+        let sequence_number = u32::from_le_bytes([data[1], data[2], data[3], data[4]]);
+        let acked_message_type = MessageType::from_u8(data[5])?;
+        let status = AckStatus::from_u8(data[6])?;
         
         debug!("Deserialized ACK: seq={}, type={:?}, status={:?}", 
                sequence_number, acked_message_type, status);
@@ -187,7 +187,7 @@ mod tests {
         let ack = AckMessage::success(12345, MessageType::DataFrame);
         let data = ack.serialize();
         
-        assert_eq!(data.len(), 5);
+        assert_eq!(data.len(), 7);
         assert_eq!(data[0], MessageType::Ack.to_u8());
         
         let deserialized = AckMessage::deserialize(&data).unwrap();
