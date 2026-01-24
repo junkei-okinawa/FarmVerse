@@ -4,7 +4,7 @@ import sys
 
 import pytest
 import pytest_asyncio
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch
 
 # テストファイルから見た app.py への正しいパス
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -131,16 +131,16 @@ async def test_sleep_command_sent_on_hash_frame(mock_transport):
         protocol.data_received(eof_frame)
 
         # バックグラウンドタスクが完了するのを待つ
-        # すべてのペンディング中のタスクを実行させる
-        pending = asyncio.all_tasks()
+        # すべてのペンディング中のタスクを実行させる（現在のテストタスクを除く）
+        current_task = asyncio.current_task()
+        pending = {task for task in asyncio.all_tasks() if task is not current_task}
         for task in pending:
-            if "delayed_sleep_command_send" in str(task):
-                try:
-                    await asyncio.wait_for(task, timeout=1.0)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
-                    # テスト失敗とはみなさないため、これらの例外は意図的に無視する
-                    pass
+            try:
+                await asyncio.wait_for(task, timeout=1.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
+                # テスト失敗とはみなさないため、これらの例外は意図的に無視する
+                pass
         
         # 念のため少し待つ
         await asyncio.sleep(0.1)
@@ -185,16 +185,16 @@ async def test_multiple_devices_sleep_commands(mock_transport):
             eof_frame = create_eof_frame(mac)
             protocol.data_received(eof_frame)
     
-            # バックグラウンドタスクの完了を待機
-            pending = asyncio.all_tasks()
+            # バックグラウンドタスクの完了を待機（現在のタスク以外の全タスクを対象）
+            current_task = asyncio.current_task()
+            pending = {task for task in asyncio.all_tasks() if task is not current_task}
             for task in pending:
-                if "delayed_sleep_command_send" in str(task):
-                    try:
-                        await asyncio.wait_for(task, timeout=1.0)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
-                        # テスト失敗とはみなさないため、これらの例外は意図的に無視する
-                        pass
+                try:
+                    await asyncio.wait_for(task, timeout=1.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
+                    # テスト失敗とはみなさないため、これらの例外は意図的に無視する
+                    pass
             await asyncio.sleep(0.05)
     
     # 処理完了を待機
@@ -320,16 +320,16 @@ async def test_low_voltage_sleep_commands(mock_transport):
             eof_frame = create_eof_frame(test_mac)
             protocol.data_received(eof_frame)
             
-            # バックグラウンドタスクの完了を待機
-            pending = asyncio.all_tasks()
+            # バックグラウンドタスクの完了を待機（現在のタスク以外の全タスクを対象）
+            current_task = asyncio.current_task()
+            pending = {task for task in asyncio.all_tasks() if task is not current_task}
             for task in pending:
-                if "delayed_sleep_command_send" in str(task):
-                    try:
-                        await asyncio.wait_for(task, timeout=1.0)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
-                        # テスト失敗とはみなさないため、これらの例外は意図的に無視する
-                        pass
+                try:
+                    await asyncio.wait_for(task, timeout=1.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
+                    # テスト失敗とはみなさないため、これらの例外は意図的に無視する
+                    pass
             await asyncio.sleep(0.1)
     
         # 午前中の低電圧では MEDIUM_SLEEP_DURATION_S（1時間）が適用される
@@ -360,16 +360,16 @@ async def test_low_voltage_sleep_commands(mock_transport):
             eof_frame = create_eof_frame(test_mac)
             protocol.data_received(eof_frame)
             
-            # バックグラウンドタスクの完了を待機
-            pending = asyncio.all_tasks()
+            # バックグラウンドタスクの完了を待機（現在のタスク以外の全タスクを対象）
+            current_task = asyncio.current_task()
+            pending = {task for task in asyncio.all_tasks() if task is not current_task}
             for task in pending:
-                if "delayed_sleep_command_send" in str(task):
-                    try:
-                        await asyncio.wait_for(task, timeout=1.0)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
-                        # テスト失敗とはみなさないため、これらの例外は意図的に無視する
-                        pass
+                try:
+                    await asyncio.wait_for(task, timeout=1.0)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    # テスト中にバックグラウンドタスクがタイムアウトまたはキャンセルされても
+                    # テスト失敗とはみなさないため、これらの例外は意図的に無視する
+                    pass
             await asyncio.sleep(0.1)
         
         # 午後の低電圧では LONG_SLEEP_DURATION_S（9時間）が適用される
