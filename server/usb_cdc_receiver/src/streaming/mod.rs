@@ -18,8 +18,8 @@ pub enum StreamingError {
     BufferFull,
     InvalidData,
     Timeout,
-    EspNowSendError(String),
-    UsbTransferError(String),
+    EspNowSendError(String), // carries the underlying ESP-NOW error message
+    UsbTransferError(String), // carries the underlying USB transfer error message
 }
 
 // Also define StreamingStatistics here.
