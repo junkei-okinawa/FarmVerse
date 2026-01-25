@@ -390,8 +390,17 @@ impl AppConfig {
         let bypass_voltage_threshold = config.bypass_voltage_threshold;
         let debug_mode = config.debug_mode;
 
-        // WiFi送信パワー設定を取得
-        let wifi_tx_power_dbm = config.wifi_tx_power_dbm;
+        // WiFi送信パワー設定を取得（有効範囲 2〜20 dBm にクランプ）
+        // esp_wifi_set_max_tx_power は範囲外の値でもエラーにならない場合があるが、
+        // 安全のため仕様範囲内に収める
+        let wifi_tx_power_dbm_raw = config.wifi_tx_power_dbm;
+        let wifi_tx_power_dbm = if wifi_tx_power_dbm_raw < 2 {
+            2
+        } else if wifi_tx_power_dbm_raw > 20 {
+            20
+        } else {
+            wifi_tx_power_dbm_raw
+        };
 
         // 温度センサー設定を取得
         let temp_sensor_enabled = config.temp_sensor_enabled;
