@@ -279,7 +279,7 @@ async def test_invalid_hash_frame_no_sleep_command(mock_transport):
 async def test_low_voltage_sleep_commands(mock_transport):
     """低電圧時の時刻ベースのスリープコマンドをテスト"""
     import datetime
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import patch
     
     test_mac = "aa:bb:cc:dd:ee:ff"
     test_voltage = 5  # 8%未満の低電圧
