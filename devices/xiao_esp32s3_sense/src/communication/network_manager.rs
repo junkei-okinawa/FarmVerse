@@ -19,6 +19,7 @@ impl NetworkManager {
         sysloop: &EspSystemEventLoop,
         nvs_partition: &EspDefaultNvsPartition,
         wifi_tx_power_dbm: i8,
+        wifi_init_delay_ms: u64,
     ) -> anyhow::Result<BlockingWifi<EspWifi<'static>>> {
         info!("ESP-NOW用にWiFiをSTAモードで準備します。");
         
@@ -37,24 +38,40 @@ impl NetworkManager {
             },
         ))?;
         
-        info!("WiFi設定完了。起動待機(1s)...");
-        esp_idf_svc::hal::delay::FreeRtos::delay_ms(1000); // 突入電流分散待機 1
+        info!("WiFi設定完了。起動待機({}ms)...", wifi_init_delay_ms);
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(wifi_init_delay_ms as u32); // 突入電流分散待機 1
         
         wifi.start()?;
-        info!("WiFiがESP-NOW用にSTAモードで起動しました。RF安定化待機(1s)...");
-        esp_idf_svc::hal::delay::FreeRtos::delay_ms(1000); // 突入電流分散待機 2
+        info!("WiFiがESP-NOW用にSTAモードで起動しました。RF安定化待機({}ms)...", wifi_init_delay_ms);
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(wifi_init_delay_ms as u32); // 突入電流分散待機 2
 
         // WiFi送信パワーを設定（省電力化）
         unsafe {
-            let power_quarter_dbm = (wifi_tx_power_dbm * 4) as i8;
+            // ESP-IDF API expects power in 0.25 dBm units (quarter-dBm).
+            // Perform the scaling in a wider integer type to avoid i8 overflow,
+            // then clamp into the valid i8 range before passing to the driver.
+            let scaled: i16 = i16::from(wifi_tx_power_dbm) * 4;
+            let min_i8 = i16::from(i8::MIN);
+            let max_i8 = i16::from(i8::MAX);
+            
+            if scaled < min_i8 || scaled > max_i8 {
+                log::warn!(
+                    "WiFi送信パワー値が許容範囲外です ({} dBm, 四分の一dBm単位: {}). i8範囲にクランプします。",
+                    wifi_tx_power_dbm,
+                    scaled
+                );
+            }
+            let power_quarter_dbm = scaled.clamp(min_i8, max_i8) as i8;
+
             let err = esp_idf_svc::sys::esp_wifi_set_max_tx_power(power_quarter_dbm);
             if err != esp_idf_svc::sys::ESP_OK {
-                log::warn!("WiFi送信パワーの設定に失敗しました (エラーコード: {})", err);
+                // 送信パワー設定失敗時は、デフォルト値で動作するが、システム自体は停止させない
+                log::warn!("WiFi送信パワーの設定に失敗しました (エラーコード: {}) - デフォルトパワーで動作します", err);
             }
         }
-        info!("WiFi送信パワーを {}dBm に設定しました。適用待機(1s)...", wifi_tx_power_dbm);
-        esp_idf_svc::hal::delay::FreeRtos::delay_ms(1000); // 突入電流分散待機 3
-
+        info!("WiFi送信パワーを {}dBm に設定しました。適用待機({}ms)...", wifi_tx_power_dbm, wifi_init_delay_ms);
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(wifi_init_delay_ms as u32); // 突入電流分散待機 3
+        
         // WiFi状態の詳細確認
         let wifi_status = wifi.is_started();
         info!("WiFi起動状態: {:?}", wifi_status);

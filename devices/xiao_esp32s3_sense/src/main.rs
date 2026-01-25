@@ -53,8 +53,10 @@ fn main() -> anyhow::Result<()> {
     let mut led = StatusLed::new(led_pin)?;
     led.turn_off()?;
     
-    // 起動成功 (LED 1回点滅)
-    led.blink_count(1)?;
+    // 起動成功 (LED 1回点滅 - デバッグモードのみ)
+    if app_config.debug_mode {
+        led.blink_count(1)?;
+    }
 
     // ディープスリープコントローラーの初期化
     let deep_sleep_controller = DeepSleep::new(EspIdfDeepSleep);
@@ -77,7 +79,14 @@ fn main() -> anyhow::Result<()> {
     // 低電圧チェック (要件: 3.5V以下ならDeepSleep 10分)
     // 3.5V以下の場合WiFi初期化で失敗するため、後続処理が対応不可とみなす。
     // settings: min=3300, max=4200 の場合、3500mV は約 22% に相当。
-    // 安全マージンを含めて 30% 以下をスキップ対象とする。
+    // ただし、実際の運用では以下の要因で電圧がさらに低下する／誤差が生じる:
+    //   - WiFi送信やCPU負荷時の瞬間的な電圧降下
+    //   - ADC測定誤差・キャリブレーション誤差
+    //   - バッテリーの経年劣化や内部抵抗の増加
+    //   - 温度変化や配線ロスなどのばらつき
+    // そのため、約22%の理論値に対して 8% 程度の安全マージンを取り、
+    // 30% 以下をスキップ対象とすることで、低電圧状態でも安定して
+    // 起動失敗や誤動作を避けることを意図している。
     if voltage_percent <= 30 || voltage_percent == u8::MAX {
         warn!(
             "バッテリー電圧が低下しているか、電圧測定に失敗しました (値: {})。処理をスキップしてDeepSleepに入ります。",
@@ -244,6 +253,7 @@ fn main() -> anyhow::Result<()> {
         &sysloop,
         &nvs_partition,
         app_config.wifi_tx_power_dbm,
+        app_config.wifi_init_delay_ms,
     ).map_err(|e| {
         if let Err(sleep_err) = AppController::fallback_sleep(
             &deep_sleep_controller,
@@ -256,8 +266,10 @@ fn main() -> anyhow::Result<()> {
     })?;
     info!("✓ WiFi初期化完了");
     
-    // WiFi初期化完了 (LED 3回点滅)
-    led.blink_count(3)?;
+    // WiFi初期化完了 (LED 3回点滅 - デバッグモードのみ)
+    if app_config.debug_mode {
+        led.blink_count(3)?;
+    }
 
     // 測定データの送信
     info!("データ送信タスクを開始します");

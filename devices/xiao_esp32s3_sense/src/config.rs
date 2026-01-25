@@ -110,6 +110,9 @@ pub struct Config {
 
     #[default(8)]
     wifi_tx_power_dbm: i8,
+
+    #[default(1000)]
+    wifi_init_delay_ms: u64,
 }
 
 /// 設定エラー
@@ -241,6 +244,9 @@ pub struct AppConfig {
 
     /// WiFi送信パワー（dBm単位、範囲: 2-20）
     pub wifi_tx_power_dbm: i8,
+
+    /// WiFi初期化時の各ステップ間の待機時間（ミリ秒）
+    pub wifi_init_delay_ms: u64,
 }
 
 /// メモリ管理設定
@@ -452,6 +458,7 @@ impl AppConfig {
             bypass_voltage_threshold,
             debug_mode,
             wifi_tx_power_dbm,
+            wifi_init_delay_ms: config.wifi_init_delay_ms,
         })
     }
 }
@@ -558,6 +565,8 @@ mod tests {
             force_camera_test,
             bypass_voltage_threshold,
             debug_mode,
+            wifi_tx_power_dbm: 8,
+            wifi_init_delay_ms: 1000,
         }))
     }
 
