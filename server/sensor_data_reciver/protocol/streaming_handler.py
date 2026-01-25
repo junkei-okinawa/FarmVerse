@@ -15,7 +15,7 @@ from .constants import (
     MAC_ADDRESS_LENGTH, FRAME_TYPE_LENGTH, SEQUENCE_NUM_LENGTH, LENGTH_FIELD_BYTES,
     CHECKSUM_LENGTH, HEADER_LENGTH
 )
-from .frame_parser import FrameParser
+from .frame_parser import FrameParser, FrameSyncError
 
 # 絶対インポートを使用
 import sys
@@ -366,7 +366,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
                         return
                     elif config.DEBUG_FRAME_PARSING:
                         logger.debug(f"Nested frame candidates failed footer check: expected {END_MARKER.hex()}, got {potential_end_marker.hex()}")
-            except Exception as e:
+            except (ValueError, FrameSyncError) as e:
                 # パース失敗時は通常のデータとして扱う（偶然START_MARKERと一致した場合など）
                 if config.DEBUG_FRAME_PARSING:
                     logger.debug(f"Failed to unpack nested frame, treating as raw data: {e}")
