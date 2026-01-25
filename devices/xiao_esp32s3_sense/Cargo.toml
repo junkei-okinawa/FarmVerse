@@ -52,4 +52,3 @@ serde = { version = "1.0", features = ["derive"] }
 [build-dependencies]
 embuild = "0.33"
 toml-cfg = "=0.2"
-

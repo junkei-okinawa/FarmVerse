@@ -7,7 +7,6 @@ use esp_idf_svc::hal::{
         },
         ADC1,
     },
-    gpio::Gpio6,
 };
 use log::{error, info};
 use crate::config::CONFIG;
@@ -50,13 +49,12 @@ impl VoltageSensor {
     /// 
     /// # Returns
     /// - (電圧パーセンテージ, ADC1): 測定結果とADC1の所有権
-    /// - 0-100: 正常な電圧パーセンテージ
-    /// - 255: 測定エラー
-    pub fn measure_voltage_percentage(
+    ///   - 電圧パーセンテージ: 通常は 0–100 の値を取り、`255` は測定に失敗したことを示します
+    pub fn measure_voltage_percentage<T: esp_idf_svc::hal::gpio::ADCPin>(
         mut adc: ADC1,
-        gpio_pin: Gpio6,
+        gpio_pin: T,
     ) -> anyhow::Result<(u8, ADC1)> {
-        info!("ADC1を初期化しています (GPIO6, WiFi競合回避)");
+        info!("ADC1を初期化しています (WiFi競合回避)");
         let adc_driver = AdcDriver::new(&mut adc)?;
         let adc_config = AdcChannelConfig {
             attenuation: DB_11,
@@ -65,23 +63,37 @@ impl VoltageSensor {
         };
         let mut adc_channel = AdcChannelDriver::new(&adc_driver, gpio_pin, &adc_config)?;
 
-        info!("ADC電圧を測定しパーセンテージを計算します...");
-        let voltage_percent = match adc_channel.read() {
-            Ok(voltage_mv_u16) => {
-                let voltage_mv = voltage_mv_u16 as f32;
-                info!("ADC電圧測定成功: {:.0} mV", voltage_mv);
-                
-                let min_mv = CONFIG.adc_voltage_min_mv as f32;
-                let max_mv = CONFIG.adc_voltage_max_mv as f32;
-                
-                let result = Self::calculate_voltage_percentage(voltage_mv, min_mv, max_mv);
-                info!("計算されたパーセンテージ: {} %", result);
-                result
+        info!("ADC電圧を10回測定し、平均値を計算します...");
+        let mut sum_mv = 0u32;
+        let mut samples = 0u8;
+
+        for _ in 0..10 {
+            match adc_channel.read() {
+                Ok(mv) => {
+                    sum_mv += mv as u32;
+                    samples += 1;
+                }
+                Err(e) => {
+                    error!("ADCサンプル読み取りエラー: {:?}", e);
+                }
             }
-            Err(e) => {
-                error!("ADC読み取りエラー: {:?}. 電圧は255%として扱います。", e);
-                255
-            }
+            // 短いウェイトを入れてノイズを分散
+            esp_idf_svc::hal::delay::FreeRtos::delay_ms(10);
+        }
+
+        let voltage_percent = if samples > 0 {
+            let avg_mv = (sum_mv / samples as u32) as f32;
+            info!("ADC電圧測定結果: 平均値={:.0} mV, サンプル数={}", avg_mv, samples);
+            
+            let min_mv = CONFIG.adc_voltage_min_mv as f32;
+            let max_mv = CONFIG.adc_voltage_max_mv as f32;
+            
+            let result = Self::calculate_voltage_percentage(avg_mv, min_mv, max_mv);
+            info!("計算されたパーセンテージ: {} % (設定範囲: {} - {} mV)", result, min_mv, max_mv);
+            result
+        } else {
+            error!("有効なADCサンプルが取得できませんでした。電圧は測定失敗値 (255 / u8::MAX) として扱います。");
+            255
         };
 
         // ADCチャンネルを解放してADCドライバーからADC1を取り戻す

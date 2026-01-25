@@ -29,7 +29,12 @@ sha2 = "0.10"
 hex = "0.4"
 
 # ESP-IDF依存は"esp"フィーチャーでのみ有効化
-esp-idf-svc = { version = "0.51", default-features = false, features = ["binstart", "std", "experimental", "alloc"], optional = true }
+esp-idf-svc = { version = "0.51", default-features = false, features = [
+    "binstart",
+    "std",
+    "experimental",
+    "alloc",
+], optional = true }
 embedded-svc = { version = "0.28", optional = true }
 esp-idf-hal = { version = "0.45", optional = true }
 heapless = { version = "=0.8.0", optional = true }
@@ -38,7 +43,15 @@ toml-cfg = { version = "=0.2", optional = true }
 
 [features]
 default = ["esp"]
-esp = ["esp-idf-svc", "embedded-svc", "esp-idf-hal", "heapless", "esp-idf-sys", "toml-cfg", "embuild"]
+esp = [
+    "esp-idf-svc",
+    "embedded-svc",
+    "esp-idf-hal",
+    "heapless",
+    "esp-idf-sys",
+    "toml-cfg",
+    "embuild",
+]
 
 [build-dependencies]
 embuild = { version = "0.33", optional = true }

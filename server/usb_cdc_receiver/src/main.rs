@@ -25,6 +25,13 @@ use mac_address::format_mac_address;
 use sleep_command_queue::{init_sleep_command_queue, enqueue_sleep_command, process_sleep_command_queue};
 use usb::cdc::UsbCdc;
 
+// PythonからのコマンドやESP-NOWのデータを橋渡しするグローバルコントローラー
+// NOTE: A global `STREAMING_CONTROLLER` was previously defined here to bridge
+// Python commands and ESP-NOW data, but it is not currently used in the
+// actual ESP-NOW/USB data forwarding path. It has been removed to avoid
+// confusion and unnecessary binary size. Reintroduce it here only when the
+// streaming controller is actually wired into the main data-processing loop.
+
 /// ESP-NOWの受信コールバック関数
 ///
 /// ESP-NOWからのデータを受け取り、キューに追加します。
@@ -207,7 +214,7 @@ fn process_data_loop(
             Ok(Some(command_str)) => {
                 info!("=== Received USB command: '{}' ===", command_str);
                 
-                match parse_command(&command_str) {
+                match parse_command(command_str.as_str()) {
                     Ok(Command::SendEspNow { mac_address, sleep_seconds }) => {
                         info!("Processing ESP-NOW send command: {} -> {}s", mac_address, sleep_seconds);
                         
@@ -318,16 +325,6 @@ fn main() -> Result<()> {
         info!("  カメラ{}: {} ({})", i + 1, camera.name, camera.mac_address);
     }
     
-    // デバイス登録数を確認
-    {
-        let global_controller = STREAMING_CONTROLLER.lock().unwrap();
-        if let Some(controller) = global_controller.as_ref() {
-            info!("Streaming Controller: {} devices registered", controller.list_devices().len());
-        } else {
-            warn!("Streaming Controller not initialized");
-        }
-    }
-
     // ESP-NOW初期化
     initialize_esp_now()?;
 

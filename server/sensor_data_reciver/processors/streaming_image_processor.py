@@ -13,6 +13,10 @@ import time
 from datetime import datetime
 from typing import Dict, Optional, Callable
 from dataclasses import dataclass, field
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 # 絶対インポートを使用
 import sys
@@ -372,9 +376,7 @@ class StreamingImageProcessor:
     
     def _rotate_image_sync(self, image_path: str, sender_mac: str) -> str:
         """同期版画像回転処理"""
-        try:
-            from PIL import Image
-        except ImportError:
+        if Image is None:
             logger.warning("PIL not available, skipping image rotation")
             return image_path
             

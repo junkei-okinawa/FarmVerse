@@ -13,7 +13,7 @@ from typing import Dict
 from .constants import (
     START_MARKER, END_MARKER, FRAME_TYPE_HASH, FRAME_TYPE_DATA, FRAME_TYPE_EOF,
     MAC_ADDRESS_LENGTH, FRAME_TYPE_LENGTH, SEQUENCE_NUM_LENGTH, LENGTH_FIELD_BYTES,
-    CHECKSUM_LENGTH
+    CHECKSUM_LENGTH, HEADER_LENGTH, FOOTER_LENGTH
 )
 from .frame_parser import FrameParser
 
@@ -326,6 +326,59 @@ class StreamingSerialProtocol(asyncio.Protocol):
     async def _process_streaming_data_frame(self, sender_mac: str, 
                                           chunk_data: bytes, seq_num: int):
         """DATAフレーム処理（ストリーミング対応）"""
+        
+        # 二重カプセル化（Double Framing）の検出と解除
+        # ゲートウェイがSenderのフレームをそのままDATAフレームのペイロードとして
+        # カプセル化してしまっている場合に対応
+        if len(chunk_data) > HEADER_LENGTH and chunk_data.startswith(START_MARKER):
+            # 最初のチャンクか、どうかの判定は難しいが、START_MARKERで始まる場合は試行する
+            if config.DEBUG_FRAME_PARSING:
+                logger.debug(f"Possible nested frame detected in DATA payload from {sender_mac}")
+            
+            try:
+                # 内部フレームのヘッダー解析
+                inner_mac, inner_type, inner_seq, inner_len = FrameParser.parse_header(chunk_data, 0)
+                
+                # ヘッダー長
+                header_len = HEADER_LENGTH
+                footer_len = FOOTER_LENGTH
+                
+                # データ長チェック（最低限ヘッダー＋データ長＋フッター）
+                required_len = header_len + inner_len + footer_len
+                
+                if len(chunk_data) >= required_len:
+                    # インナーフレームのフッター（エンドマーカー）を検証して誤検知を減らす
+                    # 完全なフレームがこのチャンク内に収まっていると仮定
+                    
+                    end_marker_pos = header_len + inner_len + CHECKSUM_LENGTH
+                    # バッファ長チェック済みなのでスライスは安全
+                    potential_end_marker = chunk_data[end_marker_pos : end_marker_pos + len(END_MARKER)]
+                    
+                    if potential_end_marker == END_MARKER:
+                        inner_payload = chunk_data[header_len : header_len + inner_len]
+                        
+                        if config.DEBUG_FRAME_PARSING:
+                            logger.info(f"Successfully unpacked nested frame: type={inner_type}, len={inner_len} from {sender_mac}")
+                        
+                        # セキュリティ上の理由から、ネストされたフレームのMACアドレス(inner_mac)は
+                        # 外側のsender_macと一致する場合のみ信頼する
+                        if inner_mac == sender_mac:
+                            # 再帰的に処理（内部フレームのタイプに従って処理）
+                            # 注意: 再帰呼び出しになるが、通常は1段階のみ
+                            await self._process_frame_by_type(sender_mac, inner_type, inner_seq, inner_payload)
+                            return
+                        elif config.DEBUG_FRAME_PARSING:
+                            logger.debug(
+                                f"Nested frame MAC mismatch: outer={sender_mac}, inner={inner_mac}. "
+                                "Treating payload as raw data."
+                            )
+                    elif config.DEBUG_FRAME_PARSING:
+                        logger.debug(f"Nested frame candidates failed footer check: expected {END_MARKER.hex()}, got {potential_end_marker.hex()}")
+            except ValueError as e:
+                # パース失敗時は通常のデータとして扱う（偶然START_MARKERと一致した場合など）
+                if config.DEBUG_FRAME_PARSING:
+                    logger.debug(f"Failed to unpack nested frame, treating as raw data: {e}")
+
         # ストリーミングプロセッサーでチャンク処理
         success = await self.streaming_processor.process_chunk(
             sender_mac, chunk_data, seq_num, 

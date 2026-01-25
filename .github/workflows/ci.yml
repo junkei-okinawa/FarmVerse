@@ -2,6 +2,9 @@ name: Sensor Data Receiver CI
 
 on:
   push:
+    branches:
+      - main
+      - develop
     paths:
       - 'server/sensor_data_reciver/**'
   pull_request:
