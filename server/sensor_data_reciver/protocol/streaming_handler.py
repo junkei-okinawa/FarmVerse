@@ -360,10 +360,18 @@ class StreamingSerialProtocol(asyncio.Protocol):
                         if config.DEBUG_FRAME_PARSING:
                             logger.info(f"Successfully unpacked nested frame: type={inner_type}, len={inner_len} from {sender_mac}")
                         
-                        # 再帰的に処理（内部フレームのタイプに従って処理）
-                        # 注意: 再帰呼び出しになるが、通常は1段階のみ
-                        await self._process_frame_by_type(inner_mac, inner_type, inner_seq, inner_payload)
-                        return
+                        # セキュリティ上の理由から、ネストされたフレームのMACアドレス(inner_mac)は
+                        # 外側のsender_macと一致する場合のみ信頼する
+                        if inner_mac == sender_mac:
+                            # 再帰的に処理（内部フレームのタイプに従って処理）
+                            # 注意: 再帰呼び出しになるが、通常は1段階のみ
+                            await self._process_frame_by_type(sender_mac, inner_type, inner_seq, inner_payload)
+                            return
+                        elif config.DEBUG_FRAME_PARSING:
+                            logger.debug(
+                                f"Nested frame MAC mismatch: outer={sender_mac}, inner={inner_mac}. "
+                                "Treating payload as raw data."
+                            )
                     elif config.DEBUG_FRAME_PARSING:
                         logger.debug(f"Nested frame candidates failed footer check: expected {END_MARKER.hex()}, got {potential_end_marker.hex()}")
             except ValueError as e:
