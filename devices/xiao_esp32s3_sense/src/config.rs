@@ -107,6 +107,9 @@ pub struct Config {
 
     #[default(false)]
     debug_mode: bool,
+
+    #[default(8)]
+    wifi_tx_power_dbm: i8,
 }
 
 /// 設定エラー
@@ -235,6 +238,9 @@ pub struct AppConfig {
 
     /// デバッグモード（詳細ログ出力）
     pub debug_mode: bool,
+
+    /// WiFi送信パワー（dBm単位、範囲: 2-20）
+    pub wifi_tx_power_dbm: i8,
 }
 
 /// メモリ管理設定
@@ -384,6 +390,9 @@ impl AppConfig {
         let bypass_voltage_threshold = config.bypass_voltage_threshold;
         let debug_mode = config.debug_mode;
 
+        // WiFi送信パワー設定を取得
+        let wifi_tx_power_dbm = config.wifi_tx_power_dbm;
+
         // 温度センサー設定を取得
         let temp_sensor_enabled = config.temp_sensor_enabled;
         let temp_sensor_power_pin = config.temp_sensor_power_pin;
@@ -433,6 +442,7 @@ impl AppConfig {
             force_camera_test,
             bypass_voltage_threshold,
             debug_mode,
+            wifi_tx_power_dbm,
         })
     }
 }
