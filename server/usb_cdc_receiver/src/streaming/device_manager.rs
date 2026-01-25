@@ -44,8 +44,6 @@ pub struct GlobalStatistics {
     pub frames_processed: u64,
     pub frames_error: u64,
     pub checksum_error_count: u64,
-    pub sequence_error_count: u64,
-    pub buffer_full_count: u64,
 }
 
 impl GlobalStatistics {
