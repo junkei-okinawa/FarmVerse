@@ -37,15 +37,23 @@ impl NetworkManager {
             },
         ))?;
         
+        info!("WiFi設定完了。起動待機(1s)...");
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(1000); // 突入電流分散待機 1
+        
         wifi.start()?;
-        info!("WiFiがESP-NOW用にSTAモードで起動しました。");
+        info!("WiFiがESP-NOW用にSTAモードで起動しました。RF安定化待機(1s)...");
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(1000); // 突入電流分散待機 2
 
         // WiFi送信パワーを設定（省電力化）
         unsafe {
             let power_quarter_dbm = (wifi_tx_power_dbm * 4) as i8;
-            esp_idf_svc::sys::esp_wifi_set_max_tx_power(power_quarter_dbm);
+            let err = esp_idf_svc::sys::esp_wifi_set_max_tx_power(power_quarter_dbm);
+            if err != esp_idf_svc::sys::ESP_OK {
+                log::warn!("WiFi送信パワーの設定に失敗しました (エラーコード: {})", err);
+            }
         }
-        info!("WiFi送信パワーを {}dBm に設定しました", wifi_tx_power_dbm);
+        info!("WiFi送信パワーを {}dBm に設定しました。適用待機(1s)...", wifi_tx_power_dbm);
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(1000); // 突入電流分散待機 3
 
         // WiFi状態の詳細確認
         let wifi_status = wifi.is_started();
