@@ -379,11 +379,12 @@ impl StreamingController {
     /// 統計レポートを出力
     fn report_statistics(&self) {
         let device_count = self.device_manager.device_count();
+        let observed_count = self.device_manager.observed_device_count();
         let buffer_usage = self.device_manager.total_buffer_usage();
         let global_stats = self.device_manager.global_statistics();
         
         info!("=== Streaming Statistics ===");
-        info!("Active devices: {}", device_count);
+        info!("Devices: {} (Registered), {} (Observed)", device_count, observed_count);
         info!("Frames received: {}", global_stats.frames_received);
         info!("Frames processed: {}", global_stats.frames_processed);
         info!("Frame success rate: {:.1}%", global_stats.success_rate());
