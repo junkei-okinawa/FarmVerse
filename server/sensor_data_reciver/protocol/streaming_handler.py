@@ -13,9 +13,9 @@ from typing import Dict
 from .constants import (
     START_MARKER, END_MARKER, FRAME_TYPE_HASH, FRAME_TYPE_DATA, FRAME_TYPE_EOF,
     MAC_ADDRESS_LENGTH, FRAME_TYPE_LENGTH, SEQUENCE_NUM_LENGTH, LENGTH_FIELD_BYTES,
-    CHECKSUM_LENGTH, HEADER_LENGTH
+    CHECKSUM_LENGTH, HEADER_LENGTH, FOOTER_LENGTH
 )
-from .frame_parser import FrameParser, FrameSyncError
+from .frame_parser import FrameParser
 
 # 絶対インポートを使用
 import sys
@@ -341,7 +341,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 
                 # ヘッダー長
                 header_len = HEADER_LENGTH
-                footer_len = CHECKSUM_LENGTH + len(END_MARKER)
+                footer_len = FOOTER_LENGTH
                 
                 # データ長チェック（最低限ヘッダー＋データ長＋フッター）
                 required_len = header_len + inner_len + footer_len
