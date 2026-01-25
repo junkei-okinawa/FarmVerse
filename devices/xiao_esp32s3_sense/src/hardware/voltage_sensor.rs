@@ -92,7 +92,7 @@ impl VoltageSensor {
             info!("計算されたパーセンテージ: {} % (設定範囲: {} - {} mV)", result, min_mv, max_mv);
             result
         } else {
-            error!("有効なADCサンプルが取得できませんでした。電圧は255%として扱います。");
+            error!("有効なADCサンプルが取得できませんでした。電圧は測定失敗値 (255 / u8::MAX) として扱います。");
             255
         };
 
