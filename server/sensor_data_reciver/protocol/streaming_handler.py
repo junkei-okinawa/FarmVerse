@@ -366,7 +366,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
                         return
                     elif config.DEBUG_FRAME_PARSING:
                         logger.debug(f"Nested frame candidates failed footer check: expected {END_MARKER.hex()}, got {potential_end_marker.hex()}")
-            except (ValueError, FrameSyncError) as e:
+            except ValueError as e:
                 # パース失敗時は通常のデータとして扱う（偶然START_MARKERと一致した場合など）
                 if config.DEBUG_FRAME_PARSING:
                     logger.debug(f"Failed to unpack nested frame, treating as raw data: {e}")

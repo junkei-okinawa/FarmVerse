@@ -400,11 +400,9 @@ impl StreamingController {
         info!("Max processing time: {}ms", self.stats.max_processing_time_ms);
         
         if global_stats.frames_error > 0 {
-            warn!("Frame errors: {} (Checksum: {}, Sequence: {}, Buffer full: {})",
+            warn!("Frame errors: {} (Checksum: {})",
                   global_stats.frames_error,
-                  global_stats.checksum_error_count,
-                  global_stats.sequence_error_count,
-                  global_stats.buffer_full_count);
+                  global_stats.checksum_error_count);
         }
     }
     
