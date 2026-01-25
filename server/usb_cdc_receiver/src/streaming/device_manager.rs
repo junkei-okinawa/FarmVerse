@@ -87,11 +87,11 @@ impl DeviceStreamManager {
         // ESP-NOWフレームとしてパースを試みる
         // これによりシーケンス番号の抽出とチェックサム検証を行う
         match Frame::from_bytes(data) {
-            Ok((frame, _size)) => {
+            Ok((frame, size)) => {
                 // パース成功
                 let sequence = frame.sequence_number();
                 // 統計更新のみにデータサイズを使用するため、コピーを避ける
-                let frame_len = _size;
+                let frame_len = size;
                 
                 // 統計更新
                 dev_stats.count_frame_processed(frame_len);
@@ -99,7 +99,7 @@ impl DeviceStreamManager {
 
                 let processed_frame = ProcessedFrame {
                     sequence,
-                    full_frame: data[.._size].to_vec(), // Use full frame bytes for USB forwarding
+                    full_frame: data[..size].to_vec(), // Use full frame bytes for USB forwarding
                     mac: mac_address,
                 };
                 

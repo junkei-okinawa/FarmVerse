@@ -5,7 +5,7 @@ mod tests {
     use usb_cdc_receiver::esp_now::frame::calculate_checksum;
 
     // ヘルパー：フレームを作成する
-    fn create_frame(mac: [u8; 6], sequence: u16, payload: &[u8]) -> Vec<u8> {
+    fn create_frame(mac: [u8; 6], sequence: u32, payload: &[u8]) -> Vec<u8> {
         // START_MARKER + MAC + FRAME_TYPE + SEQ + LEN + PAYLOAD + CHECKSUM + END_MARKER
         let mut frame = Vec::new();
         
@@ -21,7 +21,7 @@ mod tests {
         frame.extend_from_slice(&[0xFA, 0xCE, 0xAA, 0xBB]); // START_MARKER
         frame.extend_from_slice(&mac);
         frame.push(FrameType::Data.to_byte());
-        frame.extend_from_slice(&(sequence as u32).to_le_bytes()); // SEQ is u32 in Frame, not u16!
+        frame.extend_from_slice(&sequence.to_le_bytes()); // SEQ is u32 in Frame, not u16!
         frame.extend_from_slice(&(payload.len() as u32).to_le_bytes()); // LEN is u32 in Frame
         frame.extend_from_slice(payload);
         
@@ -51,7 +51,7 @@ mod tests {
         assert_eq!(processed_frames.len(), 1);
         
         let frame = &processed_frames[0];
-        assert_eq!(frame.sequence, sequence as u32);
+        assert_eq!(frame.sequence, sequence);
         assert_eq!(frame.mac, mac);
         assert_eq!(frame.full_frame, frame_bytes); // full_frame にはバイト列全体が入るはず
         
