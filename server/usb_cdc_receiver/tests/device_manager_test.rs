@@ -2,34 +2,28 @@
 mod tests {
     use usb_cdc_receiver::streaming::device_manager::{DeviceStreamManager, StreamManagerConfig};
     use usb_cdc_receiver::esp_now::FrameType;
-    use usb_cdc_receiver::esp_now::frame::calculate_checksum;
+    use usb_cdc_receiver::esp_now::frame::{
+        calculate_checksum, START_MARKER, END_MARKER,
+        MARKER_LEN, MAC_ADDRESS_LEN, FRAME_TYPE_LEN, SEQUENCE_NUM_LEN, DATA_LEN_FIELD_LEN
+    };
 
     // ヘルパー：フレームを作成する
     fn create_frame(mac: [u8; 6], sequence: u32, payload: &[u8]) -> Vec<u8> {
         // START_MARKER + MAC + FRAME_TYPE + SEQ + LEN + PAYLOAD + CHECKSUM + END_MARKER
         let mut frame = Vec::new();
         
-        // frame.rs:
-        // pub const START_MARKER: u32 = 0xFACE_AABB;
-        // let start_marker_bytes = START_MARKER.to_be_bytes();
-        // framed_data.extend_from_slice(&start_marker_bytes);
-        
-        // Let's verify markers from frame.rs
-        // START_MARKER = 0xFACE_AABB (BE) -> [0xFA, 0xCE, 0xAA, 0xBB]
-        // END_MARKER = 0xCDEF_5678 (BE) -> [0xCD, 0xEF, 0x56, 0x78]
-        
-        frame.extend_from_slice(&[0xFA, 0xCE, 0xAA, 0xBB]); // START_MARKER
+        frame.extend_from_slice(&START_MARKER.to_be_bytes());
         frame.extend_from_slice(&mac);
         frame.push(FrameType::Data.to_byte());
-        frame.extend_from_slice(&sequence.to_le_bytes()); // SEQ is u32 in Frame, not u16!
-        frame.extend_from_slice(&(payload.len() as u32).to_le_bytes()); // LEN is u32 in Frame
+        frame.extend_from_slice(&sequence.to_le_bytes());
+        frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         frame.extend_from_slice(payload);
         
         // Checksum is calculated on payload only!
         let checksum = calculate_checksum(payload);
         frame.extend_from_slice(&checksum.to_le_bytes());
         
-        frame.extend_from_slice(&[0xCD, 0xEF, 0x56, 0x78]); // END_MARKER
+        frame.extend_from_slice(&END_MARKER.to_be_bytes());
         frame
     }
 
@@ -76,8 +70,9 @@ mod tests {
         
         // データを改変してチェックサム不整合を起こす
         // ペイロード部分のバイトを変更
-        // HEADER(4+6+1+4+4=19bytes) + PAYLOAD
-        let payload_idx = 19;
+        // HEADER(MARKER + MAC + TYPE + SEQ + LEN) + PAYLOAD
+        let header_len = MARKER_LEN + MAC_ADDRESS_LEN + FRAME_TYPE_LEN + SEQUENCE_NUM_LEN + DATA_LEN_FIELD_LEN;
+        let payload_idx = header_len;
         frame_bytes[payload_idx] = frame_bytes[payload_idx].wrapping_add(1); 
         
         let result = manager.process_data(mac, &frame_bytes);
