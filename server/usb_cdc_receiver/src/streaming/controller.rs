@@ -222,6 +222,9 @@ impl StreamingController {
         // デバイスストリーム管理者でデータを処理
         let processed_frames = self.device_manager.process_data(mac_address, data)?;
         
+        // 基本統計のフレーム処理数を更新
+        self.stats.basic.add_frames_processed(processed_frames.len() as u64);
+
         // 処理されたフレームを即座にUSB CDCに転送
         for frame in &processed_frames {
             match self.transfer_frame_to_usb(&frame, usb_cdc) {
@@ -311,7 +314,7 @@ impl StreamingController {
         let mut retry_count = 0;
         
         loop {
-            match usb_cdc.send_frame(&frame.payload, &mac_str) {
+            match usb_cdc.send_frame(&frame.full_frame, &mac_str) {
                 Ok(bytes_sent) => {
                     if retry_count > 0 {
                         self.stats.count_usb_retry();
@@ -372,29 +375,34 @@ impl StreamingController {
     /// 統計レポートを出力
     fn report_statistics(&self) {
         let device_count = self.device_manager.device_count();
-        let (buffer_used, buffer_total) = self.device_manager.total_buffer_usage();
+        let observed_count = self.device_manager.observed_device_count();
+        let buffer_usage = self.device_manager.total_buffer_usage();
         let global_stats = self.device_manager.global_statistics();
         
         info!("=== Streaming Statistics ===");
-        info!("Active devices: {}", device_count);
+        info!("Devices: {} (Registered), {} (Observed)", device_count, observed_count);
         info!("Frames received: {}", global_stats.frames_received);
         info!("Frames processed: {}", global_stats.frames_processed);
         info!("Frame success rate: {:.1}%", global_stats.success_rate());
         info!("USB transfers: {}", self.stats.usb_transfers);
         info!("USB success rate: {:.1}%", self.stats.usb_success_rate());
         info!("Total bytes transferred: {} bytes", self.stats.basic.bytes_transferred);
-        info!("Buffer usage: {} / {} bytes ({:.1}%)", 
-              buffer_used, buffer_total, 
-              if buffer_total > 0 { (buffer_used as f32 / buffer_total as f32) * 100.0 } else { 0.0 });
+        
+        if let Some((buffer_used, buffer_total)) = buffer_usage {
+            info!("Buffer usage: {} / {} bytes ({:.1}%)", 
+                  buffer_used, buffer_total, 
+                  if buffer_total > 0 { (buffer_used as f32 / buffer_total as f32) * 100.0 } else { 0.0 });
+        } else {
+            info!("Buffer usage: N/A (not tracked)");
+        }
+        
         info!("Average processing time: {:.2}ms", self.stats.average_processing_time_ms());
         info!("Max processing time: {}ms", self.stats.max_processing_time_ms);
         
         if global_stats.frames_error > 0 {
-            warn!("Frame errors: {} (Checksum: {}, Sequence: {}, Buffer full: {})",
+            warn!("Frame errors: {} (Checksum: {})",
                   global_stats.frames_error,
-                  global_stats.checksum_error_count,
-                  global_stats.sequence_error_count,
-                  global_stats.buffer_full_count);
+                  global_stats.checksum_error_count);
         }
     }
     

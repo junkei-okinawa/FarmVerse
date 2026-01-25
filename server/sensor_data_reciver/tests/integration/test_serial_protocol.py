@@ -79,8 +79,8 @@ class TestSerialProtocolIntegration:
             START_MARKER +
             mac_bytes +
             bytes([FRAME_TYPE_HASH]) +
-            seq_num.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="big") +
-            data_len.to_bytes(LENGTH_FIELD_BYTES, byteorder="big") +
+            seq_num.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+            data_len.to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
             payload_bytes +
             b'\x00' * CHECKSUM_LENGTH +  # チェックサムはdummyでOK
             END_MARKER
@@ -133,8 +133,8 @@ class TestSerialProtocolIntegration:
             START_MARKER +
             mac_bytes +
             bytes([FRAME_TYPE_DATA]) +
-            seq_num_data.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="big") +
-            data_len_1.to_bytes(LENGTH_FIELD_BYTES, byteorder="big") +
+            seq_num_data.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+            data_len_1.to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
             data_chunk_1 +
             b'\x00' * CHECKSUM_LENGTH +
             END_MARKER
@@ -146,8 +146,8 @@ class TestSerialProtocolIntegration:
             START_MARKER +
             mac_bytes +
             bytes([FRAME_TYPE_DATA]) +
-            (seq_num_data + 1).to_bytes(SEQUENCE_NUM_LENGTH, byteorder="big") +  # シーケンス番号は連続でなくても良い
-            data_len_2.to_bytes(LENGTH_FIELD_BYTES, byteorder="big") +
+            (seq_num_data + 1).to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +  # シーケンス番号は連続でなくても良い
+            data_len_2.to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
             data_chunk_2 +
             b'\x00' * CHECKSUM_LENGTH +
             END_MARKER
@@ -159,8 +159,8 @@ class TestSerialProtocolIntegration:
             START_MARKER +
             mac_bytes +
             bytes([FRAME_TYPE_DATA]) +
-            (seq_num_data + 2).to_bytes(SEQUENCE_NUM_LENGTH, byteorder="big") +
-            data_len_3.to_bytes(LENGTH_FIELD_BYTES, byteorder="big") +
+            (seq_num_data + 2).to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+            data_len_3.to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
             data_chunk_3 +
             b'\x00' * CHECKSUM_LENGTH +
             END_MARKER
@@ -173,8 +173,8 @@ class TestSerialProtocolIntegration:
             START_MARKER +
             mac_bytes +
             bytes([FRAME_TYPE_EOF]) +
-            seq_num_eof.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="big") +
-            data_len_eof.to_bytes(LENGTH_FIELD_BYTES, byteorder="big") +
+            seq_num_eof.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+            data_len_eof.to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
             b'' +  # データなし
             b'\x00' * CHECKSUM_LENGTH +
             END_MARKER

@@ -187,7 +187,7 @@ fn test_usb_data_flow_integration() {
 
     // 2. フレームを解析（esp_now/frame.rsの機能を使用）
     let parsed_frame = Frame::from_bytes(&frame_bytes);
-    assert!(parsed_frame.is_some(), "Frame parsing should succeed");
+    assert!(parsed_frame.is_ok(), "Frame parsing should succeed");
 
     let (parsed, _consumed_bytes) = parsed_frame.unwrap();
     assert_eq!(parsed.mac_address(), &mac);

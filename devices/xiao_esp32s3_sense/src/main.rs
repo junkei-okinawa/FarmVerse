@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     // 必要なピンを先に抽出
     let pins = peripherals.pins;
     let led_pin = pins.gpio21;
-    let voltage_pin = pins.gpio6; // D5
+    let voltage_pin = pins.gpio4; // D3
 
     // RMTチャンネルを分離（温度センサー用）
     let rmt_channel = peripherals.rmt.channel0;
@@ -70,6 +70,28 @@ fn main() -> anyhow::Result<()> {
         peripherals.adc1,
         voltage_pin,
     )?;
+
+    // 低電圧チェック (要件: 3.3V=0%以下ならDeepSleep 10分)
+    // voltage_sensor.rsの実装により、min_mv (3300mV) 以下は 0% となる
+    // また、255 は測定失敗を示すセントネル値として扱う
+    if voltage_percent == 0 || voltage_percent == u8::MAX {
+        warn!(
+            "バッテリー電圧が低下しているか、電圧測定に失敗しました (値: {})。処理をスキップしてDeepSleepに入ります。",
+            voltage_percent
+        );
+        
+        // 安全のためLEDを消灯
+        led.turn_off()?;
+        
+        // 10分間 (600秒) のDeepSleepに入る
+        let sleep_duration = std::time::Duration::from_secs(600);
+        info!("DeepSleepに入ります: {}秒", sleep_duration.as_secs());
+        
+        deep_sleep_controller.sleep_for_duration(sleep_duration.as_secs())?;
+        
+        // DeepSleepに入るとここには戻らない
+        return Ok(());
+    }
 
     info!("設定されている受信先MAC: {}", app_config.receiver_mac);
     info!("設定されているスリープ時間: {}秒", app_config.sleep_duration_seconds);

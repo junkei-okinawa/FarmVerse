@@ -11,6 +11,13 @@ use super::FrameType;
 pub const START_MARKER: u32 = 0xFACE_AABB; // フレーム開始マーカー
 pub const END_MARKER: u32 = 0xCDEF_5678;   // フレーム終了マーカー
 
+pub const MARKER_LEN: usize = 4;
+pub const MAC_ADDRESS_LEN: usize = 6;
+pub const FRAME_TYPE_LEN: usize = 1;
+pub const SEQUENCE_NUM_LEN: usize = 4;
+pub const DATA_LEN_FIELD_LEN: usize = 4;
+pub const CHECKSUM_LEN: usize = 4;
+
 /// ESP-NOWフレームの構造
 /// 
 /// フレーム構造:
@@ -27,6 +34,17 @@ pub struct Frame {
     frame_type: FrameType,
     sequence_number: u32,
     data: Vec<u8>,
+}
+
+/// フレーム解析エラー
+#[derive(Debug, PartialEq)]
+pub enum FrameParseError {
+    TooShort,
+    InvalidStartMarker(u32),
+    InvalidEndMarker(u32),
+    InvalidFrameType(u8),
+    InvalidChecksum { expected: u32, actual: u32 },
+    DataLengthExceedsBuffer { offset: usize, data_len: usize, buffer_len: usize },
 }
 
 impl Frame {
@@ -64,14 +82,14 @@ impl Frame {
         let checksum_bytes = calculate_checksum(&self.data).to_le_bytes(); // little-endian
 
         // フレームの合計長を計算
-        let total_frame_len = start_marker_bytes.len() + // 開始マーカー: 4バイト
-            self.mac_address.len() +      // MACアドレス: 6バイト
-            1 +                    // フレームタイプ: 1バイト
-            seq_bytes.len() +      // シーケンス番号: 4バイト
-            data_len_bytes.len() + // データ長: 4バイト
+        let total_frame_len = MARKER_LEN + // 開始マーカー: 4バイト
+            MAC_ADDRESS_LEN +      // MACアドレス: 6バイト
+            FRAME_TYPE_LEN +       // フレームタイプ: 1バイト
+            SEQUENCE_NUM_LEN +     // シーケンス番号: 4バイト
+            DATA_LEN_FIELD_LEN +   // データ長: 4バイト
             self.data.len() +     // 実データ: 可変長
-            checksum_bytes.len() + // チェックサム: 4バイト
-            end_marker_bytes.len(); // 終了マーカー: 4バイト
+            CHECKSUM_LEN +         // チェックサム: 4バイト
+            MARKER_LEN;            // 終了マーカー: 4バイト
 
         let mut framed_data = Vec::with_capacity(total_frame_len);
 
@@ -91,13 +109,13 @@ impl Frame {
     /// バイトデータからフレームを解析します
     /// 
     /// # 戻り値
-    /// * `Option<(Self, usize)>` - 解析に成功した場合はフレームと使用したバイト数のタプル、失敗した場合はNone
-    pub fn from_bytes(data: &[u8]) -> Option<(Self, usize)> {
+    /// * `Result<(Self, usize), FrameParseError>` - 解析に成功した場合はフレームと使用したバイト数のタプル、失敗した場合はエラー
+    pub fn from_bytes(data: &[u8]) -> Result<(Self, usize), FrameParseError> {
         // 最小フレームサイズをチェック
-        const MIN_FRAME_SIZE: usize = 4 + 6 + 1 + 4 + 4 + 0 + 4 + 4; // 27バイト
+        const MIN_FRAME_SIZE: usize = MARKER_LEN + MAC_ADDRESS_LEN + FRAME_TYPE_LEN + SEQUENCE_NUM_LEN + DATA_LEN_FIELD_LEN + CHECKSUM_LEN + MARKER_LEN;
         if data.len() < MIN_FRAME_SIZE {
             debug!("Frame data too short: {} bytes", data.len());
-            return None;
+            return Err(FrameParseError::TooShort);
         }
 
         // 開始マーカーのチェック
@@ -105,14 +123,14 @@ impl Frame {
         let start_marker = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
         if start_marker != START_MARKER {
             debug!("Invalid start marker: {:08x}", start_marker);
-            return None;
+            return Err(FrameParseError::InvalidStartMarker(start_marker));
         }
-        offset += 4;
+        offset += MARKER_LEN;
 
         // MACアドレスの抽出
         let mut mac_address = [0u8; 6];
-        mac_address.copy_from_slice(&data[offset..offset + 6]);
-        offset += 6;
+        mac_address.copy_from_slice(&data[offset..offset + MAC_ADDRESS_LEN]);
+        offset += MAC_ADDRESS_LEN;
 
         // フレームタイプの解析
         let frame_type_byte = data[offset];
@@ -120,10 +138,10 @@ impl Frame {
             Some(frame_type) => frame_type,
             None => {
                 debug!("Invalid frame type: {}", frame_type_byte);
-                return None;
+                return Err(FrameParseError::InvalidFrameType(frame_type_byte));
             }
         };
-        offset += 1;
+        offset += FRAME_TYPE_LEN;
 
         // シーケンス番号の解析 (little-endian)
         let sequence_number = u32::from_le_bytes([
@@ -132,7 +150,7 @@ impl Frame {
             data[offset + 2],
             data[offset + 3],
         ]);
-        offset += 4;
+        offset += SEQUENCE_NUM_LEN;
 
         // データ長の解析 (little-endian)
         let data_len = u32::from_le_bytes([
@@ -141,21 +159,31 @@ impl Frame {
             data[offset + 2],
             data[offset + 3],
         ]) as usize;
-        offset += 4;
+        offset += DATA_LEN_FIELD_LEN;
 
-        // データ長のバリデーション
-        if offset + data_len + 8 > data.len() {
+        // データ長のバリデーション (オーバーフローチェック付き)
+        // required_len = offset + data_len + CHECKSUM_LEN + MARKER_LEN
+        let required_len = offset
+            .checked_add(data_len)
+            .and_then(|l| l.checked_add(CHECKSUM_LEN))
+            .and_then(|l| l.checked_add(MARKER_LEN));
+
+        if required_len.map_or(true, |len| len > data.len()) {
             debug!(
                 "Data length exceeds buffer: offset={}, data_len={}, buffer={}",
                 offset,
                 data_len,
                 data.len()
             );
-            return None;
+            return Err(FrameParseError::DataLengthExceedsBuffer {
+                offset,
+                data_len,
+                buffer_len: data.len(),
+            });
         }
 
-        // データの抽出
-        let payload_data = data[offset..offset + data_len].to_vec();
+        // データのスライス取得（チェックサム検証前の不要なアロケーションを避けるため）
+        let payload_slice = &data[offset..offset + data_len];
         offset += data_len;
 
         // チェックサムの検証 (little-endian)
@@ -165,15 +193,21 @@ impl Frame {
             data[offset + 2],
             data[offset + 3],
         ]);
-        let actual_checksum = calculate_checksum(&payload_data);
+        let actual_checksum = calculate_checksum(payload_slice);
         if expected_checksum != actual_checksum {
             debug!(
                 "Checksum mismatch: expected={:08x}, actual={:08x}",
                 expected_checksum, actual_checksum
             );
-            return None;
+            return Err(FrameParseError::InvalidChecksum {
+                expected: expected_checksum,
+                actual: actual_checksum,
+            });
         }
-        offset += 4;
+        offset += CHECKSUM_LEN;
+
+        // チェックサム検証成功後にベクタを作成
+        let payload_data = payload_slice.to_vec();
 
         // 終了マーカーの検証
         let end_marker = u32::from_be_bytes([
@@ -184,9 +218,9 @@ impl Frame {
         ]);
         if end_marker != END_MARKER {
             debug!("Invalid end marker: {:08x}", end_marker);
-            return None;
+            return Err(FrameParseError::InvalidEndMarker(end_marker));
         }
-        offset += 4;
+        offset += MARKER_LEN;
 
         // フレームオブジェクトの作成
         let frame = Frame {
@@ -196,7 +230,7 @@ impl Frame {
             data: payload_data,
         };
 
-        Some((frame, offset))
+        Ok((frame, offset))
     }
 
     /// MACアドレスを取得

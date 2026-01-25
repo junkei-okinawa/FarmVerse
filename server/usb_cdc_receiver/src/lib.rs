@@ -18,7 +18,8 @@ pub mod config;
 #[cfg(feature = "esp")]
 pub mod queue;
 
-#[cfg(feature = "esp")]
+// streaming モジュール内の device_manager はロジックのみなのでホストテストでも有効化したい
+// そのため、streaming モジュール自体は常に有効化し、内部で制御する
 pub mod streaming;
 
 #[cfg(feature = "esp")]
