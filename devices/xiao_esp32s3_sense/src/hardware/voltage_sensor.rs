@@ -50,7 +50,7 @@ impl VoltageSensor {
     /// # Returns
     /// - (電圧パーセンテージ, ADC1): 測定結果とADC1の所有権
     ///   - 電圧パーセンテージ: 通常は 0–100 の値を取り、`255` は測定に失敗したことを示します
-    pub fn measure_voltage_percentage<T: esp_idf_svc::hal::gpio::ADCPin>(
+    pub fn measure_voltage_percentage<T: esp_idf_svc::hal::gpio::ADCPin<Adc = ADC1>>(
         mut adc: ADC1,
         gpio_pin: T,
     ) -> anyhow::Result<(u8, ADC1)> {

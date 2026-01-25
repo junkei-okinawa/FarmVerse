@@ -52,6 +52,9 @@ fn main() -> anyhow::Result<()> {
     // ステータスLEDの初期化
     let mut led = StatusLed::new(led_pin)?;
     led.turn_off()?;
+    
+    // 起動成功 (LED 1回点滅)
+    led.blink_count(1)?;
 
     // ディープスリープコントローラーの初期化
     let deep_sleep_controller = DeepSleep::new(EspIdfDeepSleep);
@@ -70,11 +73,12 @@ fn main() -> anyhow::Result<()> {
         peripherals.adc1,
         voltage_pin,
     )?;
-
-    // 低電圧チェック (要件: 3.3V=0%以下ならDeepSleep 10分)
-    // voltage_sensor.rsの実装により、min_mv (3300mV) 以下は 0% となる
+    
+    // 低電圧チェック (要件: 3.5v以下ならDeepSleep 10分)
+    // 3.5v以下の場合WiFi初期化で失敗するため、後続処理が対応不可とみなす。
+    // voltage_sensor.rsの実装により、3500mV以下は 30%以下 となる
     // また、255 は測定失敗を示すセントネル値として扱う
-    if voltage_percent == 0 || voltage_percent == u8::MAX {
+    if voltage_percent <= 30 || voltage_percent == u8::MAX {
         warn!(
             "バッテリー電圧が低下しているか、電圧測定に失敗しました (値: {})。処理をスキップしてDeepSleepに入ります。",
             voltage_percent
@@ -198,7 +202,7 @@ fn main() -> anyhow::Result<()> {
     if !measured_data.sensor_warnings.is_empty() {
         warn!("センサー警告: {:?}", measured_data.sensor_warnings);
     }
-
+    
     // カメラ用ピンの準備
     let camera_pins = CameraPins::new(
         pins.gpio10, // clock
@@ -218,25 +222,28 @@ fn main() -> anyhow::Result<()> {
     );
 
     // 画像キャプチャ（電圧に基づく条件付き）
+    info!("📷 カメラ処理を開始します（WiFi OFF、電力節約モード）");
     let image_data = DataService::capture_image_if_voltage_sufficient(
         voltage_percent,
         camera_pins,
         &app_config,
         &mut led,
     )?;
-
+    info!("✓ カメラ処理完了、画像データをメモリに保存しました");
+    
     // 画像データを測定データに追加
     measured_data.image_data = image_data;
 
-    // 測定データの送信
-    info!("データ送信タスクを開始します");
-    info!("送信データサマリ: {}", measured_data.get_summary());
+    // カメラ処理完了、WiFi初期化準備
+    info!("=== カメラ処理完了、WiFi初期化を開始します ===");
+    info!("現在のバッテリー電圧: {}%", voltage_percent);
 
-    // ネットワーク（WiFi）初期化
+    // ネットワーク（WiFi）初期化（カメラシャットダウン後に実行 = 電力ピーク分散）
     let _wifi_connection = NetworkManager::initialize_wifi_for_esp_now(
         peripherals.modem,
         &sysloop,
         &nvs_partition,
+        app_config.wifi_tx_power_dbm,
     ).map_err(|e| {
         if let Err(sleep_err) = AppController::fallback_sleep(
             &deep_sleep_controller,
@@ -247,6 +254,14 @@ fn main() -> anyhow::Result<()> {
         }
         e
     })?;
+    info!("✓ WiFi初期化完了");
+    
+    // WiFi初期化完了 (LED 3回点滅)
+    led.blink_count(3)?;
+
+    // 測定データの送信
+    info!("データ送信タスクを開始します");
+    info!("送信データサマリ: {}", measured_data.get_summary());
 
     // ESP-NOW初期化（WiFi初期化完了後）
     info!("ESP-NOWセンダーを初期化中...");

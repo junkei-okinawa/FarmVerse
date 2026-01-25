@@ -94,6 +94,27 @@ impl StatusLed {
         FreeRtos::delay_ms(100);
         self.turn_off()
     }
+
+    /// 指定回数点滅させる
+    /// 
+    /// 処理段階を可視化するために使用
+    /// 
+    /// # 引数
+    /// * `count` - 点滅回数（処理段階の番号）
+    /// * `wait_after` - 点滅後に3秒待機するか（段階区切り用）
+    /// 
+    /// # パターン
+    /// 各点滅: 200ms ON + 200ms OFF
+    pub fn blink_count(&mut self, count: u8) -> Result<(), LedError> {
+        for _ in 0..count {
+            self.turn_on()?;
+            FreeRtos::delay_ms(200);  // 200ms ON
+            self.turn_off()?;
+            FreeRtos::delay_ms(200);  // 200ms OFF
+        }
+        
+        Ok(())
+    }
 }
 
 #[cfg(test)]
