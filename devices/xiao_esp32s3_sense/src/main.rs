@@ -87,7 +87,7 @@ fn main() -> anyhow::Result<()> {
         let sleep_duration = std::time::Duration::from_secs(600);
         info!("DeepSleepに入ります: {}秒", sleep_duration.as_secs());
         
-        deep_sleep_controller.sleep_for_duration(sleep_duration.as_secs());
+        deep_sleep_controller.sleep_for_duration(sleep_duration.as_secs())?;
         
         // DeepSleepに入るとここには戻らない
         return Ok(());
