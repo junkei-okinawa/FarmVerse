@@ -44,6 +44,10 @@ impl StreamingStatistics {
          self.frames_processed += 1;
          self.bytes_transferred += bytes as u64;
     }
+
+    pub fn add_frames_processed(&mut self, count: u64) {
+        self.frames_processed += count;
+    }
 }
 
 pub type StreamingResult<T> = Result<T, StreamingError>;
