@@ -182,8 +182,8 @@ impl Frame {
             });
         }
 
-        // データの抽出
-        let payload_data = data[offset..offset + data_len].to_vec();
+        // データのスライス取得（チェックサム検証前の不要なアロケーションを避けるため）
+        let payload_slice = &data[offset..offset + data_len];
         offset += data_len;
 
         // チェックサムの検証 (little-endian)
@@ -193,7 +193,7 @@ impl Frame {
             data[offset + 2],
             data[offset + 3],
         ]);
-        let actual_checksum = calculate_checksum(&payload_data);
+        let actual_checksum = calculate_checksum(payload_slice);
         if expected_checksum != actual_checksum {
             debug!(
                 "Checksum mismatch: expected={:08x}, actual={:08x}",
@@ -205,6 +205,9 @@ impl Frame {
             });
         }
         offset += CHECKSUM_LEN;
+
+        // チェックサム検証成功後にベクタを作成
+        let payload_data = payload_slice.to_vec();
 
         // 終了マーカーの検証
         let end_marker = u32::from_be_bytes([
