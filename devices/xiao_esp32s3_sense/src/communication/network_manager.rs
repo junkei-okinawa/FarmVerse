@@ -48,28 +48,19 @@ impl NetworkManager {
         // WiFi送信パワーを設定（省電力化）
         unsafe {
             // ESP-IDF API expects power in 0.25 dBm units (quarter-dBm).
-            // Perform the scaling in a wider integer type to avoid i8 overflow,
-            // then clamp into the valid i8 range before passing to the driver.
+            // config.rsで既に 2-20 dBm にクランプされているため、i16キャスト後の
+            // 8-80 は確実に i8 の範囲 (-128〜127) に収まる。
             let scaled: i16 = i16::from(wifi_tx_power_dbm) * 4;
-            let min_i8 = i16::from(i8::MIN);
-            let max_i8 = i16::from(i8::MAX);
-            
-            if scaled < min_i8 || scaled > max_i8 {
-                log::warn!(
-                    "WiFi送信パワー値が許容範囲外です ({} dBm, 四分の一dBm単位: {}). i8範囲にクランプします。",
-                    wifi_tx_power_dbm,
-                    scaled
-                );
-            }
-            let power_quarter_dbm = scaled.clamp(min_i8, max_i8) as i8;
+            let power_quarter_dbm = scaled as i8;
 
             let err = esp_idf_svc::sys::esp_wifi_set_max_tx_power(power_quarter_dbm);
             if err != esp_idf_svc::sys::ESP_OK {
                 // 送信パワー設定失敗時は、デフォルト値で動作するが、システム自体は停止させない
                 log::warn!("WiFi送信パワーの設定に失敗しました (エラーコード: {}) - デフォルトパワーで動作します", err);
+            } else {
+                info!("WiFi送信パワーを {}dBm に設定しました。適用待機({}ms)...", wifi_tx_power_dbm, wifi_init_delay_ms);
             }
         }
-        info!("WiFi送信パワーを {}dBm に設定しました。適用待機({}ms)...", wifi_tx_power_dbm, wifi_init_delay_ms);
         esp_idf_svc::hal::delay::FreeRtos::delay_ms(wifi_init_delay_ms as u32); // 突入電流分散待機 3
         
         // WiFi状態の詳細確認
