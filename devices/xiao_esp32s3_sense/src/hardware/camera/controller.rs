@@ -270,6 +270,25 @@ impl CameraController {
     pub fn get_current_aec_value(&self) -> i32 {
         self.camera.sensor().aec_value() // sensor.aec_value() -> i32 を使用
     }
+
+    /// カメラドライバを強制停止し、リソースを解放します。
+    ///
+    /// Deep Sleep時の消費電力を抑えるために、明示的に `esp_camera_deinit` を呼び出します。
+    /// 通常のDropよりも確実にカメラ電源ステートを落とすことを目的としています。
+    pub fn force_stop_and_deinit(self) {
+        // selfを消費することでArcをドロップし、Rust側のリソース管理を終了させる
+        drop(self.camera);
+        
+        // 明示的にCのAPIを呼んでドライバを停止
+        unsafe {
+            let err = esp_camera_deinit();
+            if err != 0 {
+                error!("esp_camera_deinit 失敗: {}", err);
+            } else {
+                info!("esp_camera_deinit 成功: カメラドライバを停止しました");
+            }
+        }
+    }
 }
 
 #[cfg(test)]
