@@ -120,8 +120,6 @@ impl Camera {
     }
 }
 
-/// XIAO ESP32S3 Sense用カメラピン設定を取得
-pub fn get_camera_pins() -> CameraPins {
     CameraPins {
         data_pins: [15, 17, 18, 16, 14, 12, 11, 48], // D0-D7
         xclk_pin: 10,
@@ -131,4 +129,51 @@ pub fn get_camera_pins() -> CameraPins {
         sda_pin: 40,
         scl_pin: 39,
     }
+}
+
+/// カメラピンを強制的にリセットし、省電力状態にする
+/// 
+/// Deep Sleep中のリーク電流を防ぐため、全ピンを入力モードにし、
+/// プルダウンを有効化（あるいはフローティング）にします。
+pub fn reset_camera_pins() {
+    let pins = get_camera_pins();
+    
+    unsafe {
+        // ヘルパー関数: ピンをリセットして入力・プルダウン設定
+        let reset_pin = |pin: u8| {
+            esp_idf_sys::gpio_reset_pin(pin as i32);
+            esp_idf_sys::gpio_set_direction(pin as i32, esp_idf_sys::gpio_mode_t_GPIO_MODE_INPUT);
+            esp_idf_sys::gpio_pulldown_en(pin as i32);
+            esp_idf_sys::gpio_pullup_dis(pin as i32);
+        };
+
+        // XCLK (最も重要: クロック発振を止める)
+        reset_pin(pins.xclk_pin);
+        
+        // 同期信号
+        reset_pin(pins.pclk_pin);
+        reset_pin(pins.vsync_pin);
+        reset_pin(pins.href_pin);
+        
+        // データバス
+        for &pin in pins.data_pins.iter() {
+            reset_pin(pin);
+        }
+        
+        // I2C (SDA, SCL)
+        // I2Cラインは通常外部プルアップされているため、ESP32側は入力（Hi-Z）にするのが安全
+        // 下手にプルダウンするとプルアップ抵抗を通じて電流が流れる可能性があるため
+        // I2Cだけはプルダウンせず、単に入力のみとする
+        esp_idf_sys::gpio_reset_pin(pins.sda_pin as i32);
+        esp_idf_sys::gpio_set_direction(pins.sda_pin as i32, esp_idf_sys::gpio_mode_t_GPIO_MODE_INPUT);
+        esp_idf_sys::gpio_pullup_dis(pins.sda_pin as i32);
+        esp_idf_sys::gpio_pulldown_dis(pins.sda_pin as i32);
+
+        esp_idf_sys::gpio_reset_pin(pins.scl_pin as i32);
+        esp_idf_sys::gpio_set_direction(pins.scl_pin as i32, esp_idf_sys::gpio_mode_t_GPIO_MODE_INPUT);
+        esp_idf_sys::gpio_pullup_dis(pins.scl_pin as i32);
+        esp_idf_sys::gpio_pulldown_dis(pins.scl_pin as i32);
+    }
+    
+    log::info!("カメラピンを強制リセットしました（省電力対策）");
 }

@@ -98,6 +98,11 @@ impl DataService {
         let image_data = frame_buffer.data().to_vec();
         info!("画像キャプチャ完了: {} bytes", image_data.len());
 
+        // 使用完了後、即座にカメラを停止して消費電力を削減
+        info!("カメラドライバを停止し、ピンをリセットします...");
+        camera.force_stop_and_deinit();
+        crate::hardware::camera::xiao_esp32s3::reset_camera_pins();
+
         led.turn_off()?;
         Ok(Some(image_data))
     }
