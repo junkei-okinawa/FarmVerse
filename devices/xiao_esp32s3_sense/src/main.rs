@@ -267,6 +267,8 @@ fn main() -> anyhow::Result<()> {
     info!("✓ WiFi初期化完了");
     
     // WiFi初期化完了 (LED 3回点滅 - デバッグモードのみ)
+    // 注意: ここでのLED点滅はブロッキング処理であり、計測サイクル完了までの時間が延びるため電力消費が増加します。
+    // バッテリー駆動の本番運用では debug_mode を false にして、不要なLED点滅による電力消費を避けてください。
     if app_config.debug_mode {
         led.blink_count(3)?;
     }

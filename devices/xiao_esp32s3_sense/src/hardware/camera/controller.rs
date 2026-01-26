@@ -277,7 +277,7 @@ impl CameraController {
     /// 通常のDropよりも確実にカメラ電源ステートを落とすことを目的としています。
     pub fn force_stop_and_deinit(self) {
         // selfを消費することでArcをドロップし、Rust側のリソース管理を終了させる
-        drop(self.camera);
+        // (関数終了時にselfが破棄されるため、明示的なdrop(self.camera)は不要だが、意図を明確にするコメントは残す)
         
         // 明示的にCのAPIを呼んでドライバを停止
         unsafe {
