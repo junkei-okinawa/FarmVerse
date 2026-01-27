@@ -342,6 +342,16 @@ fn main() -> anyhow::Result<()> {
     ) {
         error!("データ送信タスクでエラーが発生しました: {:?}", e);
     }
+    
+    // Deep Sleep準備: すべてのセンサーの電源を確実にオフにする
+    // 注: DropトレイトはDeep Sleep移行時に実行されないため、明示的に呼び出す必要があります
+    info!("Deep Sleep準備: センサーの電源をオフにします...");
+    if let Some(mut sensor) = temp_sensor {
+        let _ = sensor.power_off();
+    }
+    if let Some(mut sensor) = ec_tds_sensor {
+        let _ = sensor.power_off();
+    }
 
     // LEDをオフにする
     led.turn_off()?;
