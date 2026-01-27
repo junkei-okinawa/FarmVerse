@@ -120,6 +120,8 @@ impl Camera {
     }
 }
 
+/// XIAO ESP32S3 Sense用カメラピン設定を取得
+pub fn get_camera_pins() -> CameraPins {
     CameraPins {
         data_pins: [15, 17, 18, 16, 14, 12, 11, 48], // D0-D7
         xclk_pin: 10,
