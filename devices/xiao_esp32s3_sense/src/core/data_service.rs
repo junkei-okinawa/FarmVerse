@@ -98,6 +98,10 @@ impl DataService {
         let image_data = frame_buffer.data().to_vec();
         info!("画像キャプチャ完了: {} bytes", image_data.len());
 
+        // FrameBufferはCameraへの借用を保持している可能性があるため、
+        // カメラドライバを停止する前に明示的にドロップする
+        drop(frame_buffer);
+
         // 使用完了後、即座にカメラを停止して消費電力を削減
         info!("カメラドライバを停止し、ピンをリセットします...");
         camera.force_stop_and_deinit();
