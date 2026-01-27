@@ -66,12 +66,28 @@ impl TempSensor {
             }
         };
 
-        Ok(Self {
+        let mut sensor_obj = Self {
             sensor,
             power_pin,
             data_pin,
             temperature_offset,
-        })
+        };
+
+        // 初期状態は電源OFFにしておく
+        let _ = sensor_obj.power_off();
+
+        Ok(sensor_obj)
+    }
+
+    /// センサーの電源を強制的にOFFにする
+    /// 
+    /// Deep Sleep移行前などに呼び出します。
+    pub fn power_off(&mut self) -> Result<()> {
+        if let Some(ref mut sensor) = self.sensor {
+            info!("温度センサーの電源をOFFにします (GPIO{})", self.power_pin);
+            sensor.power_off()?;
+        }
+        Ok(())
     }
 
     /// 温度を測定

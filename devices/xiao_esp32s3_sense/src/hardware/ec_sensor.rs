@@ -116,13 +116,29 @@ impl EcTdsSensor {
             }
         };
 
-        Ok(Self {
+        let mut sensor_obj = Self {
             sensor,
             power_pin_number,
             adc_pin_number,
             tds_factor,
             temp_coefficient,
-        })
+        };
+
+        // 初期状態は電源OFFにしておく
+        let _ = sensor_obj.power_off();
+
+        Ok(sensor_obj)
+    }
+
+    /// センサーの電源を強制的にOFFにする
+    /// 
+    /// Deep Sleep移行前などに呼び出します。
+    pub fn power_off(&mut self) -> Result<()> {
+        if let Some(ref mut sensor) = self.sensor {
+            info!("EC/TDSセンサーの電源をOFFにします (GPIO{})", self.power_pin_number);
+            sensor.power_off()?;
+        }
+        Ok(())
     }
 
     /// EC/TDSセンサーからADC値を取得し電圧変換して値を返す
@@ -138,6 +154,8 @@ impl EcTdsSensor {
             // センサーが安定するまで少し待つ
             FreeRtos::delay_ms(50);  // 最小限の安定化時間
             let avg_adc = sensor.read_adc_averaged(sample_count, delay_ms);
+            
+            // 電源を確実にOFFにする (エラー時も)
             let _ = sensor.power_off();
             let adc_value = match avg_adc {
                 Ok(val) => val,
