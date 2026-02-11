@@ -6,8 +6,11 @@ pub mod receiver;
 pub mod frame;
 /// フレームエンコード/チェックサム共通ロジック
 pub mod frame_codec;
+/// 送信リトライポリシー
+pub mod retry_policy;
 
 pub use sender::*;
 pub use receiver::*;
 pub use frame::*;
 pub use frame_codec::*;
+pub use retry_policy::*;
