@@ -4,7 +4,10 @@ pub mod sender;
 pub mod receiver;
 /// フレーム処理モジュール
 pub mod frame;
+/// フレームエンコード/チェックサム共通ロジック
+pub mod frame_codec;
 
 pub use sender::*;
 pub use receiver::*;
 pub use frame::*;
+pub use frame_codec::*;

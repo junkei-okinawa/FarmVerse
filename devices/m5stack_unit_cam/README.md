@@ -240,6 +240,14 @@ cargo espflash flash --release --port /dev/tty.usbserial-xxxxxxxx --monitor --pa
 - **電圧監視**: ADC電圧8%以下で撮影スキップ
 - **ハッシュ検証**: データ整合性確認
 
+### ホストユニットテスト（ESP-IDF非依存）
+ESP-IDFビルドを伴わずに、ストリーミングフレームの構造とチェックサムを検証できます。
+
+```bash
+cd host_frame_tests
+cargo test
+```
+
 ### トラブルシューティング
 
 | 問題 | 原因 | 解決方法 |
