@@ -29,6 +29,11 @@ pub use power::{DeepSleep, DeepSleepError};
 /// ライブラリのバージョン情報
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// libstart feature expects the root crate to provide a main symbol.
+#[cfg(all(test, target_os = "none"))]
+#[no_mangle]
+pub extern "C" fn main() {}
+
 #[cfg(test)]
 mod tests {
     /// テスト用のモジュール
