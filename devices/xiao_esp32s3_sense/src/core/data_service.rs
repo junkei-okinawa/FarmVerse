@@ -1,11 +1,10 @@
 use esp_idf_svc::hal::delay::FreeRtos;
 use log::{error, info, warn};
-use chrono::{DateTime, NaiveDateTime, Utc};
 
 use crate::communication::esp_now::EspNowSender;
 use crate::config::AppConfig;
 use crate::core::MeasuredData;
-use crate::hardware::camera::{CameraController, CamConfig};
+use crate::hardware::camera::{CameraController, CamConfig, reset_camera_pins};
 use crate::hardware::led::StatusLed;
 
 /// 低電圧閾値（パーセンテージ）
@@ -94,18 +93,24 @@ impl DataService {
             FreeRtos::delay_ms(1000);
         }
 
-        let frame_buffer = camera.capture_image()?;
-        let image_data = frame_buffer.data().to_vec();
+        let image_data = {
+            let frame_buffer = camera.capture_image()?;
+            frame_buffer.data().to_vec()
+        };
         info!("画像キャプチャ完了: {} bytes", image_data.len());
 
-        // FrameBufferはCameraへの借用を保持している可能性があるため、
-        // カメラドライバを停止する前に明示的にドロップする
-        drop(frame_buffer);
+        // [CASE 4] カメラをソフトウェアスタンバイモードに移行
+        // PWDNピンがないため、SCCB経由でスリープ命令を送る必要がある
+        if let Err(e) = camera.standby() {
+            warn!("カメラのスタンバイ移行に失敗しました: {:?}", e);
+        }
 
-        // 使用完了後、即座にカメラを停止して消費電力を削減
-        info!("カメラドライバを停止し、ピンをリセットします...");
-        camera.force_stop_and_deinit();
-        crate::hardware::camera::xiao_esp32s3::reset_camera_pins();
+        // 明示的にControllerをドロップしてカメラドライバを解放する（Dropトレイトでdeinitされる）
+        drop(camera);
+        
+        // [CASE 3] カメラピンをプルダウン状態にリセットしてリークを遮断
+        // Light Sleep復帰時のホールド解除処理を追加したため有効化
+        reset_camera_pins();
 
         led.turn_off()?;
         Ok(Some(image_data))
@@ -164,7 +169,7 @@ impl DataService {
         // HASHフレームを送信（サーバーがスリープコマンドを送信するために必要）
         // 取得失敗の場合はダミー値 1900/01/01 00:00:00.000 を使用
         let current_time = chrono::Utc::now().timestamp();
-        let datetime: DateTime<Utc> = chrono::DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(current_time, 0), Utc);
+        let datetime = chrono::DateTime::from_timestamp(current_time, 0).unwrap_or_default();
         let formatted_time = datetime.format("%Y/%m/%d %H:%M:%S%.3f").to_string();
 
         match esp_now_sender.send_hash_frame(
@@ -192,7 +197,7 @@ impl DataService {
                 
                 // EOFマーカーが確実にサーバーに届くまで追加待機
                 info!("EOFマーカー最終配信確認のため追加待機中...");
-                esp_idf_svc::hal::delay::FreeRtos::delay_ms(1000); // 1秒待機（改修前相当）
+                esp_idf_svc::hal::delay::FreeRtos::delay_ms(200);
                 info!("EOFマーカー送信プロセス完全完了");
             }
             Err(e) => {

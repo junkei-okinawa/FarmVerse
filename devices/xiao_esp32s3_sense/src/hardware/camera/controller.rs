@@ -271,23 +271,45 @@ impl CameraController {
         self.camera.sensor().aec_value() // sensor.aec_value() -> i32 を使用
     }
 
-    /// カメラドライバを強制停止し、リソースを解放します。
+    /// カメラモジュールをソフトウェアスタンバイモードに移行させます
     ///
-    /// Deep Sleep時の消費電力を抑えるために、明示的に `esp_camera_deinit` を呼び出します。
-    /// 通常のDropよりも確実にカメラ電源ステートを落とすことを目的としています。
-    pub fn force_stop_and_deinit(self) {
-        // selfを消費することでArcをドロップし、Rust側のリソース管理を終了させる
-        // (関数終了時にselfが破棄されるため、明示的なdrop(self.camera)は不要だが、意図を明確にするコメントは残す)
+    /// PWDNピンがないXIAO ESP32S3 Senseでは、物理的に電源を切断できないため、
+    /// SCCB(I2C)経由でスリープコマンドを送る必要があります。
+    ///
+    /// 注意: COM2 Bit4 (Standby mode) は使用しません。
+    /// esp32-camera Issue #672/#101 により、COM2 StandbyはOV2640のSDAラインを
+    /// Lowにロックし、Light Sleep復帰後のI2C再初期化を不可能にします。
+    /// 代わりにCOM7 Sleep（クロック停止）とCLKRC分周のみで省電力化します。
+    pub fn standby(&self) -> Result<(), CameraError> {
+        info!("カメラをソフトウェアスタンバイモードに移行します...");
+        let sensor = self.camera.sensor();
         
-        // 明示的にCのAPIを呼んでドライバを停止
-        unsafe {
-            let err = esp_camera_deinit();
-            if err != 0 {
-                error!("esp_camera_deinit 失敗: {}", err);
-            } else {
-                info!("esp_camera_deinit 成功: カメラドライバを停止しました");
-            }
-        }
+        // === DSPバンク (BANK_SEL=0x00) の省電力設定 ===
+        sensor.set_reg(0xFF, 0xFF, 0x00)
+            .map_err(|e| CameraError::InitFailed(format!("BANK_SEL(DSP)設定エラー: {:?}", e)))?;
+        
+        // R_DVP_SP (0xD3): DVP出力速度制御をクリア
+        let _ = sensor.set_reg(0xD3, 0xFF, 0x00);
+        
+        // === センサーバンク (BANK_SEL=0x01) でスリープモード設定 ===
+        sensor.set_reg(0xFF, 0xFF, 0x01)
+            .map_err(|e| CameraError::InitFailed(format!("BANK_SEL設定エラー: {:?}", e)))?;
+        
+        // ⚠️ COM2 (0x09) Standby mode は使用禁止
+        // Issue: https://github.com/espressif/esp32-camera/issues/672
+        // COM2 Bit4=1 はSDAラインをLowにロックし、復帰にpower-cycleが必要になる
+        
+        // CLKRC (0x11): 内部クロック分周器を最大に設定して消費電力を削減
+        let _ = sensor.set_reg(0x11, 0x3F, 0x3F);
+        
+        // COM7 (0x12) Bit[4]: Sleep mode (System clock & OSC/PLL disable)
+        // set_reg(reg, mask, value) は RMW 動作: reg = (reg & ~mask) | (value & mask)
+        // COM7 SleepはSDAをロックしないため、Light Sleep復帰後も再初期化可能
+        sensor.set_reg(0x12, 0x10, 0x10)
+             .map_err(|e| CameraError::InitFailed(format!("スリープモード移行エラー: {:?}", e)))?;
+            
+        info!("✓ カメラはスリープモード(COM7 Bit4=1, CLKRC分周)に移行しました");
+        Ok(())
     }
 }
 

@@ -12,7 +12,7 @@ pub mod ov2640;
 pub mod xiao_esp32s3;
 
 // Re-export main types
-pub use xiao_esp32s3::{Camera, CameraPins, Resolution}; // テストで使用
+pub use xiao_esp32s3::{Camera, CameraPins, Resolution, reset_camera_pins, get_camera_pins}; // テストで使用
 pub use config::*;
 pub use controller::*;
 

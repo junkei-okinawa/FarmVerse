@@ -28,7 +28,7 @@ opt-level = "z"
 
 [dependencies]
 anyhow = "1.0"
-log = "0.4"
+log = { version = "0.4", features = ["max_level_off"] }
 toml-cfg = "=0.2"
 esp-idf-svc = "0.51.0"
 esp-idf-sys = "0.36"
@@ -38,14 +38,14 @@ thiserror = "2.0.12"
 chrono = "0.4.41"
 chrono-tz = "0.10.3"
 
-# esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git" }
+# esp-camera-rs = { git = "../../sensors/esp-camera-rs" }
 esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git", branch = "feature/devices/esp32s3-sense" }
 
 # センサーライブラリの追加
-esp-ec-sensor = { path = "../../sensors/esp-ec-sensor" }
-# esp-ec-sensor = { git = "https://github.com/junkei-okinawa/esp-ec-sensor" }
-simple_ds18b20_temp_sensor = { path = "../../sensors/esp-temp-sensor" }
-# simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor" }
+# esp-ec-sensor = { path = "../../sensors/esp-ec-sensor" }
+esp-ec-sensor = { git = "https://github.com/junkei-okinawa/esp-ec-sensor" }
+# simple_ds18b20_temp_sensor = { path = "../../sensors/esp-temp-sensor" }
+simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor" }
 esp-idf-hal = "0.45.2"
 serde = { version = "1.0", features = ["derive"] }
 
