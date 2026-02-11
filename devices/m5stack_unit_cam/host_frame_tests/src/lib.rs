@@ -1,9 +1,13 @@
 #![allow(dead_code)]
 
+extern crate thiserror;
+
 #[path = "../../src/communication/esp_now/frame_codec.rs"]
 mod frame_codec;
 #[path = "../../src/communication/esp_now/frame.rs"]
 mod frame;
+#[path = "../../src/core/config_validation.rs"]
+mod config_validation;
 #[path = "../../src/core/domain_logic.rs"]
 mod domain_logic;
 #[path = "../../src/mac_address.rs"]
@@ -11,6 +15,10 @@ mod mac_address;
 
 #[cfg(test)]
 mod tests {
+    use super::config_validation::{
+        parse_camera_warmup_frames, parse_receiver_mac, parse_target_minute_last_digit,
+        parse_target_second_tens_digit, validate_wifi_ssid, ValidationError,
+    };
     use super::domain_logic::{resolve_sleep_duration_seconds, voltage_to_percentage};
     use super::frame::ImageFrame;
     use super::frame_codec::{
@@ -151,5 +159,52 @@ mod tests {
             hash,
             "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9"
         );
+    }
+
+    #[test]
+    fn parse_receiver_mac_rejects_placeholder() {
+        let err = parse_receiver_mac("11:22:33:44:55:66").unwrap_err();
+        assert_eq!(err, ValidationError::MissingReceiverMac);
+    }
+
+    #[test]
+    fn parse_receiver_mac_accepts_valid_value() {
+        let mac = parse_receiver_mac("00:11:22:33:44:55").unwrap();
+        assert_eq!(mac.to_string(), "00:11:22:33:44:55");
+    }
+
+    #[test]
+    fn parse_camera_warmup_frames_returns_none_for_255() {
+        assert_eq!(parse_camera_warmup_frames(255).unwrap(), None);
+    }
+
+    #[test]
+    fn parse_camera_warmup_frames_rejects_large_value() {
+        let err = parse_camera_warmup_frames(11).unwrap_err();
+        assert_eq!(err, ValidationError::InvalidCameraWarmupFrames(11));
+    }
+
+    #[test]
+    fn parse_target_digits_support_none_sentinel() {
+        assert_eq!(parse_target_minute_last_digit(255).unwrap(), None);
+        assert_eq!(parse_target_second_tens_digit(255).unwrap(), None);
+    }
+
+    #[test]
+    fn parse_target_digits_reject_out_of_range() {
+        assert_eq!(
+            parse_target_minute_last_digit(10).unwrap_err(),
+            ValidationError::InvalidTargetMinuteLastDigit(10)
+        );
+        assert_eq!(
+            parse_target_second_tens_digit(6).unwrap_err(),
+            ValidationError::InvalidTargetSecondLastDigit(6)
+        );
+    }
+
+    #[test]
+    fn validate_wifi_ssid_rejects_empty() {
+        let err = validate_wifi_ssid("").unwrap_err();
+        assert_eq!(err, ValidationError::MissingWifiSsid);
     }
 }

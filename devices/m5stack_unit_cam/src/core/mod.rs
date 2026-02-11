@@ -1,6 +1,7 @@
 /// コアシステムモジュール
 pub mod app_controller;
 pub mod config;
+pub mod config_validation;
 pub mod data_service;
 pub mod domain_logic;
 pub mod rtc_manager;
