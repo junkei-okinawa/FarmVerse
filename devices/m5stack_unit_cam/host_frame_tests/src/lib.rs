@@ -15,7 +15,8 @@ mod tests {
     use super::frame::ImageFrame;
     use super::frame_codec::{
         build_hash_payload, build_sensor_data_frame, calculate_xor_checksum,
-        safe_initial_payload_size, END_MARKER, ESP_NOW_MAX_SIZE, FRAME_OVERHEAD, START_MARKER,
+        payload_size_candidates, safe_initial_payload_size, END_MARKER, ESP_NOW_MAX_SIZE,
+        FRAME_OVERHEAD, START_MARKER,
     };
     use super::mac_address::MacAddress;
 
@@ -63,6 +64,12 @@ mod tests {
     fn payload_size_keeps_small_value() {
         let kept = safe_initial_payload_size(120);
         assert_eq!(kept, 120);
+    }
+
+    #[test]
+    fn payload_size_candidates_are_ordered_fallbacks() {
+        let candidates = payload_size_candidates(999);
+        assert_eq!(candidates, [223, 150, 100, 50, 30]);
     }
 
     #[test]

@@ -9,6 +9,10 @@ pub fn safe_initial_payload_size(initial_chunk_size: usize) -> usize {
     initial_chunk_size.min(max_payload_size)
 }
 
+pub fn payload_size_candidates(initial_chunk_size: usize) -> [usize; 5] {
+    [safe_initial_payload_size(initial_chunk_size), 150, 100, 50, 30]
+}
+
 pub fn build_hash_payload(
     hash: &str,
     voltage_percentage: u8,
