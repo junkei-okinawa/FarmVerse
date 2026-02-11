@@ -4,6 +4,26 @@ pub const END_MARKER: [u8; 4] = [0xCD, 0xEF, 0x56, 0x78];
 pub const FRAME_OVERHEAD: usize = 4 + 6 + 1 + 4 + 4 + 4 + 4;
 pub const ESP_NOW_MAX_SIZE: usize = 250;
 
+pub fn safe_initial_payload_size(initial_chunk_size: usize) -> usize {
+    let max_payload_size = ESP_NOW_MAX_SIZE - FRAME_OVERHEAD;
+    initial_chunk_size.min(max_payload_size)
+}
+
+pub fn build_hash_payload(
+    hash: &str,
+    voltage_percentage: u8,
+    temperature_celsius: Option<f32>,
+    tds_voltage: Option<f32>,
+    timestamp: &str,
+) -> String {
+    let temp_data = temperature_celsius.unwrap_or(-999.0);
+    let tds_data = tds_voltage.unwrap_or(-999.0);
+    format!(
+        "HASH:{},VOLT:{},TEMP:{:.1},TDS_VOLT:{:.1},{}",
+        hash, voltage_percentage, temp_data, tds_data, timestamp
+    )
+}
+
 pub fn calculate_xor_checksum(data: &[u8]) -> u32 {
     let mut checksum: u32 = 0;
     for chunk in data.chunks(4) {

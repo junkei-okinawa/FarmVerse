@@ -241,7 +241,12 @@ cargo espflash flash --release --port /dev/tty.usbserial-xxxxxxxx --monitor --pa
 - **ハッシュ検証**: データ整合性確認
 
 ### ホストユニットテスト（ESP-IDF非依存）
-ESP-IDFビルドを伴わずに、ストリーミングフレームの構造とチェックサムを検証できます。
+ESP-IDFビルドを伴わずに、以下のロジックを検証できます。
+- ストリーミングフレーム構造
+- XORチェックサム
+- ペイロードサイズ上限処理
+- HASHペイロード文字列生成
+- MACアドレスパース/表示
 
 ```bash
 cd host_frame_tests
