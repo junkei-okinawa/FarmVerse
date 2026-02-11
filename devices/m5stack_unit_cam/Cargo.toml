@@ -35,7 +35,6 @@ chrono = "0.4.41"
 chrono-tz = "0.10.3"
 
 esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git" }
-simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor.git", version = "0.1.1" }
 
 [build-dependencies]
 embuild = "0.33"
