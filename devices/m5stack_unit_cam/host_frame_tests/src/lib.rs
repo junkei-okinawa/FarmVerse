@@ -2,11 +2,14 @@
 
 #[path = "../../src/communication/esp_now/frame_codec.rs"]
 mod frame_codec;
+#[path = "../../src/core/domain_logic.rs"]
+mod domain_logic;
 #[path = "../../src/mac_address.rs"]
 mod mac_address;
 
 #[cfg(test)]
 mod tests {
+    use super::domain_logic::{resolve_sleep_duration_seconds, voltage_to_percentage};
     use super::frame_codec::{
         build_hash_payload, build_sensor_data_frame, calculate_xor_checksum,
         safe_initial_payload_size, END_MARKER, ESP_NOW_MAX_SIZE, FRAME_OVERHEAD, START_MARKER,
@@ -88,5 +91,40 @@ mod tests {
     fn mac_address_invalid_format_returns_error() {
         let result = MacAddress::from_str("aa:bb:cc");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn voltage_to_percentage_returns_zero_when_range_invalid() {
+        assert_eq!(voltage_to_percentage(3000.0, 2000.0, 2000.0), 0);
+    }
+
+    #[test]
+    fn voltage_to_percentage_clamps_low() {
+        assert_eq!(voltage_to_percentage(100.0, 500.0, 2500.0), 0);
+    }
+
+    #[test]
+    fn voltage_to_percentage_clamps_high() {
+        assert_eq!(voltage_to_percentage(3000.0, 500.0, 2500.0), 100);
+    }
+
+    #[test]
+    fn voltage_to_percentage_rounds_middle_value() {
+        assert_eq!(voltage_to_percentage(1500.0, 500.0, 2500.0), 50);
+    }
+
+    #[test]
+    fn resolve_sleep_duration_prefers_received_positive_value() {
+        assert_eq!(resolve_sleep_duration_seconds(Some(123), 999), 123);
+    }
+
+    #[test]
+    fn resolve_sleep_duration_uses_default_on_none() {
+        assert_eq!(resolve_sleep_duration_seconds(None, 999), 999);
+    }
+
+    #[test]
+    fn resolve_sleep_duration_uses_default_on_zero() {
+        assert_eq!(resolve_sleep_duration_seconds(Some(0), 999), 999);
     }
 }
