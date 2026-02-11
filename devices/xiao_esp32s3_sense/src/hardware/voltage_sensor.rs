@@ -52,8 +52,8 @@ impl VoltageSensor {
     ///   - 電圧パーセンテージ: 通常は 0–100 の値を取り、`255` は測定に失敗したことを示します
     pub fn measure_voltage_percentage<T: esp_idf_svc::hal::gpio::ADCPin<Adc = ADC1>>(
         mut adc: ADC1,
-        gpio_pin: T,
-    ) -> anyhow::Result<(u8, ADC1)> {
+        mut gpio_pin: T,
+    ) -> anyhow::Result<(u8, ADC1, T)> {
         info!("ADC1を初期化しています (WiFi競合回避)");
         let adc_driver = AdcDriver::new(&mut adc)?;
         let adc_config = AdcChannelConfig {
@@ -61,7 +61,7 @@ impl VoltageSensor {
             calibration: Calibration::Curve,
             ..Default::default()
         };
-        let mut adc_channel = AdcChannelDriver::new(&adc_driver, gpio_pin, &adc_config)?;
+        let mut adc_channel = AdcChannelDriver::new(&adc_driver, &mut gpio_pin, &adc_config)?;
 
         info!("ADC電圧を10回測定し、平均値を計算します...");
         let mut sum_mv = 0u32;
@@ -100,6 +100,6 @@ impl VoltageSensor {
         drop(adc_channel);
         drop(adc_driver);
 
-        Ok((voltage_percent, adc)) // ADC1の所有権を返す
+        Ok((voltage_percent, adc, gpio_pin)) // ADC1とGPIOピンの所有権を返す
     }
 }

@@ -133,49 +133,74 @@ pub fn get_camera_pins() -> CameraPins {
     }
 }
 
-/// カメラピンを強制的にリセットし、省電力状態にする
+/// カメラ用全ピンをリセットし、Deep Sleep中のリーク電流を最小化する
 /// 
-/// Deep Sleep中のリーク電流を防ぐため、全ピンを入力モードにし、
-/// プルダウンを有効化（あるいはフローティング）にします。
+/// 目的: 全てのカメラ関連ピン（D0-D7, XCLK, PCLK, VSYNC, HREF, SDA, SCL）を
+/// 入力モードかつプルダウン設定に強制変更することで、拡張ボード側へのリーク電流を遮断します。
 pub fn reset_camera_pins() {
-    let pins = get_camera_pins();
-    
+    use esp_idf_sys::{
+        gpio_config, gpio_config_t, gpio_int_type_t_GPIO_INTR_DISABLE,
+        gpio_mode_t_GPIO_MODE_INPUT, gpio_mode_t_GPIO_MODE_OUTPUT, // Added OUTPUT mode
+        gpio_pulldown_t_GPIO_PULLDOWN_DISABLE,
+        gpio_pullup_t_GPIO_PULLUP_DISABLE, gpio_hold_en,
+        gpio_set_direction, gpio_set_level, // Added set functions
+    };
+
+    log::info!("カメラピンのリセット（High-Z / Hold）を開始します...");
+
+    let pin_mask: u64 = (1u64 << 10) | // XCLK
+                        (1u64 << 15) | // D0
+                        (1u64 << 17) | // D1
+                        (1u64 << 18) | // D2
+                        (1u64 << 16) | // D3
+                        (1u64 << 14) | // D4
+                        (1u64 << 12) | // D5
+                        (1u64 << 11) | // D6
+                        (1u64 << 48) | // D7
+                        (1u64 << 38) | // VSYNC
+                        (1u64 << 47) | // HREF
+                        (1u64 << 13) | // PCLK
+                        (1u64 << 40) | // SDA
+                        (1u64 << 39);  // SCL
+
+    let config = gpio_config_t {
+        pin_bit_mask: pin_mask,
+        mode: gpio_mode_t_GPIO_MODE_INPUT,
+        pull_up_en: gpio_pullup_t_GPIO_PULLUP_DISABLE,
+        pull_down_en: gpio_pulldown_t_GPIO_PULLDOWN_DISABLE,
+        intr_type: gpio_int_type_t_GPIO_INTR_DISABLE,
+    };
+
     unsafe {
-        // ヘルパー関数: ピンをリセットして入力・プルダウン設定
-        let reset_pin = |pin: u8| {
-            esp_idf_sys::gpio_reset_pin(pin as i32);
-            esp_idf_sys::gpio_set_direction(pin as i32, esp_idf_sys::gpio_mode_t_GPIO_MODE_INPUT);
-            esp_idf_sys::gpio_pulldown_en(pin as i32);
-            esp_idf_sys::gpio_pullup_dis(pin as i32);
-        };
-
-        // XCLK (最も重要: クロック発振を止める)
-        reset_pin(pins.xclk_pin);
-        
-        // 同期信号
-        reset_pin(pins.pclk_pin);
-        reset_pin(pins.vsync_pin);
-        reset_pin(pins.href_pin);
-        
-        // データバス
-        for &pin in pins.data_pins.iter() {
-            reset_pin(pin);
+        // 1. まず全ピンをInput/High-Zにしてリセット
+        let err = gpio_config(&config);
+        if err != 0 {
+            log::error!("カメラピンのリセットに失敗しました: {}", err);
+            return;
         }
-        
-        // I2C (SDA, SCL)
-        // I2Cラインは通常外部プルアップされているため、ESP32側は入力（Hi-Z）にするのが安全
-        // 下手にプルダウンするとプルアップ抵抗を通じて電流が流れる可能性があるため
-        // I2Cだけはプルダウンせず、単に入力のみとする
-        esp_idf_sys::gpio_reset_pin(pins.sda_pin as i32);
-        esp_idf_sys::gpio_set_direction(pins.sda_pin as i32, esp_idf_sys::gpio_mode_t_GPIO_MODE_INPUT);
-        esp_idf_sys::gpio_pullup_dis(pins.sda_pin as i32);
-        esp_idf_sys::gpio_pulldown_dis(pins.sda_pin as i32);
 
-        esp_idf_sys::gpio_reset_pin(pins.scl_pin as i32);
-        esp_idf_sys::gpio_set_direction(pins.scl_pin as i32, esp_idf_sys::gpio_mode_t_GPIO_MODE_INPUT);
-        esp_idf_sys::gpio_pullup_dis(pins.scl_pin as i32);
-        esp_idf_sys::gpio_pulldown_dis(pins.scl_pin as i32);
+        // 2. XCLK (GPIO 10) だけは Output Low に設定してクロックを確実に止める
+        // Floatingだとノイズでクロックが入る可能性があるため
+        gpio_set_direction(10, gpio_mode_t_GPIO_MODE_OUTPUT);
+        gpio_set_level(10, 0);
+
+        // 3. SDA/SCL (GPIO 40, 39) を明示的にOutput Lowに設定
+        // I2Cラインがフローティングだとプルアップ抵抗経由でカメラにリーク電流が流れる
+        gpio_set_direction(40, gpio_mode_t_GPIO_MODE_OUTPUT);
+        gpio_set_level(40, 0);
+        gpio_set_direction(39, gpio_mode_t_GPIO_MODE_OUTPUT);
+        gpio_set_level(39, 0);
+
+        // 各ピンをスリープ中に固定（隔離）
+        for pin in [10, 15, 17, 18, 16, 14, 12, 11, 48, 38, 47, 13, 40, 39] {
+            if pin < 32 {
+                gpio_hold_en(pin as i32);
+            } else {
+                // Pin 32以上は esp_idf_sys の定義に従う（通常は i32 キャストで動作）
+                gpio_hold_en(pin as i32);
+            }
+        }
+
+        log::info!("✓ カメラ用全ピンがHigh-Z・Hold状態にリセットされました");
     }
-    
-    log::info!("カメラピンを強制リセットしました（省電力対策）");
 }

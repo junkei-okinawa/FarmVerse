@@ -19,7 +19,16 @@ impl DeepSleepPlatform for EspIdfDeepSleep {
     fn deep_sleep(&self, duration_us: u64) {
         info!("Entering deep sleep for {} microseconds", duration_us);
         unsafe {
-            esp_idf_svc::sys::esp_deep_sleep(duration_us);
+            // [PHASE 8] 確実な復帰のため、タイマーウェイクアップを明示的に設定
+            esp_idf_sys::esp_sleep_enable_timer_wakeup(duration_us);
+            
+            // [PHASE 8] ディープスリープを開始
+            info!("---[STARTING DEEP SLEEP]---");
+            esp_idf_sys::esp_deep_sleep_start();
+            
+            // 通常、ここは実行されない
+            info!("❌ CRITICAL: esp_deep_sleep_start() から戻ってしまいました。OS再起動を実行します。");
+            esp_idf_sys::esp_restart();
         }
     }
 }

@@ -111,7 +111,7 @@ pub struct Config {
     #[default(8)]
     wifi_tx_power_dbm: i8,
 
-    #[default(1000)]
+    #[default(200)]
     wifi_init_delay_ms: u64,
 }
 
