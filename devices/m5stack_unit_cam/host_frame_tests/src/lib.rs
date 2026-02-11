@@ -2,12 +2,16 @@
 
 #[path = "../../src/communication/esp_now/frame_codec.rs"]
 mod frame_codec;
+#[path = "../../src/mac_address.rs"]
+mod mac_address;
 
 #[cfg(test)]
 mod tests {
     use super::frame_codec::{
-        build_sensor_data_frame, calculate_xor_checksum, END_MARKER, START_MARKER,
+        build_hash_payload, build_sensor_data_frame, calculate_xor_checksum,
+        safe_initial_payload_size, END_MARKER, ESP_NOW_MAX_SIZE, FRAME_OVERHEAD, START_MARKER,
     };
+    use super::mac_address::MacAddress;
 
     #[test]
     fn checksum_uses_little_endian_4byte_chunks() {
@@ -41,5 +45,48 @@ mod tests {
             &checksum.to_le_bytes()
         );
         assert_eq!(&frame[checksum_offset + 4..checksum_offset + 8], &END_MARKER);
+    }
+
+    #[test]
+    fn payload_size_is_capped_to_esp_now_limit() {
+        let capped = safe_initial_payload_size(999);
+        assert_eq!(capped, ESP_NOW_MAX_SIZE - FRAME_OVERHEAD);
+    }
+
+    #[test]
+    fn payload_size_keeps_small_value() {
+        let kept = safe_initial_payload_size(120);
+        assert_eq!(kept, 120);
+    }
+
+    #[test]
+    fn hash_payload_uses_dummy_values_when_missing_optional_fields() {
+        let payload = build_hash_payload("abc", 42, None, None, "2026/02/11 12:00:00.000");
+        assert_eq!(
+            payload,
+            "HASH:abc,VOLT:42,TEMP:-999.0,TDS_VOLT:-999.0,2026/02/11 12:00:00.000"
+        );
+    }
+
+    #[test]
+    fn hash_payload_uses_provided_optional_fields() {
+        let payload =
+            build_hash_payload("abc", 42, Some(25.2), Some(1.7), "2026/02/11 12:00:00.000");
+        assert_eq!(
+            payload,
+            "HASH:abc,VOLT:42,TEMP:25.2,TDS_VOLT:1.7,2026/02/11 12:00:00.000"
+        );
+    }
+
+    #[test]
+    fn mac_address_parse_and_display_roundtrip() {
+        let mac = MacAddress::from_str("aa:bb:cc:dd:ee:ff").unwrap();
+        assert_eq!(mac.to_string(), "aa:bb:cc:dd:ee:ff");
+    }
+
+    #[test]
+    fn mac_address_invalid_format_returns_error() {
+        let result = MacAddress::from_str("aa:bb:cc");
+        assert!(result.is_err());
     }
 }

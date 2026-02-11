@@ -1,6 +1,7 @@
 use crate::mac_address::MacAddress;
 use crate::communication::esp_now::frame_codec::{
-    build_sensor_data_frame, calculate_xor_checksum, ESP_NOW_MAX_SIZE, FRAME_OVERHEAD,
+    build_hash_payload, build_sensor_data_frame, calculate_xor_checksum, safe_initial_payload_size,
+    ESP_NOW_MAX_SIZE, FRAME_OVERHEAD,
 };
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::espnow::EspNow;
@@ -167,12 +168,7 @@ impl EspNowSender {
         delay_between_chunks_ms: u32,
     ) -> Result<(), EspNowError> {
         // 有効なペイロードサイズを計算
-        let max_payload_size = ESP_NOW_MAX_SIZE - FRAME_OVERHEAD;
-        let safe_initial_payload = if initial_chunk_size > max_payload_size {
-            max_payload_size
-        } else {
-            initial_chunk_size
-        };
+        let safe_initial_payload = safe_initial_payload_size(initial_chunk_size);
 
         // 段階的にペイロードサイズを小さくして試行
         let payload_sizes = [safe_initial_payload, 150, 100, 50, 30];
@@ -272,15 +268,12 @@ impl EspNowSender {
         tds_voltage: Option<f32>,
         timestamp: &str,
     ) -> Result<(), EspNowError> {
-        let temp_data = temperature_celsius.unwrap_or(-999.0);
-        let tds_data = tds_voltage.unwrap_or(-999.0);
-        let hash_data = format!(
-            "HASH:{},VOLT:{},TEMP:{:.1},TDS_VOLT:{:.1},{}",
+        let hash_data = build_hash_payload(
             hash,
             voltage_percentage,
-            temp_data,
-            tds_data,
-            timestamp
+            temperature_celsius,
+            tds_voltage,
+            timestamp,
         );
         info!("ハッシュフレーム送信（sensor_data_receiver準拠）: {}", hash_data);
 
