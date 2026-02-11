@@ -1,6 +1,6 @@
 use crate::mac_address::MacAddress;
 use crate::communication::esp_now::frame_codec::{
-    build_hash_payload, build_sensor_data_frame, calculate_xor_checksum, safe_initial_payload_size,
+    build_hash_payload, build_sensor_data_frame, calculate_xor_checksum, payload_size_candidates,
     ESP_NOW_MAX_SIZE, FRAME_OVERHEAD,
 };
 use esp_idf_svc::hal::delay::FreeRtos;
@@ -168,10 +168,8 @@ impl EspNowSender {
         delay_between_chunks_ms: u32,
     ) -> Result<(), EspNowError> {
         // 有効なペイロードサイズを計算
-        let safe_initial_payload = safe_initial_payload_size(initial_chunk_size);
-
         // 段階的にペイロードサイズを小さくして試行
-        let payload_sizes = [safe_initial_payload, 150, 100, 50, 30];
+        let payload_sizes = payload_size_candidates(initial_chunk_size);
 
         for &payload_size in &payload_sizes {
             let total_frame_size = FRAME_OVERHEAD + payload_size;
