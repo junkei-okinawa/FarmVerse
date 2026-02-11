@@ -3,6 +3,7 @@ use crate::communication::esp_now::frame_codec::{
     build_hash_payload, build_sensor_data_frame, calculate_xor_checksum, payload_size_candidates,
     ESP_NOW_MAX_SIZE, FRAME_OVERHEAD,
 };
+use crate::communication::esp_now::retry_policy::{no_mem_retry_delay_ms, retry_delay_ms};
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::espnow::EspNow;
 use log::{error, info, warn};
@@ -127,7 +128,7 @@ impl EspNowSender {
                         
                         if attempt < max_retries {
                             // メモリ不足時は段階的に長い待機時間（バッファクリア待ち）
-                            let memory_delay = 800 + (attempt as u32 * 400); // 800ms, 1200ms, 1600ms...
+                            let memory_delay = no_mem_retry_delay_ms(attempt);
                             info!("メモリ不足回復待機: {}ms後にリトライします...", memory_delay);
                             FreeRtos::delay_ms(memory_delay);
                         }
@@ -137,7 +138,7 @@ impl EspNowSender {
                         
                         if attempt < max_retries {
                             // 通常エラー時の待機時間
-                            let delay_ms = 300 * attempt as u32; // 段階的に延長
+                            let delay_ms = retry_delay_ms(attempt);
                             info!("{}ms後にリトライします...", delay_ms);
                             FreeRtos::delay_ms(delay_ms);
                         }
@@ -148,7 +149,7 @@ impl EspNowSender {
                     last_error = e;
                     
                     if attempt < max_retries {
-                        let delay_ms = 300 * attempt as u32;
+                        let delay_ms = retry_delay_ms(attempt);
                         info!("{}ms後にリトライします...", delay_ms);
                         FreeRtos::delay_ms(delay_ms);
                     }

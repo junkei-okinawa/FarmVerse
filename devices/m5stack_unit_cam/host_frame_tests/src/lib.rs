@@ -6,6 +6,8 @@ extern crate thiserror;
 mod frame_codec;
 #[path = "../../src/communication/esp_now/frame.rs"]
 mod frame;
+#[path = "../../src/communication/esp_now/retry_policy.rs"]
+mod retry_policy;
 #[path = "../../src/core/config_validation.rs"]
 mod config_validation;
 #[path = "../../src/core/domain_logic.rs"]
@@ -27,6 +29,7 @@ mod tests {
         FRAME_OVERHEAD, START_MARKER,
     };
     use super::mac_address::MacAddress;
+    use super::retry_policy::{no_mem_retry_delay_ms, retry_delay_ms};
 
     #[test]
     fn checksum_uses_little_endian_4byte_chunks() {
@@ -206,5 +209,19 @@ mod tests {
     fn validate_wifi_ssid_rejects_empty() {
         let err = validate_wifi_ssid("").unwrap_err();
         assert_eq!(err, ValidationError::MissingWifiSsid);
+    }
+
+    #[test]
+    fn retry_delay_uses_linear_backoff() {
+        assert_eq!(retry_delay_ms(1), 300);
+        assert_eq!(retry_delay_ms(2), 600);
+        assert_eq!(retry_delay_ms(3), 900);
+    }
+
+    #[test]
+    fn no_mem_retry_delay_uses_longer_backoff() {
+        assert_eq!(no_mem_retry_delay_ms(1), 1200);
+        assert_eq!(no_mem_retry_delay_ms(2), 1600);
+        assert_eq!(no_mem_retry_delay_ms(3), 2000);
     }
 }
