@@ -3,14 +3,12 @@ use log::{error, info, warn};
 
 use crate::communication::esp_now::EspNowSender;
 use crate::core::config::AppConfig;
+use crate::core::prepare_image_payload;
 use crate::hardware::camera::{CameraController, M5UnitCamConfig};
 use crate::hardware::led::StatusLed;
 
 /// 低電圧閾値（パーセンテージ）
 const LOW_VOLTAGE_THRESHOLD_PERCENT: u8 = 8;
-
-/// ダミーハッシュ（SHA256の64文字）
-const DUMMY_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 /// 測定データ構造体
 #[derive(Debug)]
@@ -100,20 +98,12 @@ impl DataService {
         led.turn_on()?;
 
         // 画像データの処理と送信
-        let (image_data, _hash) = if let Some(data) = measured_data.image_data {
-            if data.is_empty() {
-                warn!("画像データが空です");
-                (vec![], DUMMY_HASH.to_string())
-            } else {
-                info!("画像データを送信中: {} bytes", data.len());
-                // 簡単なハッシュ計算（画像サイズとチェックサムベース）
-                let hash = format!("{:08x}{:08x}", data.len(), data.iter().map(|&b| b as u32).sum::<u32>());
-                (data, hash)
-            }
+        let (image_data, _hash) = prepare_image_payload(measured_data.image_data);
+        if image_data.is_empty() {
+            warn!("画像データなし、ダミーデータを送信");
         } else {
-            info!("画像データなし、ダミーデータを送信");
-            (vec![], DUMMY_HASH.to_string())
-        };
+            info!("画像データを送信中: {} bytes", image_data.len());
+        }
 
         // 設定されたサーバーMACアドレスを使用
         info!("設定されたサーバーMACアドレス: {}", app_config.receiver_mac);

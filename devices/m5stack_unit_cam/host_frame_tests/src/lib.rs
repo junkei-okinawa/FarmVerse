@@ -10,6 +10,8 @@ mod frame;
 mod retry_policy;
 #[path = "../../src/core/config_validation.rs"]
 mod config_validation;
+#[path = "../../src/core/data_prep.rs"]
+mod data_prep;
 #[path = "../../src/core/domain_logic.rs"]
 mod domain_logic;
 #[path = "../../src/mac_address.rs"]
@@ -21,6 +23,7 @@ mod tests {
         parse_camera_warmup_frames, parse_receiver_mac, parse_target_minute_last_digit,
         parse_target_second_tens_digit, validate_wifi_ssid, ValidationError,
     };
+    use super::data_prep::{prepare_image_payload, simple_image_hash, DUMMY_HASH};
     use super::domain_logic::{resolve_sleep_duration_seconds, voltage_to_percentage};
     use super::frame::ImageFrame;
     use super::frame_codec::{
@@ -223,5 +226,32 @@ mod tests {
         assert_eq!(no_mem_retry_delay_ms(1), 1200);
         assert_eq!(no_mem_retry_delay_ms(2), 1600);
         assert_eq!(no_mem_retry_delay_ms(3), 2000);
+    }
+
+    #[test]
+    fn simple_image_hash_matches_length_and_sum() {
+        let hash = simple_image_hash(&[1, 2, 3]);
+        assert_eq!(hash, "0000000300000006");
+    }
+
+    #[test]
+    fn prepare_image_payload_uses_dummy_for_none() {
+        let (data, hash) = prepare_image_payload(None);
+        assert!(data.is_empty());
+        assert_eq!(hash, DUMMY_HASH);
+    }
+
+    #[test]
+    fn prepare_image_payload_uses_dummy_for_empty_data() {
+        let (data, hash) = prepare_image_payload(Some(vec![]));
+        assert!(data.is_empty());
+        assert_eq!(hash, DUMMY_HASH);
+    }
+
+    #[test]
+    fn prepare_image_payload_returns_data_and_hash_for_valid_data() {
+        let (data, hash) = prepare_image_payload(Some(vec![1, 2, 3]));
+        assert_eq!(data, vec![1, 2, 3]);
+        assert_eq!(hash, "0000000300000006");
     }
 }
