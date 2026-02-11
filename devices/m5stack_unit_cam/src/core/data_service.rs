@@ -136,7 +136,13 @@ impl DataService {
 
         // HASHフレームを送信（サーバーがスリープコマンドを送信するために必要）
         let current_time = "2025/06/22 12:00:00.000"; // 簡易タイムスタンプ
-        match esp_now_sender.send_hash_frame(&_hash, measured_data.voltage_percent, current_time) {
+        match esp_now_sender.send_hash_frame(
+            &_hash,
+            measured_data.voltage_percent,
+            None,
+            None,
+            current_time,
+        ) {
             Ok(_) => {
                 info!("HASHフレームの送信が完了しました");
             }
