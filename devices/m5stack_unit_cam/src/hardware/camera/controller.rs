@@ -257,6 +257,59 @@ impl CameraController {
     pub fn get_current_aec_value(&self) -> i32 {
         self.camera.sensor().aec_value() // sensor.aec_value() -> i32 を使用
     }
+
+    /// OV2640をSCCB経由でソフトウェアスタンバイに移行します。
+    ///
+    /// 注意:
+    /// - COM2(0x09) Standby bitは使いません（SDAロック既知問題のため）。
+    /// - COM7(0x12) Bit4 + CLKRC分周で省電力化を試みます。
+    pub fn enter_standby_via_sccb(&self) -> Result<(), CameraError> {
+        info!("カメラをSCCB経由でスタンバイモードに移行します...");
+        let sensor = self.camera.sensor();
+
+        // BANK_SEL = DSP (0x00)
+        sensor
+            .set_reg(0xFF, 0xFF, 0x00)
+            .map_err(|e| CameraError::InitFailed(format!("BANK_SEL(DSP)設定エラー: {:?}", e)))?;
+        // R_DVP_SP (0xD3): DVP出力速度制御をクリア
+        let _ = sensor.set_reg(0xD3, 0xFF, 0x00);
+
+        // BANK_SEL = SENSOR (0x01)
+        sensor
+            .set_reg(0xFF, 0xFF, 0x01)
+            .map_err(|e| CameraError::InitFailed(format!("BANK_SEL(SENSOR)設定エラー: {:?}", e)))?;
+        // CLKRC (0x11): 分周を最大化
+        let _ = sensor.set_reg(0x11, 0x3F, 0x3F);
+        // COM7 (0x12) Bit4: Sleep mode
+        sensor
+            .set_reg(0x12, 0x10, 0x10)
+            .map_err(|e| CameraError::InitFailed(format!("COM7 sleep設定エラー: {:?}", e)))?;
+
+        info!("✓ カメラをSCCBスタンバイに移行しました");
+        Ok(())
+    }
+
+    /// SCCBスタンバイから復帰します。
+    ///
+    /// COM7 Bit4をクリアし、CLKRCをデフォルト寄りに戻します。
+    pub fn exit_standby_via_sccb(&self) -> Result<(), CameraError> {
+        info!("カメラのSCCBスタンバイを解除します...");
+        let sensor = self.camera.sensor();
+
+        // BANK_SEL = SENSOR (0x01)
+        sensor
+            .set_reg(0xFF, 0xFF, 0x01)
+            .map_err(|e| CameraError::InitFailed(format!("BANK_SEL(SENSOR)設定エラー: {:?}", e)))?;
+        // COM7 sleep解除
+        sensor
+            .set_reg(0x12, 0x10, 0x00)
+            .map_err(|e| CameraError::InitFailed(format!("COM7 sleep解除エラー: {:?}", e)))?;
+        // CLKRC分周をリセット寄りへ
+        let _ = sensor.set_reg(0x11, 0x3F, 0x00);
+
+        info!("✓ カメラのSCCBスタンバイを解除しました");
+        Ok(())
+    }
 }
 
 #[cfg(test)]
