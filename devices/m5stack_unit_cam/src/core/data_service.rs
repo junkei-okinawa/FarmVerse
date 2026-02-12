@@ -2,13 +2,11 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use log::{error, info, warn};
 
 use crate::communication::esp_now::EspNowSender;
+use crate::core::{should_capture_image, INVALID_VOLTAGE_PERCENT, LOW_VOLTAGE_THRESHOLD_PERCENT};
 use crate::core::config::AppConfig;
 use crate::core::prepare_image_payload;
 use crate::hardware::camera::{CameraController, M5UnitCamConfig};
 use crate::hardware::led::StatusLed;
-
-/// 低電圧閾値（パーセンテージ）
-const LOW_VOLTAGE_THRESHOLD_PERCENT: u8 = 8;
 
 /// 測定データ構造体
 #[derive(Debug)]
@@ -38,13 +36,12 @@ impl DataService {
         led: &mut StatusLed,
     ) -> anyhow::Result<Option<Vec<u8>>> {
         // ADC電圧条件をチェック
-        if voltage_percent <= LOW_VOLTAGE_THRESHOLD_PERCENT {
-            warn!("ADC電圧が低すぎるため画像キャプチャをスキップします: {}%", voltage_percent);
-            return Ok(None);
-        }
-
-        if voltage_percent >= 255 {
-            warn!("ADC電圧測定値が異常です: {}%", voltage_percent);
+        if !should_capture_image(voltage_percent) {
+            if voltage_percent <= LOW_VOLTAGE_THRESHOLD_PERCENT {
+                warn!("ADC電圧が低すぎるため画像キャプチャをスキップします: {}%", voltage_percent);
+            } else if voltage_percent >= INVALID_VOLTAGE_PERCENT {
+                warn!("ADC電圧測定値が異常です: {}%", voltage_percent);
+            }
             return Ok(None);
         }
 

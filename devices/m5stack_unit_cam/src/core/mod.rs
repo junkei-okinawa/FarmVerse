@@ -1,5 +1,6 @@
 /// コアシステムモジュール
 pub mod app_controller;
+pub mod capture_policy;
 pub mod config;
 pub mod config_validation;
 pub mod data_service;
@@ -8,6 +9,7 @@ pub mod domain_logic;
 pub mod rtc_manager;
 
 pub use app_controller::AppController;
+pub use capture_policy::{should_capture_image, INVALID_VOLTAGE_PERCENT, LOW_VOLTAGE_THRESHOLD_PERCENT};
 pub use config::{AppConfig, ConfigError};
 pub use data_service::{DataService, MeasuredData};
 pub use data_prep::{prepare_image_payload, simple_image_hash, DUMMY_HASH};

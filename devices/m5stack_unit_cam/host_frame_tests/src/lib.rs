@@ -2,6 +2,8 @@
 
 extern crate thiserror;
 
+#[path = "../../src/core/capture_policy.rs"]
+mod capture_policy;
 #[path = "../../src/communication/esp_now/frame_codec.rs"]
 mod frame_codec;
 #[path = "../../src/communication/esp_now/frame.rs"]
@@ -23,6 +25,7 @@ mod tests {
         parse_camera_warmup_frames, parse_receiver_mac, parse_target_minute_last_digit,
         parse_target_second_tens_digit, validate_wifi_ssid, ValidationError,
     };
+    use super::capture_policy::{should_capture_image, INVALID_VOLTAGE_PERCENT, LOW_VOLTAGE_THRESHOLD_PERCENT};
     use super::data_prep::{prepare_image_payload, simple_image_hash, DUMMY_HASH};
     use super::domain_logic::{resolve_sleep_duration_seconds, voltage_to_percentage};
     use super::frame::ImageFrame;
@@ -253,5 +256,22 @@ mod tests {
         let (data, hash) = prepare_image_payload(Some(vec![1, 2, 3]));
         assert_eq!(data, vec![1, 2, 3]);
         assert_eq!(hash, "0000000300000006");
+    }
+
+    #[test]
+    fn should_capture_image_rejects_low_voltage_threshold_and_below() {
+        assert!(!should_capture_image(LOW_VOLTAGE_THRESHOLD_PERCENT));
+        assert!(!should_capture_image(LOW_VOLTAGE_THRESHOLD_PERCENT - 1));
+    }
+
+    #[test]
+    fn should_capture_image_accepts_normal_range() {
+        assert!(should_capture_image(9));
+        assert!(should_capture_image(100));
+    }
+
+    #[test]
+    fn should_capture_image_rejects_invalid_voltage_marker() {
+        assert!(!should_capture_image(INVALID_VOLTAGE_PERCENT));
     }
 }
