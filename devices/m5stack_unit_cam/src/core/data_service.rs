@@ -81,6 +81,12 @@ impl DataService {
         let image_data = frame_buffer.data().to_vec();
         info!("画像キャプチャ完了: {} bytes", image_data.len());
 
+        if _app_config.camera_soft_standby_enabled {
+            if let Err(e) = camera.enter_standby_via_sccb() {
+                warn!("SCCBスタンバイ移行に失敗しました（処理継続）: {:?}", e);
+            }
+        }
+
         led.turn_off()?;
         Ok(Some(image_data))
     }

@@ -30,6 +30,9 @@ pub struct Config {
     #[default(false)]
     auto_exposure_enabled: bool,
 
+    #[default(false)]
+    camera_soft_standby_enabled: bool,
+
     #[default(255)]
     camera_warmup_frames: u8,
 
@@ -90,6 +93,9 @@ pub struct AppConfig {
     /// 自動露出設定
     pub auto_exposure_enabled: bool,
 
+    /// SCCB経由のソフトスタンバイ制御を有効化
+    pub camera_soft_standby_enabled: bool,
+
     /// カメラウォームアップフレーム数
     pub camera_warmup_frames: Option<u8>,
 
@@ -129,6 +135,7 @@ impl AppConfig {
 
         // 自動露出設定を取得
         let auto_exposure_enabled = config.auto_exposure_enabled;
+        let camera_soft_standby_enabled = config.camera_soft_standby_enabled;
 
         // カメラウォームアップフレーム数を取得・検証
         let camera_warmup_frames =
@@ -153,6 +160,7 @@ impl AppConfig {
             sleep_duration_seconds,
             frame_size,
             auto_exposure_enabled,
+            camera_soft_standby_enabled,
             camera_warmup_frames,
             timezone,
             sleep_command_timeout_seconds,
