@@ -3,7 +3,9 @@ use crate::communication::esp_now::frame_codec::{
     build_hash_payload, build_sensor_data_frame, calculate_xor_checksum, payload_size_candidates,
     ESP_NOW_MAX_SIZE, FRAME_OVERHEAD,
 };
-use crate::communication::esp_now::retry_policy::{no_mem_retry_delay_ms, retry_delay_ms};
+use crate::communication::esp_now::retry_policy::{
+    no_mem_retry_delay_ms, retry_count_for_chunk, retry_delay_ms,
+};
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::espnow::EspNow;
 use log::{error, info, warn};
@@ -208,12 +210,10 @@ impl EspNowSender {
                 };
                 
                 // 重要なチャンク（最初の3チャンク）は重複送信で信頼性向上
-                let retry_count = if i < 3 { 
+                let retry_count = retry_count_for_chunk(i);
+                if retry_count > 1 {
                     warn!("重要チャンク{}: 信頼性向上のため複数回送信", i + 1);
-                    2 // 重要チャンクは2回送信
-                } else { 
-                    1 // 通常チャンクは1回
-                };
+                }
                 
                 let mut chunk_success = false;
                 for attempt in 1..=retry_count {

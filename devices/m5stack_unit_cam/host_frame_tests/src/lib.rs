@@ -35,7 +35,7 @@ mod tests {
         FRAME_OVERHEAD, START_MARKER,
     };
     use super::mac_address::MacAddress;
-    use super::retry_policy::{no_mem_retry_delay_ms, retry_delay_ms};
+    use super::retry_policy::{no_mem_retry_delay_ms, retry_count_for_chunk, retry_delay_ms};
 
     #[test]
     fn checksum_uses_little_endian_4byte_chunks() {
@@ -229,6 +229,14 @@ mod tests {
         assert_eq!(no_mem_retry_delay_ms(1), 1200);
         assert_eq!(no_mem_retry_delay_ms(2), 1600);
         assert_eq!(no_mem_retry_delay_ms(3), 2000);
+    }
+
+    #[test]
+    fn retry_count_for_chunk_prioritizes_first_three_chunks() {
+        assert_eq!(retry_count_for_chunk(0), 2);
+        assert_eq!(retry_count_for_chunk(1), 2);
+        assert_eq!(retry_count_for_chunk(2), 2);
+        assert_eq!(retry_count_for_chunk(3), 1);
     }
 
     #[test]
