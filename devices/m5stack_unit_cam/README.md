@@ -262,9 +262,27 @@ cargo test
 `qemu_unittest.sh` は、以下を順に実行します。
 - `qemu-system-xtensa` 存在確認（`ESP_QEMU_BIN` 優先）
 - ESP-IDF環境確認（`IDF_PATH`）
-- `cargo +esp build`
+- `cargo +esp build --features qemu-smoke`
 - `espflash save-image` で `.bin` 生成
-- QEMU起動（利用可能なら15秒タイムアウト）
+- QEMU起動とログ確認（`QEMU_SMOKE_PASS` マーカーで判定）
+
+#### 公式手順でのQEMUインストール（Espressif）
+ESP-IDF公式ドキュメント:
+https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/qemu.html
+
+```bash
+# 1) 依存ライブラリ
+brew install libgcrypt glib pixman sdl2 libslirp
+
+# 2) ESP-IDF有効化
+. /Users/junkei/esp/v5.1.6/esp-idf/export.sh
+
+# 3) Espressif配布QEMUをインストール
+python3 $IDF_PATH/tools/idf_tools.py install qemu-xtensa qemu-riscv32
+
+# 4) PATH反映（再度 export）
+. /Users/junkei/esp/v5.1.6/esp-idf/export.sh
+```
 
 ```bash
 cd devices/m5stack_unit_cam
@@ -276,6 +294,11 @@ cd devices/m5stack_unit_cam
 ```bash
 QEMU_POC_SKIP_BUILD=1 ./qemu_unittest.sh
 ```
+
+利用可能な環境変数:
+- `ESP_QEMU_BIN`: 使用するQEMUバイナリを明示
+- `QEMU_FEATURES`: ビルド時feature（デフォルト: `qemu-smoke`）
+- `QEMU_SMOKE_MARKER`: 成功判定用マーカー（デフォルト: `QEMU_SMOKE_PASS`）
 
 ### トラブルシューティング
 
