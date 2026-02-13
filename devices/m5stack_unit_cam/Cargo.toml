@@ -39,3 +39,6 @@ esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git" }
 [build-dependencies]
 embuild = "0.33"
 toml-cfg = "=0.2"
+
+[patch.crates-io]
+esp-idf-hal = { git = "https://github.com/junkei-okinawa/esp-idf-hal.git", branch = "custom-gpio-for-M5UnitCam" }

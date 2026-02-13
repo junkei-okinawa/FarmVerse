@@ -1336,7 +1336,6 @@ dependencies = [
  "esp-idf-sys",
  "log",
  "sha2",
- "simple_ds18b20_temp_sensor",
  "thiserror 2.0.12",
  "toml-cfg",
 ]
@@ -1398,19 +1397,6 @@ name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
-
-[[package]]
-name = "simple_ds18b20_temp_sensor"
-version = "0.1.1"
-source = "git+https://github.com/junkei-okinawa/esp-temp-sensor.git#0866242f5a4e35b7bbb9396c1d8a216721e4f10a"
-dependencies = [
- "anyhow",
- "embuild",
- "esp-idf-hal",
- "esp-idf-svc",
- "esp-idf-sys",
- "log",
-]
 
 [[package]]
 name = "siphasher"
