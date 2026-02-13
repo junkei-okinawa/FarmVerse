@@ -27,7 +27,7 @@ anyhow = "1.0"
 log = "0.4"
 toml-cfg = "=0.2"
 esp-idf-svc = "0.51.0"
-esp-idf-sys = { version = "0.36", features = ["libstart"] }
+esp-idf-sys = "0.36"
 embedded-svc = "0.28"
 sha2 = "0.10"
 thiserror = "2.0.12"
