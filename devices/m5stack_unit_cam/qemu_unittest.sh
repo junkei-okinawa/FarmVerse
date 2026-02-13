@@ -48,7 +48,8 @@ if [ "${QEMU_POC_SKIP_BUILD:-0}" != "1" ]; then
     fi
 
     echo "[qemu-poc] Building firmware..."
-    VIRTUAL_ENV="" cargo +esp build --target "${TARGET}"
+    # Allow full IDF component resolution in PoC builds to avoid missing `main` linkage.
+    VIRTUAL_ENV="" ESP_IDF_COMPONENTS= cargo +esp build --target "${TARGET}"
 fi
 
 if [ ! -f "${ELF_PATH}" ]; then
