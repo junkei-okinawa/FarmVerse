@@ -27,7 +27,7 @@ anyhow = "1.0"
 log = "0.4"
 toml-cfg = "=0.2"
 esp-idf-svc = "0.51.0"
-esp-idf-sys = "0.36"
+esp-idf-sys = { version = "0.36", features = ["libstart"] }
 embedded-svc = "0.28"
 sha2 = "0.10"
 thiserror = "2.0.12"
@@ -35,7 +35,6 @@ chrono = "0.4.41"
 chrono-tz = "0.10.3"
 
 esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git" }
-simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor.git", version = "0.1.1" }
 
 [build-dependencies]
 embuild = "0.33"

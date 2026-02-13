@@ -3,6 +3,7 @@ use esp_idf_svc::hal::gpio;
 use esp_idf_sys::camera::*;
 use log::{error, info, warn}; // logクレートの必要な要素をインポート
 use std::sync::Arc;
+use super::ov2640_sequence::{resume_sequence, standby_clkrc_write, standby_sequence, RegWrite};
 
 #[derive(Debug, Clone, Copy)] // Added Clone
 pub enum CustomFrameSize {
@@ -257,6 +258,51 @@ impl CameraController {
     pub fn get_current_aec_value(&self) -> i32 {
         self.camera.sensor().aec_value() // sensor.aec_value() -> i32 を使用
     }
+
+    /// OV2640をSCCB経由でソフトウェアスタンバイに移行します。
+    ///
+    /// 注意:
+    /// - COM2(0x09) Standby bitは使いません（SDAロック既知問題のため）。
+    /// - COM7(0x12) Bit4 + CLKRC分周で省電力化を試みます。
+    pub fn enter_standby_via_sccb(&self) -> Result<(), CameraError> {
+        info!("カメラをSCCB経由でスタンバイモードに移行します...");
+        let sensor = self.camera.sensor();
+
+        for write in standby_sequence() {
+            apply_reg_write(&sensor, write)?;
+        }
+        // Keep CLKRC write explicit for easier tuning.
+        apply_reg_write(&sensor, standby_clkrc_write())?;
+
+        info!("✓ カメラをSCCBスタンバイに移行しました");
+        Ok(())
+    }
+
+    /// SCCBスタンバイから復帰します。
+    ///
+    /// COM7 Bit4をクリアし、CLKRCをデフォルト寄りに戻します。
+    pub fn exit_standby_via_sccb(&self) -> Result<(), CameraError> {
+        info!("カメラのSCCBスタンバイを解除します...");
+        let sensor = self.camera.sensor();
+
+        for write in resume_sequence() {
+            apply_reg_write(&sensor, write)?;
+        }
+
+        info!("✓ カメラのSCCBスタンバイを解除しました");
+        Ok(())
+    }
+}
+
+fn apply_reg_write(sensor: &esp_camera_rs::Sensor, write: RegWrite) -> Result<(), CameraError> {
+    sensor
+        .set_reg(write.reg, write.mask, write.value)
+        .map_err(|e| {
+            CameraError::InitFailed(format!(
+                "SCCBレジスタ設定失敗 reg=0x{:02X} mask=0x{:02X} value=0x{:02X}: {:?}",
+                write.reg, write.mask, write.value, e
+            ))
+        })
 }
 
 #[cfg(test)]
