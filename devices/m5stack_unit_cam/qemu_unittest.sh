@@ -40,6 +40,12 @@ if [ -z "${QEMU_BIN}" ]; then
     exit 1
 fi
 
+if ! "${QEMU_BIN}" -machine help 2>/dev/null | grep -q "esp32"; then
+    echo "Error: ${QEMU_BIN} does not support '-machine esp32'."
+    echo "Install an ESP32-capable QEMU build (Espressif fork) and set ESP_QEMU_BIN."
+    exit 1
+fi
+
 if [ "${QEMU_POC_SKIP_BUILD:-0}" != "1" ]; then
     if [ -z "${IDF_PATH:-}" ]; then
         echo "Error: IDF_PATH is not set. Activate ESP-IDF first."
