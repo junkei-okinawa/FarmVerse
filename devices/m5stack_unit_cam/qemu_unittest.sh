@@ -48,7 +48,7 @@ if [ "${QEMU_POC_SKIP_BUILD:-0}" != "1" ]; then
     fi
 
     echo "[qemu-poc] Building firmware..."
-    VIRTUAL_ENV="" cargo +esp build
+    VIRTUAL_ENV="" cargo +esp build --target "${TARGET}"
 fi
 
 if [ ! -f "${ELF_PATH}" ]; then
