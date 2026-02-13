@@ -258,6 +258,25 @@ cd host_frame_tests
 cargo test
 ```
 
+### QEMU PoC（ESP32エミュレータ最小確認）
+`qemu_unittest.sh` は、以下を順に実行します。
+- `qemu-system-xtensa` 存在確認（`ESP_QEMU_BIN` 優先）
+- ESP-IDF環境確認（`IDF_PATH`）
+- `cargo +esp build`
+- `espflash save-image` で `.bin` 生成
+- QEMU起動（利用可能なら15秒タイムアウト）
+
+```bash
+cd devices/m5stack_unit_cam
+. /Users/junkei/esp/v5.1.6/esp-idf/export.sh
+./qemu_unittest.sh
+```
+
+ビルドをスキップしてQEMU起動だけ確認する場合:
+```bash
+QEMU_POC_SKIP_BUILD=1 ./qemu_unittest.sh
+```
+
 ### トラブルシューティング
 
 | 問題 | 原因 | 解決方法 |
