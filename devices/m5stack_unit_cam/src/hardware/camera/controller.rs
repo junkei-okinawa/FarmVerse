@@ -294,7 +294,7 @@ impl CameraController {
     }
 }
 
-fn apply_reg_write(sensor: &esp_camera_rs::Sensor, write: RegWrite) -> Result<(), CameraError> {
+fn apply_reg_write(sensor: &esp_camera_rs::CameraSensor<'_>, write: RegWrite) -> Result<(), CameraError> {
     sensor
         .set_reg(write.reg, write.mask, write.value)
         .map_err(|e| {
