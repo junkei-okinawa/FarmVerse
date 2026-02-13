@@ -4,6 +4,8 @@ extern crate thiserror;
 
 #[path = "../../src/core/capture_policy.rs"]
 mod capture_policy;
+#[path = "../../src/hardware/camera/ov2640_sequence.rs"]
+mod ov2640_sequence;
 #[path = "../../src/communication/esp_now/frame_codec.rs"]
 mod frame_codec;
 #[path = "../../src/communication/esp_now/frame.rs"]
@@ -36,6 +38,7 @@ mod tests {
     };
     use super::mac_address::MacAddress;
     use super::retry_policy::{no_mem_retry_delay_ms, retry_count_for_chunk, retry_delay_ms};
+    use super::ov2640_sequence::{resume_sequence, standby_clkrc_write, standby_sequence};
 
     #[test]
     fn checksum_uses_little_endian_4byte_chunks() {
@@ -281,5 +284,39 @@ mod tests {
     #[test]
     fn should_capture_image_rejects_invalid_voltage_marker() {
         assert!(!should_capture_image(INVALID_VOLTAGE_PERCENT));
+    }
+
+    #[test]
+    fn ov2640_standby_sequence_matches_expected_register_order() {
+        let seq = standby_sequence();
+        assert_eq!(seq[0].reg, 0xFF); // BANK_SEL
+        assert_eq!(seq[0].value, 0x00); // DSP bank
+        assert_eq!(seq[1].reg, 0xD3); // R_DVP_SP
+        assert_eq!(seq[2].reg, 0xFF); // BANK_SEL
+        assert_eq!(seq[2].value, 0x01); // SENSOR bank
+        assert_eq!(seq[3].reg, 0x12); // COM7
+        assert_eq!(seq[3].mask, 0x10);
+        assert_eq!(seq[3].value, 0x10);
+    }
+
+    #[test]
+    fn ov2640_standby_clkrc_write_is_max_divider() {
+        let w = standby_clkrc_write();
+        assert_eq!(w.reg, 0x11); // CLKRC
+        assert_eq!(w.mask, 0x3F);
+        assert_eq!(w.value, 0x3F);
+    }
+
+    #[test]
+    fn ov2640_resume_sequence_clears_com7_sleep_and_clkrc() {
+        let seq = resume_sequence();
+        assert_eq!(seq[0].reg, 0xFF);
+        assert_eq!(seq[0].value, 0x01); // SENSOR bank
+        assert_eq!(seq[1].reg, 0x12); // COM7
+        assert_eq!(seq[1].mask, 0x10);
+        assert_eq!(seq[1].value, 0x00);
+        assert_eq!(seq[2].reg, 0x11); // CLKRC
+        assert_eq!(seq[2].mask, 0x3F);
+        assert_eq!(seq[2].value, 0x00);
     }
 }
