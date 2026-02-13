@@ -7,6 +7,9 @@ BUILD="${BUILD:-debug}"
 BIN_NAME="${BIN_NAME:-sensor_data_sender}"
 IMAGE_PATH="target/$TARGET/$BUILD/$BIN_NAME.bin"
 ELF_PATH="target/$TARGET/$BUILD/$BIN_NAME"
+QEMU_FEATURES="${QEMU_FEATURES:-qemu-smoke}"
+QEMU_LOG="${QEMU_LOG:-/tmp/m5stack_qemu_poc.log}"
+QEMU_SMOKE_MARKER="${QEMU_SMOKE_MARKER:-QEMU_SMOKE_PASS}"
 
 find_qemu() {
     if [ -n "${ESP_QEMU_BIN:-}" ] && [ -x "${ESP_QEMU_BIN}" ]; then
@@ -55,7 +58,7 @@ if [ "${QEMU_POC_SKIP_BUILD:-0}" != "1" ]; then
 
     echo "[qemu-poc] Building firmware..."
     # Allow full IDF component resolution in PoC builds to avoid missing `main` linkage.
-    VIRTUAL_ENV="" ESP_IDF_COMPONENTS= cargo +esp build --target "${TARGET}"
+    VIRTUAL_ENV="" ESP_IDF_COMPONENTS= cargo +esp build --target "${TARGET}" --features "${QEMU_FEATURES}"
 fi
 
 if [ ! -f "${ELF_PATH}" ]; then
@@ -76,9 +79,25 @@ else
 fi
 
 echo "[qemu-poc] Starting QEMU: ${QEMU_BIN}"
+rm -f "${QEMU_LOG}"
 if [ -n "${TIMEOUT_CMD}" ]; then
     # shellcheck disable=SC2086
-    ${TIMEOUT_CMD} "${QEMU_BIN}" -nographic -machine esp32 -drive "file=${IMAGE_PATH},if=mtd,format=raw" -no-reboot
+    # shellcheck disable=SC2086
+    ${TIMEOUT_CMD} "${QEMU_BIN}" -nographic -machine esp32 -drive "file=${IMAGE_PATH},if=mtd,format=raw" -no-reboot >"${QEMU_LOG}" 2>&1 || true
 else
-    "${QEMU_BIN}" -nographic -machine esp32 -drive "file=${IMAGE_PATH},if=mtd,format=raw" -no-reboot
+    "${QEMU_BIN}" -nographic -machine esp32 -drive "file=${IMAGE_PATH},if=mtd,format=raw" -no-reboot >"${QEMU_LOG}" 2>&1 &
+    QEMU_PID=$!
+    sleep 15
+    kill "${QEMU_PID}" 2>/dev/null || true
+    wait "${QEMU_PID}" 2>/dev/null || true
 fi
+
+if grep -q "${QEMU_SMOKE_MARKER}" "${QEMU_LOG}"; then
+    echo "[qemu-poc] PASS marker detected: ${QEMU_SMOKE_MARKER}"
+    exit 0
+fi
+
+echo "[qemu-poc] FAIL: PASS marker was not detected"
+echo "[qemu-poc] Last QEMU log lines:"
+tail -n 80 "${QEMU_LOG}" || true
+exit 1
