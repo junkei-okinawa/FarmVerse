@@ -10,6 +10,10 @@ rust-version = "1.85"
 name = "sensor_data_sender"
 path = "src/main.rs"
 
+[features]
+default = []
+qemu-smoke = []
+
 [profile.release]
 opt-level = "s"
 # opt-level = "z"      # "s" から "z" に変更 (サイズをさらに積極的に最適化)
@@ -35,8 +39,10 @@ chrono = "0.4.41"
 chrono-tz = "0.10.3"
 
 esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git" }
-simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor.git", version = "0.1.1" }
 
 [build-dependencies]
 embuild = "0.33"
 toml-cfg = "=0.2"
+
+[patch.crates-io]
+esp-idf-hal = { git = "https://github.com/junkei-okinawa/esp-idf-hal.git", branch = "custom-gpio-for-M5UnitCam" }

@@ -44,6 +44,11 @@ frame_size = "SVGA"
 # カメラの自動露光調整の有効/無効
 auto_exposure_enabled = true
 
+# SCCB経由のソフトスタンバイ制御（OV2640）
+# true: 撮影後にCOM7/CLKRCレジスタでスタンバイ移行を試行
+# false: スタンバイ制御を行わない（デフォルト）
+camera_soft_standby_enabled = false
+
 # 画像品質安定化のための捨て画像撮影回数
 camera_warmup_frames = 2
 

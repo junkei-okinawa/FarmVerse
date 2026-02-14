@@ -1,4 +1,7 @@
 use crate::mac_address::MacAddress;
+use crate::core::config_validation::{
+    parse_camera_warmup_frames, parse_receiver_mac, ValidationError,
+};
 
 /// アプリケーション設定
 ///
@@ -26,6 +29,9 @@ pub struct Config {
 
     #[default(false)]
     auto_exposure_enabled: bool,
+
+    #[default(false)]
+    camera_soft_standby_enabled: bool,
 
     #[default(255)]
     camera_warmup_frames: u8,
@@ -87,6 +93,9 @@ pub struct AppConfig {
     /// 自動露出設定
     pub auto_exposure_enabled: bool,
 
+    /// SCCB経由のソフトスタンバイ制御を有効化
+    pub camera_soft_standby_enabled: bool,
+
     /// カメラウォームアップフレーム数
     pub camera_warmup_frames: Option<u8>,
 
@@ -116,15 +125,7 @@ impl AppConfig {
         let config = CONFIG;
 
         // 受信機のMACアドレスをパース
-        let receiver_mac_str = config.receiver_mac;
-        if receiver_mac_str == "11:22:33:44:55:66" || receiver_mac_str == "" {
-            // デフォルト値または空文字の場合はエラー
-            return Err(ConfigError::InvalidReceiverMac(
-                "受信機MACアドレスが設定されていません。cfg.tomlを確認してください。".to_string(),
-            ));
-        }
-        let receiver_mac = MacAddress::from_str(receiver_mac_str)
-            .map_err(|_| ConfigError::InvalidReceiverMac(receiver_mac_str.to_string()))?;
+        let receiver_mac = parse_receiver_mac(config.receiver_mac).map_err(map_validation_error)?;
 
         // ディープスリープ時間を設定
         let sleep_duration_seconds = config.sleep_duration_seconds;
@@ -134,19 +135,11 @@ impl AppConfig {
 
         // 自動露出設定を取得
         let auto_exposure_enabled = config.auto_exposure_enabled;
+        let camera_soft_standby_enabled = config.camera_soft_standby_enabled;
 
         // カメラウォームアップフレーム数を取得・検証
-        let camera_warmup_frames_val = config.camera_warmup_frames;
-        if !(camera_warmup_frames_val <= 10 || camera_warmup_frames_val == 255) {
-            return Err(ConfigError::InvalidCameraWarmupFrames(
-                camera_warmup_frames_val,
-            ));
-        }
-        let camera_warmup_frames = if camera_warmup_frames_val == 255 {
-            None
-        } else {
-            Some(camera_warmup_frames_val)
-        };
+        let camera_warmup_frames =
+            parse_camera_warmup_frames(config.camera_warmup_frames).map_err(map_validation_error)?;
 
         // タイムゾーンを取得
         let timezone = config.timezone.to_string();
@@ -167,6 +160,7 @@ impl AppConfig {
             sleep_duration_seconds,
             frame_size,
             auto_exposure_enabled,
+            camera_soft_standby_enabled,
             camera_warmup_frames,
             timezone,
             sleep_command_timeout_seconds,
@@ -175,6 +169,21 @@ impl AppConfig {
             esp_now_chunk_size,
             esp_now_chunk_delay_ms,
         })
+    }
+}
+
+fn map_validation_error(err: ValidationError) -> ConfigError {
+    match err {
+        ValidationError::MissingReceiverMac => ConfigError::InvalidReceiverMac(
+            "受信機MACアドレスが設定されていません。cfg.tomlを確認してください。".to_string(),
+        ),
+        ValidationError::InvalidReceiverMac(v) => ConfigError::InvalidReceiverMac(v),
+        ValidationError::InvalidCameraWarmupFrames(v) => ConfigError::InvalidCameraWarmupFrames(v),
+        ValidationError::InvalidTargetMinuteLastDigit(_)
+        | ValidationError::InvalidTargetSecondLastDigit(_)
+        | ValidationError::MissingWifiSsid => {
+            unreachable!("core/config では target digits / wifi_ssid の検証は呼び出さない")
+        }
     }
 }
 

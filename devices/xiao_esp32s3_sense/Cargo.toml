@@ -28,7 +28,7 @@ opt-level = "z"
 
 [dependencies]
 anyhow = "1.0"
-log = "0.4"
+log = { version = "0.4", features = ["max_level_off"] }
 toml-cfg = "=0.2"
 esp-idf-svc = "0.51.0"
 esp-idf-sys = "0.36"
@@ -38,7 +38,7 @@ thiserror = "2.0.12"
 chrono = "0.4.41"
 chrono-tz = "0.10.3"
 
-# esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git" }
+# esp-camera-rs = { git = "../../sensors/esp-camera-rs" }
 esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git", branch = "feature/devices/esp32s3-sense" }
 
 # センサーライブラリの追加

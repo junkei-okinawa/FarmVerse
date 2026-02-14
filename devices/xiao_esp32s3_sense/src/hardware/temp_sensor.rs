@@ -103,7 +103,9 @@ impl TempSensor {
                     })
                 }
                 Err(e) => {
-                    warn!("温度センサー読み取りエラー: {:?}, デフォルト値を使用", e);
+                    warn!("温度センサー読み取りエラー: {:?}, 電源を強制オフにしデフォルト値を使用", e);
+                    // [CASE 1] エラー発生時に電源ピンを確実にLOWにするための暫定処置
+                    let _ = self.power_off();
                     self.get_default_reading()
                 }
             }
@@ -111,6 +113,18 @@ impl TempSensor {
             // センサーが初期化されていない場合はデフォルト値を返す
             self.get_default_reading()
         }
+    }
+
+    /// センサーの電源を強制的にオフにする（Deep Sleepリーク対策）
+    pub fn power_off(&self) -> Result<()> {
+        use esp_idf_sys::{gpio_set_direction, gpio_set_level, gpio_mode_t_GPIO_MODE_OUTPUT};
+        
+        info!("温度センサーの電源をオフにしています (GPIO{})", self.power_pin);
+        unsafe {
+            gpio_set_direction(self.power_pin, gpio_mode_t_GPIO_MODE_OUTPUT);
+            gpio_set_level(self.power_pin, 0);
+        }
+        Ok(())
     }
 
     /// デフォルト温度読み取り結果を取得

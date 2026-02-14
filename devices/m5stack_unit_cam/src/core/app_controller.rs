@@ -2,6 +2,7 @@ use log::{error, info, warn};
 use std::sync::Arc;
 
 use crate::core::config::AppConfig;
+use crate::core::resolve_sleep_duration_seconds;
 use crate::communication::esp_now::EspNowReceiver;
 use crate::power::sleep::{DeepSleep, DeepSleepPlatform};
 
@@ -22,26 +23,27 @@ impl AppController {
         // ESP-NOW受信状態をリセット（前回の受信データをクリア）
         EspNowReceiver::reset_receiver_state();
         
-        match esp_now_receiver.wait_for_sleep_command(config.sleep_command_timeout_seconds as u32) {
-            Some(duration_seconds) => {
-                if duration_seconds > 0 {
-                    info!(
-                        "✓ サーバーからスリープ時間を受信: {}秒。ディープスリープに入ります。",
-                        duration_seconds
-                    );
-                    deep_sleep_controller.sleep_for_duration(duration_seconds as u64)?;
-                } else {
-                    warn!("無効なスリープ時間 (0秒) を受信。デフォルト時間を使用します。");
-                    info!("デフォルトスリープ時間でディープスリープに入ります: {}秒", config.sleep_duration_seconds);
-                    deep_sleep_controller.sleep_for_duration(config.sleep_duration_seconds)?;
-                }
+        let received = esp_now_receiver.wait_for_sleep_command(config.sleep_command_timeout_seconds as u32);
+        let target_duration = resolve_sleep_duration_seconds(received, config.sleep_duration_seconds);
+
+        match received {
+            Some(duration_seconds) if duration_seconds > 0 => {
+                info!(
+                    "✓ サーバーからスリープ時間を受信: {}秒。ディープスリープに入ります。",
+                    duration_seconds
+                );
+            }
+            Some(_) => {
+                warn!("無効なスリープ時間 (0秒) を受信。デフォルト時間を使用します。");
+                info!("デフォルトスリープ時間でディープスリープに入ります: {}秒", config.sleep_duration_seconds);
             }
             None => {
                 warn!("✗ スリープコマンドを受信できませんでした。デフォルト時間を使用します。");
                 info!("デフォルトスリープ時間でディープスリープに入ります: {}秒", config.sleep_duration_seconds);
-                deep_sleep_controller.sleep_for_duration(config.sleep_duration_seconds)?;
             }
         }
+
+        deep_sleep_controller.sleep_for_duration(target_duration)?;
         
         Ok(())
     }

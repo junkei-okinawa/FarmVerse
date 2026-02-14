@@ -18,6 +18,8 @@ impl NetworkManager {
         modem: Modem,
         sysloop: &EspSystemEventLoop,
         nvs_partition: &EspDefaultNvsPartition,
+        wifi_tx_power_dbm: i8,
+        wifi_init_delay_ms: u64,
     ) -> anyhow::Result<BlockingWifi<EspWifi<'static>>> {
         info!("ESP-NOW用にWiFiをSTAモードで準備します。");
         
@@ -36,9 +38,31 @@ impl NetworkManager {
             },
         ))?;
         
+        info!("WiFi設定完了。起動待機({}ms)...", wifi_init_delay_ms);
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(wifi_init_delay_ms as u32); // 突入電流分散待機 1
+        
         wifi.start()?;
-        info!("WiFiがESP-NOW用にSTAモードで起動しました。");
+        info!("WiFiがESP-NOW用にSTAモードで起動しました。RF安定化待機({}ms)...", wifi_init_delay_ms);
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(wifi_init_delay_ms as u32); // 突入電流分散待機 2
 
+        // WiFi送信パワーを設定（省電力化）
+        unsafe {
+            // ESP-IDF API expects power in 0.25 dBm units (quarter-dBm).
+            // config.rsで既に 2-20 dBm にクランプされているため、i16キャスト後の
+            // 8-80 は確実に i8 の範囲 (-128〜127) に収まる。
+            let scaled: i16 = i16::from(wifi_tx_power_dbm) * 4;
+            let power_quarter_dbm = scaled as i8;
+
+            let err = esp_idf_svc::sys::esp_wifi_set_max_tx_power(power_quarter_dbm);
+            if err != esp_idf_svc::sys::ESP_OK {
+                // 送信パワー設定失敗時は、デフォルト値で動作するが、システム自体は停止させない
+                log::warn!("WiFi送信パワーの設定に失敗しました (エラーコード: {}) - デフォルトパワーで動作します", err);
+            } else {
+                info!("WiFi送信パワーを {}dBm に設定しました。適用待機({}ms)...", wifi_tx_power_dbm, wifi_init_delay_ms);
+            }
+        }
+        esp_idf_svc::hal::delay::FreeRtos::delay_ms(wifi_init_delay_ms as u32); // 突入電流分散待機 3
+        
         // WiFi状態の詳細確認
         let wifi_status = wifi.is_started();
         info!("WiFi起動状態: {:?}", wifi_status);

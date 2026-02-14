@@ -27,6 +27,12 @@ fn main() -> anyhow::Result<()> {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
+    if cfg!(feature = "qemu-smoke") {
+        info!("QEMU smoke mode enabled");
+        println!("QEMU_SMOKE_PASS");
+        return Ok(());
+    }
+
     // 設定ファイル読み込み
     let app_config = Arc::new(AppConfig::load().map_err(|e| {
         error!("設定ファイルの読み込みに失敗しました: {}", e);

@@ -107,6 +107,12 @@ pub struct Config {
 
     #[default(false)]
     debug_mode: bool,
+
+    #[default(8)]
+    wifi_tx_power_dbm: i8,
+
+    #[default(200)]
+    wifi_init_delay_ms: u64,
 }
 
 /// 設定エラー
@@ -235,6 +241,12 @@ pub struct AppConfig {
 
     /// デバッグモード（詳細ログ出力）
     pub debug_mode: bool,
+
+    /// WiFi送信パワー（dBm単位、範囲: 2-20）
+    pub wifi_tx_power_dbm: i8,
+
+    /// WiFi初期化時の各ステップ間の待機時間（ミリ秒）
+    pub wifi_init_delay_ms: u64,
 }
 
 /// メモリ管理設定
@@ -384,6 +396,18 @@ impl AppConfig {
         let bypass_voltage_threshold = config.bypass_voltage_threshold;
         let debug_mode = config.debug_mode;
 
+        // WiFi送信パワー設定を取得（有効範囲 2〜20 dBm にクランプ）
+        // esp_wifi_set_max_tx_power は範囲外の値でもエラーにならない場合があるが、
+        // 安全のため仕様範囲内に収める
+        let wifi_tx_power_dbm_raw = config.wifi_tx_power_dbm;
+        let wifi_tx_power_dbm = if wifi_tx_power_dbm_raw < 2 {
+            2
+        } else if wifi_tx_power_dbm_raw > 20 {
+            20
+        } else {
+            wifi_tx_power_dbm_raw
+        };
+
         // 温度センサー設定を取得
         let temp_sensor_enabled = config.temp_sensor_enabled;
         let temp_sensor_power_pin = config.temp_sensor_power_pin;
@@ -433,6 +457,8 @@ impl AppConfig {
             force_camera_test,
             bypass_voltage_threshold,
             debug_mode,
+            wifi_tx_power_dbm,
+            wifi_init_delay_ms: config.wifi_init_delay_ms,
         })
     }
 }
@@ -539,6 +565,8 @@ mod tests {
             force_camera_test,
             bypass_voltage_threshold,
             debug_mode,
+            wifi_tx_power_dbm: 8,
+            wifi_init_delay_ms: 1000,
         }))
     }
 
