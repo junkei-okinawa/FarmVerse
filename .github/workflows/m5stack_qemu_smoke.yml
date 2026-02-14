@@ -19,6 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: espressif/idf:latest
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout repository
@@ -26,11 +29,13 @@ jobs:
 
       - name: Verify QEMU binary exists
         run: |
+          . "$IDF_PATH/export.sh" >/dev/null 2>&1
           command -v qemu-system-xtensa
           qemu-system-xtensa --version
 
       - name: Verify ESP32 machine is supported
         run: |
+          . "$IDF_PATH/export.sh" >/dev/null 2>&1
           qemu-system-xtensa -machine help | grep -q "esp32"
           echo "QEMU supports '-machine esp32'"
 
