@@ -2,15 +2,11 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use log::{error, info, warn};
 
 use crate::communication::esp_now::EspNowSender;
+use crate::core::{should_capture_image, INVALID_VOLTAGE_PERCENT, LOW_VOLTAGE_THRESHOLD_PERCENT};
 use crate::core::config::AppConfig;
+use crate::core::prepare_image_payload;
 use crate::hardware::camera::{CameraController, M5UnitCamConfig};
 use crate::hardware::led::StatusLed;
-
-/// 低電圧閾値（パーセンテージ）
-const LOW_VOLTAGE_THRESHOLD_PERCENT: u8 = 8;
-
-/// ダミーハッシュ（SHA256の64文字）
-const DUMMY_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 /// 測定データ構造体
 #[derive(Debug)]
@@ -40,13 +36,12 @@ impl DataService {
         led: &mut StatusLed,
     ) -> anyhow::Result<Option<Vec<u8>>> {
         // ADC電圧条件をチェック
-        if voltage_percent <= LOW_VOLTAGE_THRESHOLD_PERCENT {
-            warn!("ADC電圧が低すぎるため画像キャプチャをスキップします: {}%", voltage_percent);
-            return Ok(None);
-        }
-
-        if voltage_percent >= 255 {
-            warn!("ADC電圧測定値が異常です: {}%", voltage_percent);
+        if !should_capture_image(voltage_percent) {
+            if voltage_percent <= LOW_VOLTAGE_THRESHOLD_PERCENT {
+                warn!("ADC電圧が低すぎるため画像キャプチャをスキップします: {}%", voltage_percent);
+            } else if voltage_percent >= INVALID_VOLTAGE_PERCENT {
+                warn!("ADC電圧測定値が異常です: {}%", voltage_percent);
+            }
             return Ok(None);
         }
 
@@ -86,6 +81,12 @@ impl DataService {
         let image_data = frame_buffer.data().to_vec();
         info!("画像キャプチャ完了: {} bytes", image_data.len());
 
+        if _app_config.camera_soft_standby_enabled {
+            if let Err(e) = camera.enter_standby_via_sccb() {
+                warn!("SCCBスタンバイ移行に失敗しました（処理継続）: {:?}", e);
+            }
+        }
+
         led.turn_off()?;
         Ok(Some(image_data))
     }
@@ -100,20 +101,12 @@ impl DataService {
         led.turn_on()?;
 
         // 画像データの処理と送信
-        let (image_data, _hash) = if let Some(data) = measured_data.image_data {
-            if data.is_empty() {
-                warn!("画像データが空です");
-                (vec![], DUMMY_HASH.to_string())
-            } else {
-                info!("画像データを送信中: {} bytes", data.len());
-                // 簡単なハッシュ計算（画像サイズとチェックサムベース）
-                let hash = format!("{:08x}{:08x}", data.len(), data.iter().map(|&b| b as u32).sum::<u32>());
-                (data, hash)
-            }
+        let (image_data, _hash) = prepare_image_payload(measured_data.image_data);
+        if image_data.is_empty() {
+            warn!("画像データなし、ダミーデータを送信");
         } else {
-            info!("画像データなし、ダミーデータを送信");
-            (vec![], DUMMY_HASH.to_string())
-        };
+            info!("画像データを送信中: {} bytes", image_data.len());
+        }
 
         // 設定されたサーバーMACアドレスを使用
         info!("設定されたサーバーMACアドレス: {}", app_config.receiver_mac);
@@ -136,7 +129,13 @@ impl DataService {
 
         // HASHフレームを送信（サーバーがスリープコマンドを送信するために必要）
         let current_time = "2025/06/22 12:00:00.000"; // 簡易タイムスタンプ
-        match esp_now_sender.send_hash_frame(&_hash, measured_data.voltage_percent, current_time) {
+        match esp_now_sender.send_hash_frame(
+            &_hash,
+            measured_data.voltage_percent,
+            None,
+            None,
+            current_time,
+        ) {
             Ok(_) => {
                 info!("HASHフレームの送信が完了しました");
             }

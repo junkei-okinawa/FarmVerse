@@ -56,7 +56,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "ESP32実機環境でスレッド間通信エラーが発生するためスキップ"]
     fn test_calculate_hash() {
         let data = b"test data";
         let hash = ImageFrame::calculate_hash(data).unwrap();
@@ -68,7 +67,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "ESP32実機環境でヒープメモリ問題が発生するためスキップ"]
     fn test_empty_data_hash() {
         let data = b"";
         let result = ImageFrame::calculate_hash(data);
@@ -76,11 +74,14 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "ESP32実機環境でStoreProhibitedエラーが発生するためスキップ"]
-    fn test_prepare_hash_message() {
-        let hash = "abcdef1234567890";
-        let voltage_percent = 75;
-        let message = ImageFrame::prepare_hash_message(hash, voltage_percent);
-        assert_eq!(message, b"HASH:abcdef1234567890,VOLT:75");
+    fn test_from_image_data_with_empty_input() {
+        let result = ImageFrame::from_image_data(vec![]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_image_data_with_valid_input() {
+        let result = ImageFrame::from_image_data(vec![0x01, 0x02, 0x03]);
+        assert!(result.is_ok());
     }
 }

@@ -150,6 +150,7 @@ graph TD
 | `sleep_command_timeout_seconds` | スリープコマンド待機タイムアウト(秒) | 10 |
 | `frame_size` | カメラ解像度 ⚠️ M5Stack Unit CamはSVGA推奨 | "SVGA" |
 | `auto_exposure_enabled` | 自動露光調整 | true |
+| `camera_soft_standby_enabled` | 撮影後にSCCB経由でOV2640スタンバイ移行を試行 | false |
 | `camera_warmup_frames` | ウォームアップフレーム数 | 2 |
 | `adc_voltage_min_mv` | ADC電圧測定最小値(mV) - キャリブレーション用 | 128.0 |
 | `adc_voltage_max_mv` | ADC電圧測定最大値(mV) - キャリブレーション用 | 3130.0 |
@@ -170,6 +171,10 @@ graph TD
   1. 最低電圧時のADC値を測定し、`adc_voltage_min_mv`に設定
   2. 最高電圧時のADC値を測定し、`adc_voltage_max_mv`に設定
   3. これにより0-100%の電圧パーセンテージが正確に計算される
+
+#### カメラソフトスタンバイ
+- **`camera_soft_standby_enabled`**: 撮影後にOV2640へCOM7/CLKRC設定を行い、ソフトスタンバイを試行
+- **注意**: PWDNや電源遮断ではないため、消費電力低減効果はハード構成に依存
 
 ### ピン配置 (M5Stack Unit Cam)
 
@@ -239,6 +244,68 @@ cargo espflash flash --release --port /dev/tty.usbserial-xxxxxxxx --monitor --pa
   - 長い点滅: エラー
 - **電圧監視**: ADC電圧8%以下で撮影スキップ
 - **ハッシュ検証**: データ整合性確認
+
+### ホストユニットテスト（ESP-IDF非依存）
+ESP-IDFビルドを伴わずに、以下のロジックを検証できます。
+- ストリーミングフレーム構造
+- XORチェックサム
+- ペイロードサイズ上限処理
+- HASHペイロード文字列生成
+- MACアドレスパース/表示
+
+```bash
+cd host_frame_tests
+cargo test
+```
+
+### QEMU PoC（ESP32エミュレータ最小確認）
+`qemu_unittest.sh` は、以下を順に実行します。
+- `qemu-system-xtensa` 存在確認（`ESP_QEMU_BIN` 優先）
+- ESP-IDF環境確認（`IDF_PATH`）
+- `cargo +esp build --features qemu-smoke`
+- `espflash save-image` で `.bin` 生成
+- QEMU起動とログ確認（`QEMU_SMOKE_PASS` マーカーで判定）
+
+#### 公式手順でのQEMUインストール（Espressif）
+ESP-IDF公式ドキュメント:
+https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/qemu.html
+
+```bash
+# 1) 依存ライブラリ
+brew install libgcrypt glib pixman sdl2 libslirp
+
+# 2) ESP-IDF有効化
+. /Users/junkei/esp/v5.1.6/esp-idf/export.sh
+
+# 3) Espressif配布QEMUをインストール
+python3 $IDF_PATH/tools/idf_tools.py install qemu-xtensa qemu-riscv32
+
+# 4) PATH反映（再度 export）
+. /Users/junkei/esp/v5.1.6/esp-idf/export.sh
+```
+
+```bash
+cd devices/m5stack_unit_cam
+. /Users/junkei/esp/v5.1.6/esp-idf/export.sh
+./qemu_unittest.sh
+```
+
+ビルドをスキップしてQEMU起動だけ確認する場合:
+```bash
+QEMU_POC_SKIP_BUILD=1 ./qemu_unittest.sh
+```
+
+利用可能な環境変数:
+- `ESP_QEMU_BIN`: 使用するQEMUバイナリを明示
+- `QEMU_FEATURES`: ビルド時feature（デフォルト: `qemu-smoke`）
+- `QEMU_SMOKE_MARKER`: 成功判定用マーカー（デフォルト: `QEMU_SMOKE_PASS`）
+
+#### GitHub Actions最小CI（QEMU可用性チェック）
+このリポジトリには `espressif/idf:latest` ベースで以下を確認するワークフローを追加しています。
+- `qemu-system-xtensa` が存在すること
+- `-machine esp32` が利用できること
+
+対象: `.github/workflows/m5stack_qemu_smoke.yml`
 
 ### トラブルシューティング
 

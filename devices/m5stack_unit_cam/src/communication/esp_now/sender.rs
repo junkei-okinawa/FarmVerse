@@ -1,4 +1,11 @@
 use crate::mac_address::MacAddress;
+use crate::communication::esp_now::frame_codec::{
+    build_hash_payload, build_sensor_data_frame, calculate_xor_checksum, payload_size_candidates,
+    ESP_NOW_MAX_SIZE, FRAME_OVERHEAD,
+};
+use crate::communication::esp_now::retry_policy::{
+    no_mem_retry_delay_ms, retry_count_for_chunk, retry_delay_ms,
+};
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::espnow::EspNow;
 use log::{error, info, warn};
@@ -28,12 +35,17 @@ pub enum EspNowError {
 pub struct EspNowSender {
     esp_now: Arc<Mutex<EspNow<'static>>>,
     peer_mac: MacAddress,
+    sequence_number: Mutex<u32>,
 }
 
 impl EspNowSender {
     /// 新しいESP-NOW送信機を初期化します
     pub fn new(esp_now: Arc<Mutex<EspNow<'static>>>, peer_mac: MacAddress) -> Result<Self, EspNowError> {
-        let sender = Self { esp_now, peer_mac };
+        let sender = Self {
+            esp_now,
+            peer_mac,
+            sequence_number: Mutex::new(1),
+        };
         sender.add_peer(&sender.peer_mac)?;
         Ok(sender)
     }
@@ -118,7 +130,7 @@ impl EspNowSender {
                         
                         if attempt < max_retries {
                             // メモリ不足時は段階的に長い待機時間（バッファクリア待ち）
-                            let memory_delay = 800 + (attempt as u32 * 400); // 800ms, 1200ms, 1600ms...
+                            let memory_delay = no_mem_retry_delay_ms(attempt);
                             info!("メモリ不足回復待機: {}ms後にリトライします...", memory_delay);
                             FreeRtos::delay_ms(memory_delay);
                         }
@@ -128,7 +140,7 @@ impl EspNowSender {
                         
                         if attempt < max_retries {
                             // 通常エラー時の待機時間
-                            let delay_ms = 300 * attempt as u32; // 段階的に延長
+                            let delay_ms = retry_delay_ms(attempt);
                             info!("{}ms後にリトライします...", delay_ms);
                             FreeRtos::delay_ms(delay_ms);
                         }
@@ -139,7 +151,7 @@ impl EspNowSender {
                     last_error = e;
                     
                     if attempt < max_retries {
-                        let delay_ms = 300 * attempt as u32;
+                        let delay_ms = retry_delay_ms(attempt);
                         info!("{}ms後にリトライします...", delay_ms);
                         FreeRtos::delay_ms(delay_ms);
                     }
@@ -158,17 +170,27 @@ impl EspNowSender {
         initial_chunk_size: usize,
         delay_between_chunks_ms: u32,
     ) -> Result<(), EspNowError> {
-        // 段階的にチャンクサイズを小さくして試行
-        let chunk_sizes = [initial_chunk_size, 150, 100, 50];
-        
-        for &chunk_size in &chunk_sizes {
-            info!("画像データを{}バイトのチャンクに分割して送信開始", chunk_size);
+        // 有効なペイロードサイズを計算
+        // 段階的にペイロードサイズを小さくして試行
+        let payload_sizes = payload_size_candidates(initial_chunk_size);
+
+        for &payload_size in &payload_sizes {
+            let total_frame_size = FRAME_OVERHEAD + payload_size;
+            if total_frame_size > ESP_NOW_MAX_SIZE {
+                continue;
+            }
+
+            info!(
+                "画像データを{}バイトのペイロードに分割して送信開始（フレーム全体:{}バイト）",
+                payload_size,
+                total_frame_size
+            );
             info!("総データサイズ: {}バイト", data.len());
-            let total_chunks = (data.len() + chunk_size - 1) / chunk_size;
-            
+            let total_chunks = (data.len() + payload_size - 1) / payload_size;
+
             let mut success = true;
-            
-            for (i, chunk) in data.chunks(chunk_size).enumerate() {
+
+            for (i, chunk) in data.chunks(payload_size).enumerate() {
                 if i % 20 == 0 { // 20チャンクごとに進捗表示
                     info!("チャンク送信進捗: {}/{}", i + 1, total_chunks);
                 }
@@ -177,18 +199,25 @@ impl EspNowSender {
                 if i == 0 {
                     info!("最初のチャンク詳細: サイズ={}バイト, プレビュー={:02X?}", chunk.len(), &chunk[..std::cmp::min(10, chunk.len())]);
                 }
+
+                let frame = match self.create_sensor_data_frame(2, chunk) { // FRAME_TYPE_DATA = 2
+                    Ok(f) => f,
+                    Err(e) => {
+                        error!("チャンク{} フレーム作成失敗: {:?}", i + 1, e);
+                        success = false;
+                        break;
+                    }
+                };
                 
                 // 重要なチャンク（最初の3チャンク）は重複送信で信頼性向上
-                let retry_count = if i < 3 { 
+                let retry_count = retry_count_for_chunk(i);
+                if retry_count > 1 {
                     warn!("重要チャンク{}: 信頼性向上のため複数回送信", i + 1);
-                    2 // 重要チャンクは2回送信
-                } else { 
-                    1 // 通常チャンクは1回
-                };
+                }
                 
                 let mut chunk_success = false;
                 for attempt in 1..=retry_count {
-                    match self.send_with_retry(chunk, 1000, 3) {
+                    match self.send_with_retry(&frame, 1000, 3) {
                         Ok(()) => {
                             if retry_count > 1 {
                                 info!("重要チャンク{} 送信成功 (試行{}/{})", i + 1, attempt, retry_count);
@@ -198,7 +227,7 @@ impl EspNowSender {
                         }
                         Err(e) => {
                             if attempt == retry_count {
-                                error!("チャンク{} 送信失敗 (チャンクサイズ{}バイト): {:?}", i + 1, chunk_size, e);
+                                error!("チャンク{} 送信失敗 (ペイロードサイズ{}バイト): {:?}", i + 1, payload_size, e);
                             } else {
                                 warn!("重要チャンク{} 送信失敗 (試行{}/{}), 再送します", i + 1, attempt, retry_count);
                                 FreeRtos::delay_ms(100); // 重要チャンク再送間隔
@@ -217,10 +246,10 @@ impl EspNowSender {
             }
             
             if success {
-                info!("画像データ送信完了: {}チャンク送信 (チャンクサイズ: {}バイト)", total_chunks, chunk_size);
+                info!("画像データ送信完了: {}チャンク送信 (ペイロードサイズ: {}バイト)", total_chunks, payload_size);
                 return Ok(());
             } else {
-                warn!("チャンクサイズ{}バイトで送信失敗、より小さなサイズで再試行します", chunk_size);
+                warn!("ペイロードサイズ{}バイトで送信失敗、より小さなサイズで再試行します", payload_size);
                 FreeRtos::delay_ms(1000); // 再試行前の待機
             }
         }
@@ -234,35 +263,42 @@ impl EspNowSender {
         &self,
         hash: &str,
         voltage_percentage: u8,
+        temperature_celsius: Option<f32>,
+        tds_voltage: Option<f32>,
         timestamp: &str,
     ) -> Result<(), EspNowError> {
-        // M5Stack Unit Camには温度センサーがないため、ダミー値を使用
-        let temp_celsius = -999.0; // TODO: ダミー値, 温度センサーばUnitCamから削除する予定なので、全ての削除が完了したらtemp_celsiusに関わる実装を削除する
-        let hash_data = format!("HASH:{},VOLT:{},TEMP:{:.1},{}", hash, voltage_percentage, temp_celsius, timestamp);
-        info!("ハッシュフレーム送信: {}", hash_data);
-        
-        self.send_with_retry(hash_data.as_bytes(), 1000, 3)?;
+        let hash_data = build_hash_payload(
+            hash,
+            voltage_percentage,
+            temperature_celsius,
+            tds_voltage,
+            timestamp,
+        );
+        info!("ハッシュフレーム送信（sensor_data_receiver準拠）: {}", hash_data);
+
+        let frame = self.create_sensor_data_frame(1, hash_data.as_bytes())?; // FRAME_TYPE_HASH = 1
+        self.send_with_retry(&frame, 1000, 3)?;
         Ok(())
     }
 
     /// 画像送信終了マーカーを送信
     pub fn send_eof_marker(&self) -> Result<(), EspNowError> {
-        // より明確なEOFマーカーを送信（パディングを追加して干渉を防ぐ）
-        let eof_marker = b"---EOF---\r\n"; // 前後にパディングを追加
-        info!("EOF マーカー送信開始");
-        
+        info!("EOF フレーム送信開始（sensor_data_receiver準拠）");
+
+        let frame = self.create_sensor_data_frame(3, b"EOF")?; // FRAME_TYPE_EOF = 3
+
         // 複数回送信で信頼性を向上
         for attempt in 1..=3 {
-            info!("EOF マーカー送信試行 {}/3", attempt);
-            
-            match self.send_with_retry(eof_marker, 1000, 3) {
+            info!("EOF フレーム送信試行 {}/3", attempt);
+
+            match self.send_with_retry(&frame, 1000, 3) {
                 Ok(()) => {
-                    info!("EOF マーカー送信成功 (試行 {})", attempt);
+                    info!("EOF フレーム送信成功 (試行 {})", attempt);
                     FreeRtos::delay_ms(200);
                     break;
                 }
                 Err(e) => {
-                    error!("EOF マーカー送信失敗 (試行 {}): {:?}", attempt, e);
+                    error!("EOF フレーム送信失敗 (試行 {}): {:?}", attempt, e);
                     if attempt == 3 {
                         return Err(e);
                     }
@@ -270,8 +306,40 @@ impl EspNowSender {
                 }
             }
         }
-        
-        info!("EOF マーカー送信完了");
+
+        info!("EOF フレーム送信完了");
         Ok(())
+    }
+
+    fn create_sensor_data_frame(&self, frame_type: u8, data: &[u8]) -> Result<Vec<u8>, EspNowError> {
+        let mac_address = self.get_local_mac_address();
+        let sequence = self.get_next_sequence_number();
+        Ok(build_sensor_data_frame(frame_type, mac_address, sequence, data))
+    }
+
+    fn get_local_mac_address(&self) -> [u8; 6] {
+        let mut mac = [0u8; 6];
+        unsafe {
+            let result = esp_idf_sys::esp_wifi_get_mac(
+                esp_idf_sys::wifi_interface_t_WIFI_IF_STA,
+                mac.as_mut_ptr(),
+            );
+            if result != 0 {
+                warn!("MACアドレス取得失敗、デフォルト値を使用: {:?}", result);
+                mac = [0x24, 0x6F, 0x28, 0x12, 0x34, 0x56];
+            }
+        }
+        mac
+    }
+
+    fn get_next_sequence_number(&self) -> u32 {
+        let mut guard = self.sequence_number.lock().unwrap();
+        let current = *guard;
+        *guard = guard.wrapping_add(1);
+        current
+    }
+
+    fn calculate_xor_checksum(&self, data: &[u8]) -> u32 {
+        calculate_xor_checksum(data)
     }
 }

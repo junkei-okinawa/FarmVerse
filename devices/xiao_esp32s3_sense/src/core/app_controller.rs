@@ -1,20 +1,19 @@
 use log::{error, info, warn};
 use std::sync::Arc;
-
 use crate::config::AppConfig;
-use crate::communication::esp_now::EspNowReceiver;
-use crate::power::sleep::{DeepSleep, DeepSleepPlatform};
+use crate::communication::esp_now::{EspNowReceiver};
+use crate::power::sleep::{SleepManager, SleepType, DeepSleepPlatform, LightSleepPlatform};
 
 /// アプリケーションの主要な制御フローを管理するモジュール
 pub struct AppController;
 
 impl AppController {
-    /// スリープコマンドを受信してディープスリープを実行
-    pub fn handle_sleep_with_server_command<P: DeepSleepPlatform>(
+    /// スリープコマンドを受信して最適なモード（Deep/Light）でスリープを実行
+    pub fn handle_sleep_with_server_command<D: DeepSleepPlatform, L: LightSleepPlatform>(
         esp_now_receiver: &EspNowReceiver,
-        deep_sleep_controller: &DeepSleep<P>,
+        sleep_manager: &SleepManager<D, L>,
         config: &Arc<AppConfig>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<SleepType> {
         info!("=== サーバーからのスリープコマンド待機開始 ===");
         info!("設定されたデフォルトスリープ時間: {}秒", config.sleep_duration_seconds);
         info!("スリープコマンド待機タイムアウト: {}秒", config.sleep_command_timeout_seconds);
@@ -22,39 +21,95 @@ impl AppController {
         // ESP-NOW受信状態をリセット（前回の受信データをクリア）
         EspNowReceiver::reset_receiver_state();
         
-        match esp_now_receiver.wait_for_sleep_command(config.sleep_command_timeout_seconds as u32) {
+        let duration = match esp_now_receiver.wait_for_sleep_command(config.sleep_command_timeout_seconds as u32) {
             Some(duration_seconds) => {
                 if duration_seconds > 0 {
                     info!(
-                        "✓ サーバーからスリープ時間を受信: {}秒。ディープスリープに入ります。",
+                        "✓ サーバーからスリープ時間を受信: {}秒。",
                         duration_seconds
                     );
-                    deep_sleep_controller.sleep_for_duration(duration_seconds as u64)?;
+                    duration_seconds as u64
                 } else {
                     warn!("無効なスリープ時間 (0秒) を受信。デフォルト時間を使用します。");
-                    info!("デフォルトスリープ時間でディープスリープに入ります: {}秒", config.sleep_duration_seconds);
-                    deep_sleep_controller.sleep_for_duration(config.sleep_duration_seconds)?;
+                    config.sleep_duration_seconds
                 }
             }
             None => {
                 warn!("✗ スリープコマンドを受信できませんでした。デフォルト時間を使用します。");
-                info!("デフォルトスリープ時間でディープスリープに入ります: {}秒", config.sleep_duration_seconds);
-                deep_sleep_controller.sleep_for_duration(config.sleep_duration_seconds)?;
+                config.sleep_duration_seconds
+            }
+        };
+        
+        Self::secure_shutdown_and_sleep(sleep_manager, duration, config)
+    }
+
+    /// 無線停止、GPIO Hold設定を行い、安全にスリープへ移行
+    fn secure_shutdown_and_sleep<D: DeepSleepPlatform, L: LightSleepPlatform>(
+        sleep_manager: &SleepManager<D, L>,
+        duration_seconds: u64,
+        _config: &Arc<AppConfig>,
+    ) -> anyhow::Result<SleepType> {
+        info!("=== スリープ準備シーケンスを開始します ({}秒) ===", duration_seconds);
+
+        // スリープタイプを判定（Deep SleepかLight Sleepか）
+        // 10分(600秒)がデフォルトの閾値
+        let is_light_sleep = duration_seconds <= 600;
+
+        if !is_light_sleep {
+            info!("DEEP SLEEPのためのハードウェア遮断を実行します...");
+            // [PHASE 8] ステータスLED (GPIO 21) を強制的に消灯・固定
+            unsafe {
+                esp_idf_sys::gpio_set_level(21, 1);
+                esp_idf_sys::gpio_hold_en(21);
+                
+                // [PHASE 8] センサー用電源ピン (GPIO 2, 5) も確実にオフに固定
+                esp_idf_sys::gpio_set_level(2, 0); // Temp sensor power
+                esp_idf_sys::gpio_hold_en(2);
+                esp_idf_sys::gpio_set_level(5, 0); // TDS sensor power
+                esp_idf_sys::gpio_hold_en(5);
+            }
+            info!("✓ LEDとセンサー電源ピンをDeep Sleep用にHoldしました");
+
+            // [PHASE 8] 無線機能を物理的に停止（電力ドレインの最大の原因の一つ）
+            unsafe {
+                let _ = esp_idf_sys::esp_now_deinit();
+                let _ = esp_idf_sys::esp_wifi_stop();
+                let _ = esp_idf_sys::esp_wifi_deinit();
+            }
+            info!("✓ WiFi/ESP-NOWスタックを完全にシャットダウンしました");
+        } else {
+            info!("LIGHT SLEEPのため、周辺機器の状態を保持しますが、無線(RF)は完全に停止します。");
+            // [PHASE 10] 無線機能を完全に停止（復帰後の再初期化を前提とする）
+            unsafe {
+                let _ = esp_idf_sys::esp_now_deinit();
+                let _ = esp_idf_sys::esp_wifi_stop();
+                let _ = esp_idf_sys::esp_wifi_deinit();
+                
+                // [PHASE 11] Light Sleep中もセンサー電源は不要なのでOFFにする
+                // リーク電流を防ぐために明示的にLow出力を行う
+                esp_idf_sys::gpio_set_level(2, 0); // Temp sensor power
+                esp_idf_sys::gpio_set_level(5, 0); // TDS sensor power
+                // Light SleepではGPIO状態が保持されるため、Holdは必須ではないが
+                // 念のためDeep Sleep同様に電源ラインは落としておく
+            }
+            // ステータスLEDは消灯
+            unsafe {
+                esp_idf_sys::gpio_set_level(21, 1);
             }
         }
-        
-        Ok(())
+
+        // 最適化されたスリープを実行
+        sleep_manager.sleep_optimized(duration_seconds)
     }
 
     /// エラー時のフォールバックスリープ
-    pub fn fallback_sleep<P: DeepSleepPlatform>(
-        deep_sleep_controller: &DeepSleep<P>,
+    pub fn fallback_sleep<D: DeepSleepPlatform, L: LightSleepPlatform>(
+        sleep_manager: &SleepManager<D, L>,
         config: &Arc<AppConfig>,
         error_msg: &str,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<SleepType> {
         error!("{}", error_msg);
-        deep_sleep_controller.sleep_for_duration(config.sleep_duration_seconds)?;
-        Ok(())
+        sleep_manager.sleep_optimized(config.sleep_duration_seconds)
     }
 }
 
