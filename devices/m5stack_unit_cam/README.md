@@ -300,6 +300,13 @@ QEMU_POC_SKIP_BUILD=1 ./qemu_unittest.sh
 - `QEMU_FEATURES`: ビルド時feature（デフォルト: `qemu-smoke`）
 - `QEMU_SMOKE_MARKER`: 成功判定用マーカー（デフォルト: `QEMU_SMOKE_PASS`）
 
+#### GitHub Actions最小CI（QEMU可用性チェック）
+このリポジトリには `espressif/idf:latest` ベースで以下を確認するワークフローを追加しています。
+- `qemu-system-xtensa` が存在すること
+- `-machine esp32` が利用できること
+
+対象: `.github/workflows/m5stack_qemu_smoke.yml`
+
 ### トラブルシューティング
 
 | 問題 | 原因 | 解決方法 |
