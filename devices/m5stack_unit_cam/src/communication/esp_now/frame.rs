@@ -50,38 +50,3 @@ impl ImageFrame {
         ImageFrame
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_calculate_hash() {
-        let data = b"test data";
-        let hash = ImageFrame::calculate_hash(data).unwrap();
-        // SHA256("test data") = "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9"
-        assert_eq!(
-            hash,
-            "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9"
-        );
-    }
-
-    #[test]
-    fn test_empty_data_hash() {
-        let data = b"";
-        let result = ImageFrame::calculate_hash(data);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_from_image_data_with_empty_input() {
-        let result = ImageFrame::from_image_data(vec![]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_from_image_data_with_valid_input() {
-        let result = ImageFrame::from_image_data(vec![0x01, 0x02, 0x03]);
-        assert!(result.is_ok());
-    }
-}

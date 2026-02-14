@@ -304,8 +304,3 @@ fn apply_reg_write(sensor: &esp_camera_rs::CameraSensor<'_>, write: RegWrite) ->
             ))
         })
 }
-
-#[cfg(test)]
-mod tests {
-    // テストはハードウェア依存のため省略
-}

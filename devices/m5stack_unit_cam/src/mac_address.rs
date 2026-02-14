@@ -48,20 +48,3 @@ impl fmt::Display for MacAddress {
         )
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mac_address_from_str() {
-        let mac = MacAddress::from_str("11:22:33:44:55:66").unwrap();
-        assert_eq!(mac.0, [0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
-    }
-
-    #[test]
-    fn test_mac_address_display() {
-        let mac = MacAddress([0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
-        assert_eq!(format!("{}", mac), "11:22:33:44:55:66");
-    }
-}

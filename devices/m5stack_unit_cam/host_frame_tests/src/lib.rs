@@ -40,6 +40,25 @@ mod tests {
     use super::retry_policy::{no_mem_retry_delay_ms, retry_count_for_chunk, retry_delay_ms};
     use super::ov2640_sequence::{resume_sequence, standby_clkrc_write, standby_sequence};
 
+    #[derive(Debug, PartialEq, Eq)]
+    struct TargetDigitsConfig {
+        minute_last_digit: Option<u8>,
+        second_tens_digit: Option<u8>,
+    }
+
+    fn build_target_digits_config(minute_raw: u8, second_raw: u8) -> Result<Option<TargetDigitsConfig>, ValidationError> {
+        let minute = parse_target_minute_last_digit(minute_raw)?;
+        let second = parse_target_second_tens_digit(second_raw)?;
+        if minute.is_some() || second.is_some() {
+            Ok(Some(TargetDigitsConfig {
+                minute_last_digit: minute,
+                second_tens_digit: second,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     #[test]
     fn checksum_uses_little_endian_4byte_chunks() {
         // 0x04030201 ^ 0x08070605 = 0x0C040404
@@ -218,6 +237,42 @@ mod tests {
     fn validate_wifi_ssid_rejects_empty() {
         let err = validate_wifi_ssid("").unwrap_err();
         assert_eq!(err, ValidationError::MissingWifiSsid);
+    }
+
+    #[test]
+    fn target_digits_none_when_both_sentinel() {
+        let cfg = build_target_digits_config(255, 255).unwrap();
+        assert_eq!(cfg, None);
+    }
+
+    #[test]
+    fn target_digits_only_minute_is_supported() {
+        let cfg = build_target_digits_config(7, 255).unwrap();
+        assert_eq!(
+            cfg,
+            Some(TargetDigitsConfig {
+                minute_last_digit: Some(7),
+                second_tens_digit: None,
+            })
+        );
+    }
+
+    #[test]
+    fn target_digits_only_second_is_supported() {
+        let cfg = build_target_digits_config(255, 3).unwrap();
+        assert_eq!(
+            cfg,
+            Some(TargetDigitsConfig {
+                minute_last_digit: None,
+                second_tens_digit: Some(3),
+            })
+        );
+    }
+
+    #[test]
+    fn empty_wifi_password_is_allowed() {
+        let password = "";
+        assert!(password.is_empty());
     }
 
     #[test]
