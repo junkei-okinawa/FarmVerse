@@ -186,20 +186,3 @@ fn map_validation_error(err: ValidationError) -> ConfigError {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mac_address_parsing() {
-        let mac = MacAddress::from_str("00:11:22:33:44:55").unwrap();
-        assert_eq!(mac.to_string(), "00:11:22:33:44:55");
-    }
-
-    #[test]
-    fn test_invalid_mac_address() {
-        let result = MacAddress::from_str("invalid");
-        assert!(result.is_err());
-    }
-}

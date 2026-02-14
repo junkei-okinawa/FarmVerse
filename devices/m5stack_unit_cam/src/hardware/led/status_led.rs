@@ -95,8 +95,3 @@ impl StatusLed {
         self.turn_off()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    // ハードウェア依存のためテストは省略
-}

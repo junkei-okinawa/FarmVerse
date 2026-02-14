@@ -33,17 +33,3 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(all(test, target_os = "none"))]
 #[no_mangle]
 pub extern "C" fn main() {}
-
-#[cfg(test)]
-mod tests {
-    /// テスト用のモジュール
-    ///
-    /// インテグレーションテストはここに追加します。
-    /// 個別のモジュールのテストは各モジュールファイル内で行います。
-
-    #[test]
-    fn it_works() {
-        // 基本的なテスト
-        assert_eq!(2 + 2, 4);
-    }
-}
