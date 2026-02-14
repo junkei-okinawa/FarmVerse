@@ -1,0 +1,43 @@
+name: M5Stack QEMU Smoke
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+    paths:
+      - "devices/m5stack_unit_cam/**"
+      - ".github/workflows/m5stack_qemu_smoke.yml"
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - "devices/m5stack_unit_cam/**"
+      - ".github/workflows/m5stack_qemu_smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  qemu-smoke:
+    name: ESP32 QEMU Availability Check
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify QEMU binary exists
+        run: |
+          command -v qemu-system-xtensa
+          qemu-system-xtensa --version
+
+      - name: Verify ESP32 machine is supported
+        run: |
+          qemu-system-xtensa -machine help | grep -q "esp32"
+          echo "QEMU supports '-machine esp32'"
+
+      - name: QEMU smoke summary
+        run: |
+          echo "### M5Stack QEMU Smoke Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Base image: \`espressif/idf:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Check: \`qemu-system-xtensa\` installed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Check: \`-machine esp32\` supported" >> "$GITHUB_STEP_SUMMARY"
