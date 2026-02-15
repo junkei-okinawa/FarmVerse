@@ -16,3 +16,7 @@ pub fn resolve_sleep_duration_seconds(received_seconds: Option<u32>, default_sec
         _ => default_seconds,
     }
 }
+
+pub fn clamp_wifi_tx_power_dbm(dbm: i8) -> i8 {
+    dbm.clamp(2, 20)
+}

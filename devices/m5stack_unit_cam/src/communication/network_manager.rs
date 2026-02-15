@@ -18,6 +18,7 @@ impl NetworkManager {
         modem: Modem,
         sysloop: &EspSystemEventLoop,
         nvs_partition: &EspDefaultNvsPartition,
+        wifi_tx_power_dbm: i8,
     ) -> anyhow::Result<BlockingWifi<EspWifi<'static>>> {
         info!("ESP-NOW用にWiFiをSTAモードで準備します。");
         
@@ -38,6 +39,21 @@ impl NetworkManager {
         
         wifi.start()?;
         info!("WiFiがESP-NOW用にSTAモードで起動しました。");
+
+        // WiFi送信パワーを設定（ESP-IDFは0.25dBm単位）
+        unsafe {
+            let scaled: i16 = i16::from(wifi_tx_power_dbm) * 4;
+            let power_quarter_dbm = scaled as i8;
+            let err = esp_idf_svc::sys::esp_wifi_set_max_tx_power(power_quarter_dbm);
+            if err != esp_idf_svc::sys::ESP_OK {
+                log::warn!(
+                    "WiFi送信パワー設定に失敗しました (error={})。デフォルト値で継続します",
+                    err
+                );
+            } else {
+                info!("WiFi送信パワーを {}dBm に設定しました", wifi_tx_power_dbm);
+            }
+        }
 
         // WiFi状態の詳細確認
         let wifi_status = wifi.is_started();

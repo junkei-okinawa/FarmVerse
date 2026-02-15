@@ -613,7 +613,6 @@ dependencies = [
 [[package]]
 name = "esp-camera-rs"
 version = "0.1.0"
-source = "git+https://github.com/junkei-okinawa/esp-camera-rs.git#ac673af6b82e2055f063ad5c225c0625514c23a9"
 dependencies = [
  "concat-idents",
  "esp-idf-hal",

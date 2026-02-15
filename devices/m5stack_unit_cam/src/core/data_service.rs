@@ -2,10 +2,12 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use log::{error, info, warn};
 
 use crate::communication::esp_now::EspNowSender;
-use crate::core::{should_capture_image, INVALID_VOLTAGE_PERCENT, LOW_VOLTAGE_THRESHOLD_PERCENT};
+use crate::core::{
+    should_capture_image_with_overrides, INVALID_VOLTAGE_PERCENT, LOW_VOLTAGE_THRESHOLD_PERCENT,
+};
 use crate::core::config::AppConfig;
 use crate::core::prepare_image_payload;
-use crate::hardware::camera::{CameraController, M5UnitCamConfig};
+use crate::hardware::camera::CameraController;
 use crate::hardware::led::StatusLed;
 
 /// 測定データ構造体
@@ -31,12 +33,25 @@ impl DataService {
     /// ADC電圧レベルに基づいて画像キャプチャを実行
     pub fn capture_image_if_voltage_sufficient(
         voltage_percent: u8,
-        camera_pins: crate::hardware::CameraPins,
-        _app_config: &AppConfig,
+        camera: Option<&CameraController>,
+        app_config: &AppConfig,
         led: &mut StatusLed,
     ) -> anyhow::Result<Option<Vec<u8>>> {
+        if app_config.debug_mode {
+            info!(
+                "debug: capture check voltage={}%, force_camera_test={}, bypass_voltage_threshold={}",
+                voltage_percent, app_config.force_camera_test, app_config.bypass_voltage_threshold
+            );
+        }
+
+        let should_capture = should_capture_image_with_overrides(
+            voltage_percent,
+            app_config.force_camera_test,
+            app_config.bypass_voltage_threshold,
+        );
+
         // ADC電圧条件をチェック
-        if !should_capture_image(voltage_percent) {
+        if !should_capture {
             if voltage_percent <= LOW_VOLTAGE_THRESHOLD_PERCENT {
                 warn!("ADC電圧が低すぎるため画像キャプチャをスキップします: {}%", voltage_percent);
             } else if voltage_percent >= INVALID_VOLTAGE_PERCENT {
@@ -47,30 +62,21 @@ impl DataService {
 
         info!("電圧条件OK({}%)、画像キャプチャを開始", voltage_percent);
         led.turn_on()?;
-
-        // カメラ初期化とキャプチャ
-        let camera = CameraController::new(
-            camera_pins.clock,
-            camera_pins.d0,
-            camera_pins.d1,
-            camera_pins.d2,
-            camera_pins.d3,
-            camera_pins.d4,
-            camera_pins.d5,
-            camera_pins.d6,
-            camera_pins.d7,
-            camera_pins.vsync,
-            camera_pins.href,
-            camera_pins.pclk,
-            camera_pins.sda,
-            camera_pins.scl,
-            M5UnitCamConfig::default(),
-        )?;
+        let camera = camera.ok_or_else(|| anyhow::anyhow!("カメラコントローラー未初期化"))?;
 
         FreeRtos::delay_ms(100); // カメラの安定化を待つ
 
+        // Deep/Light Sleep後にSCCBスタンバイ状態が残るケースに備えて、
+        // スタンバイ有効時は撮影前に復帰シーケンスを試行する。
+        if app_config.camera_soft_standby_enabled {
+            if let Err(e) = camera.exit_standby_via_sccb() {
+                warn!("SCCBスタンバイ解除に失敗しました（処理継続）: {:?}", e);
+            }
+            FreeRtos::delay_ms(30);
+        }
+
         // カメラウォームアップ（設定回数分画像を捨てる）
-        let warmup_count = _app_config.camera_warmup_frames.unwrap_or(0);
+        let warmup_count = app_config.camera_warmup_frames.unwrap_or(0);
         for i in 0..warmup_count {
             let _ = camera.capture_image();
             info!("ウォームアップキャプチャ {} / {}", i + 1, warmup_count);
@@ -80,12 +86,6 @@ impl DataService {
         let frame_buffer = camera.capture_image()?;
         let image_data = frame_buffer.data().to_vec();
         info!("画像キャプチャ完了: {} bytes", image_data.len());
-
-        if _app_config.camera_soft_standby_enabled {
-            if let Err(e) = camera.enter_standby_via_sccb() {
-                warn!("SCCBスタンバイ移行に失敗しました（処理継続）: {:?}", e);
-            }
-        }
 
         led.turn_off()?;
         Ok(Some(image_data))

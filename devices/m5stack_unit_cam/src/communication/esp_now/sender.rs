@@ -113,6 +113,7 @@ impl EspNowSender {
         max_retries: u8,
     ) -> Result<(), EspNowError> {
         let mut last_error = EspNowError::SendTimeout;
+        let mut had_no_mem = false;
         
         for attempt in 1..=max_retries {
             match self.send(data, timeout_ms) {
@@ -121,10 +122,17 @@ impl EspNowSender {
                     if attempt > 1 {
                         info!("ESP-NOW送信成功 (試行 {})", attempt);
                     }
+                    if had_no_mem {
+                        // NO_MEM発生後は短時間クールダウンしてTXキュー回復を待つ。
+                        let cooldown_ms = 200;
+                        info!("ESP-NOWキュー回復待機: {}ms", cooldown_ms);
+                        FreeRtos::delay_ms(cooldown_ms);
+                    }
                     return Ok(());
                 }
                 Err(EspNowError::SendFailed(esp_err)) => {
                     if esp_err.code() == ESP_ERR_ESPNOW_NO_MEM { // ESP_ERR_ESPNOW_NO_MEM
+                        had_no_mem = true;
                         error!("ESP-NOWメモリ不足 (試行 {}/{}): {}", attempt, max_retries, esp_err);
                         last_error = EspNowError::SendFailed(esp_err);
                         

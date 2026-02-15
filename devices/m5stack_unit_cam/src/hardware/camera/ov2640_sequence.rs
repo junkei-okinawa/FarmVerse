@@ -9,12 +9,11 @@ pub struct RegWrite {
 const REG_BANK_SEL: i32 = 0xFF;
 const REG_DSP_R_DVP_SP: i32 = 0xD3;
 const REG_SENSOR_CLKRC: i32 = 0x11;
-const REG_SENSOR_COM7: i32 = 0x12;
 
 const BANK_DSP: i32 = 0x00;
 const BANK_SENSOR: i32 = 0x01;
 
-pub fn standby_sequence() -> [RegWrite; 4] {
+pub fn standby_sequence() -> [RegWrite; 3] {
     [
         // BANK_SEL = DSP
         RegWrite {
@@ -34,12 +33,22 @@ pub fn standby_sequence() -> [RegWrite; 4] {
             mask: 0xFF,
             value: BANK_SENSOR,
         },
-        // COM7 bit4 sleep + CLKRC max divider encoded as two writes in controller
-        // Keep COM7 write as part of sequence; CLKRC is explicit below for testability.
+    ]
+}
+
+pub fn deep_sleep_standby_sequence() -> [RegWrite; 2] {
+    [
+        // BANK_SEL = DSP
         RegWrite {
-            reg: REG_SENSOR_COM7,
-            mask: 0x10,
-            value: 0x10,
+            reg: REG_BANK_SEL,
+            mask: 0xFF,
+            value: BANK_DSP,
+        },
+        // DVP output off only (keep SCCB path safer across deep sleep)
+        RegWrite {
+            reg: REG_DSP_R_DVP_SP,
+            mask: 0xFF,
+            value: 0x00,
         },
     ]
 }
@@ -52,19 +61,13 @@ pub fn standby_clkrc_write() -> RegWrite {
     }
 }
 
-pub fn resume_sequence() -> [RegWrite; 3] {
+pub fn resume_sequence() -> [RegWrite; 2] {
     [
         // BANK_SEL = SENSOR
         RegWrite {
             reg: REG_BANK_SEL,
             mask: 0xFF,
             value: BANK_SENSOR,
-        },
-        // COM7 bit4 clear
-        RegWrite {
-            reg: REG_SENSOR_COM7,
-            mask: 0x10,
-            value: 0x00,
         },
         // CLKRC restore
         RegWrite {

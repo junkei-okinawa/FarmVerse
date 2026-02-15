@@ -10,12 +10,11 @@ use crate::power::sleep::{DeepSleep, DeepSleepPlatform};
 pub struct AppController;
 
 impl AppController {
-    /// スリープコマンドを受信してディープスリープを実行
-    pub fn handle_sleep_with_server_command<P: DeepSleepPlatform>(
+    /// スリープコマンドを受信して、Deep Sleep の秒数を決定
+    pub fn resolve_sleep_duration(
         esp_now_receiver: &EspNowReceiver,
-        deep_sleep_controller: &DeepSleep<P>,
         config: &Arc<AppConfig>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<u64> {
         info!("=== サーバーからのスリープコマンド待機開始 ===");
         info!("設定されたデフォルトスリープ時間: {}秒", config.sleep_duration_seconds);
         info!("スリープコマンド待機タイムアウト: {}秒", config.sleep_command_timeout_seconds);
@@ -29,23 +28,27 @@ impl AppController {
         match received {
             Some(duration_seconds) if duration_seconds > 0 => {
                 info!(
-                    "✓ サーバーからスリープ時間を受信: {}秒。ディープスリープに入ります。",
+                    "✓ サーバーからスリープ時間を受信: {}秒。Deep Sleep に入ります。",
                     duration_seconds
                 );
             }
             Some(_) => {
                 warn!("無効なスリープ時間 (0秒) を受信。デフォルト時間を使用します。");
-                info!("デフォルトスリープ時間でディープスリープに入ります: {}秒", config.sleep_duration_seconds);
+                info!(
+                    "デフォルトスリープ時間で Deep Sleep に入ります: {}秒",
+                    target_duration
+                );
             }
             None => {
                 warn!("✗ スリープコマンドを受信できませんでした。デフォルト時間を使用します。");
-                info!("デフォルトスリープ時間でディープスリープに入ります: {}秒", config.sleep_duration_seconds);
+                info!(
+                    "デフォルトスリープ時間で Deep Sleep に入ります: {}秒",
+                    target_duration
+                );
             }
         }
 
-        deep_sleep_controller.sleep_for_duration(target_duration)?;
-        
-        Ok(())
+        Ok(target_duration)
     }
 
     /// エラー時のフォールバックスリープ

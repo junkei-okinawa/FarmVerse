@@ -27,9 +27,12 @@ mod tests {
         parse_camera_warmup_frames, parse_receiver_mac, parse_target_minute_last_digit,
         parse_target_second_tens_digit, validate_wifi_ssid, ValidationError,
     };
-    use super::capture_policy::{should_capture_image, INVALID_VOLTAGE_PERCENT, LOW_VOLTAGE_THRESHOLD_PERCENT};
+    use super::capture_policy::{
+        should_capture_image, should_capture_image_with_overrides, INVALID_VOLTAGE_PERCENT,
+        LOW_VOLTAGE_THRESHOLD_PERCENT,
+    };
     use super::data_prep::{prepare_image_payload, simple_image_hash, DUMMY_HASH};
-    use super::domain_logic::{resolve_sleep_duration_seconds, voltage_to_percentage};
+    use super::domain_logic::{clamp_wifi_tx_power_dbm, resolve_sleep_duration_seconds, voltage_to_percentage};
     use super::frame::ImageFrame;
     use super::frame_codec::{
         build_hash_payload, build_sensor_data_frame, calculate_xor_checksum,
@@ -38,7 +41,9 @@ mod tests {
     };
     use super::mac_address::MacAddress;
     use super::retry_policy::{no_mem_retry_delay_ms, retry_count_for_chunk, retry_delay_ms};
-    use super::ov2640_sequence::{resume_sequence, standby_clkrc_write, standby_sequence};
+    use super::ov2640_sequence::{
+        deep_sleep_standby_sequence, resume_sequence, standby_clkrc_write, standby_sequence,
+    };
 
     #[derive(Debug, PartialEq, Eq)]
     struct TargetDigitsConfig {
@@ -342,6 +347,38 @@ mod tests {
     }
 
     #[test]
+    fn should_capture_image_with_overrides_respects_force_flag() {
+        assert!(should_capture_image_with_overrides(0, true, false));
+    }
+
+    #[test]
+    fn should_capture_image_with_overrides_respects_bypass_flag() {
+        assert!(should_capture_image_with_overrides(0, false, true));
+    }
+
+    #[test]
+    fn should_capture_image_with_overrides_rejects_invalid_voltage_even_with_bypass() {
+        assert!(!should_capture_image_with_overrides(
+            INVALID_VOLTAGE_PERCENT,
+            false,
+            true
+        ));
+    }
+
+    #[test]
+    fn should_capture_image_with_overrides_falls_back_to_voltage_policy() {
+        assert!(!should_capture_image_with_overrides(0, false, false));
+        assert!(should_capture_image_with_overrides(50, false, false));
+    }
+
+    #[test]
+    fn clamp_wifi_tx_power_dbm_limits_range() {
+        assert_eq!(clamp_wifi_tx_power_dbm(-10), 2);
+        assert_eq!(clamp_wifi_tx_power_dbm(8), 8);
+        assert_eq!(clamp_wifi_tx_power_dbm(40), 20);
+    }
+
+    #[test]
     fn ov2640_standby_sequence_matches_expected_register_order() {
         let seq = standby_sequence();
         assert_eq!(seq[0].reg, 0xFF); // BANK_SEL
@@ -349,9 +386,6 @@ mod tests {
         assert_eq!(seq[1].reg, 0xD3); // R_DVP_SP
         assert_eq!(seq[2].reg, 0xFF); // BANK_SEL
         assert_eq!(seq[2].value, 0x01); // SENSOR bank
-        assert_eq!(seq[3].reg, 0x12); // COM7
-        assert_eq!(seq[3].mask, 0x10);
-        assert_eq!(seq[3].value, 0x10);
     }
 
     #[test]
@@ -363,15 +397,21 @@ mod tests {
     }
 
     #[test]
-    fn ov2640_resume_sequence_clears_com7_sleep_and_clkrc() {
+    fn ov2640_resume_sequence_restores_clkrc() {
         let seq = resume_sequence();
         assert_eq!(seq[0].reg, 0xFF);
         assert_eq!(seq[0].value, 0x01); // SENSOR bank
-        assert_eq!(seq[1].reg, 0x12); // COM7
-        assert_eq!(seq[1].mask, 0x10);
+        assert_eq!(seq[1].reg, 0x11); // CLKRC
+        assert_eq!(seq[1].mask, 0x3F);
         assert_eq!(seq[1].value, 0x00);
-        assert_eq!(seq[2].reg, 0x11); // CLKRC
-        assert_eq!(seq[2].mask, 0x3F);
-        assert_eq!(seq[2].value, 0x00);
+    }
+
+    #[test]
+    fn ov2640_deep_sleep_standby_sequence_is_minimal() {
+        let seq = deep_sleep_standby_sequence();
+        assert_eq!(seq[0].reg, 0xFF);
+        assert_eq!(seq[0].value, 0x00); // DSP bank
+        assert_eq!(seq[1].reg, 0xD3); // R_DVP_SP
+        assert_eq!(seq[1].value, 0x00);
     }
 }

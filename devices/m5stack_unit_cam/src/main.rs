@@ -1,6 +1,7 @@
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::peripherals::Peripherals,
+    hal::reset::ResetReason,
     nvs::EspDefaultNvsPartition,
 };
 use std::sync::Arc;
@@ -13,12 +14,12 @@ mod mac_address;
 mod power;
 
 // 使用するモジュールのインポート
-use communication::{NetworkManager, esp_now::{EspNowSender, EspNowReceiver}};
+use communication::{NetworkManager, esp_now::EspNowSender};
 use core::{AppController, AppConfig, DataService, MeasuredData, RtcManager};
-use hardware::{CameraPins, VoltageSensor};
-use hardware::camera::M5UnitCamConfig;
+use hardware::camera::{CameraController, M5UnitCamConfig};
+use hardware::VoltageSensor;
 use hardware::led::StatusLed;
-use log::{error, info};
+use log::{error, info, warn};
 use power::sleep::{DeepSleep, EspIdfDeepSleep};
 
 /// アプリケーションのメインエントリーポイント
@@ -38,6 +39,9 @@ fn main() -> anyhow::Result<()> {
         error!("設定ファイルの読み込みに失敗しました: {}", e);
         anyhow::anyhow!("設定ファイルの読み込みエラー: {}", e)
     })?);
+    if app_config.debug_mode {
+        info!("debug mode enabled");
+    }
 
     // ペリフェラルとシステムリソースの初期化
     info!("ペリフェラルを初期化しています");
@@ -54,7 +58,7 @@ fn main() -> anyhow::Result<()> {
     let mut led = StatusLed::new(led_pin)?;
     led.turn_off()?;
 
-    // ディープスリープコントローラーの初期化
+    // スリープコントローラーの初期化
     let deep_sleep_controller = DeepSleep::new(app_config.clone(), EspIdfDeepSleep);
 
     // タイムゾーン設定
@@ -66,40 +70,66 @@ fn main() -> anyhow::Result<()> {
     // RTCタイム管理
     RtcManager::check_and_initialize_rtc(&timezone, &deep_sleep_controller)?;
     
-    // ADC電圧測定
-    let voltage_percent = VoltageSensor::measure_voltage_percentage(
-        peripherals.adc2,
-        voltage_pin,
-    )?;
-
     info!("設定されている受信先MAC: {}", app_config.receiver_mac);
     info!("設定されているスリープ時間: {}秒", app_config.sleep_duration_seconds);
+    let reset_reason = ResetReason::get();
+    info!("リセット理由: {:?}", reset_reason);
 
-    // カメラ用ピンの準備
-    let camera_pins = CameraPins::new(
-        pins.gpio27, pins.gpio32, pins.gpio35, pins.gpio34,
-        pins.gpio5, pins.gpio39, pins.gpio18, pins.gpio36,
-        pins.gpio19, pins.gpio22, pins.gpio26, pins.gpio21,
-        pins.gpio25, pins.gpio23,
+    let mut adc2 = peripherals.adc2;
+    let mut gpio0 = voltage_pin;
+    let mut last_valid_voltage_percent: Option<u8> = None;
+
+    // 起動直後はOV2640のSCCB応答が不安定な場合があるため待機する
+    info!("カメラ電源安定化待ち: 1000ms");
+    esp_idf_svc::hal::delay::FreeRtos::delay_ms(1000);
+
+    let camera = CameraController::new(
+        pins.gpio15,
+        pins.gpio27,
+        pins.gpio32,
+        pins.gpio35,
+        pins.gpio34,
+        pins.gpio5,
+        pins.gpio39,
+        pins.gpio18,
+        pins.gpio36,
+        pins.gpio19,
+        pins.gpio22,
+        pins.gpio26,
+        pins.gpio21,
+        pins.gpio25,
+        pins.gpio23,
+        M5UnitCamConfig::default(),
     );
+    let camera = match camera {
+        Ok(camera) => Some(camera),
+        Err(e) => {
+            error!(
+                "カメラ初期化失敗。再書き込み直後は Unit Cam の電源を一度抜き差しして再起動してください: {:?}",
+                e
+            );
+            if app_config.force_camera_test || app_config.bypass_voltage_threshold {
+                return Err(anyhow::anyhow!("カメラ初期化に失敗しました: {:?}", e));
+            }
+            warn!("カメラ初期化に失敗しました。画像なしで継続します: {:?}", e);
+            None
+        }
+    };
 
-    // 画像キャプチャ（電圧に基づく条件付き）
-    let image_data = DataService::capture_image_if_voltage_sufficient(
-        voltage_percent,
-        camera_pins,
-        &app_config,
-        &mut led,
-    )?;
+    // WiFi起動前に一度だけADC2を読み、以降のサイクルでのフォールバックに使う
+    let (initial_voltage_percent, returned_adc2, returned_gpio0) =
+        VoltageSensor::measure_voltage_percentage(adc2, gpio0)?;
+    adc2 = returned_adc2;
+    gpio0 = returned_gpio0;
+    if initial_voltage_percent < crate::core::INVALID_VOLTAGE_PERCENT {
+        last_valid_voltage_percent = Some(initial_voltage_percent);
+    }
 
-    // 測定データの準備と送信
-    info!("データ送信タスクを開始します");
-    let measured_data = MeasuredData::new(voltage_percent, image_data);
-
-    // ネットワーク（WiFi）初期化
-    let _wifi_connection = NetworkManager::initialize_wifi_for_esp_now(
+    let wifi_connection = NetworkManager::initialize_wifi_for_esp_now(
         peripherals.modem,
         &sysloop,
         &nvs_partition,
+        app_config.wifi_tx_power_dbm,
     ).map_err(|e| {
         if let Err(sleep_err) = AppController::fallback_sleep(
             &deep_sleep_controller,
@@ -111,81 +141,122 @@ fn main() -> anyhow::Result<()> {
         e
     })?;
 
-    // ESP-NOW初期化（WiFi初期化完了後）
-    info!("ESP-NOWセンダーを初期化中...");
-    let (esp_now_arc, esp_now_receiver) = NetworkManager::initialize_esp_now(&_wifi_connection).map_err(|e| {
-        log::error!("ESP-NOW初期化に失敗: {:?}", e);
-        if let Err(sleep_err) = AppController::fallback_sleep(
-            &deep_sleep_controller,
-            &app_config,
-            &format!("ESP-NOW初期化に失敗: {:?}", e),
-        ) {
-            log::error!("Deep sleep failed: {:?}", sleep_err);
-        }
-        anyhow::anyhow!("ESP-NOW初期化に失敗: {:?}", e)
-    })?;
+    loop {
+        // ADC電圧測定
+        let (measured_voltage_percent, returned_adc2, returned_gpio0) =
+            VoltageSensor::measure_voltage_percentage(adc2, gpio0)?;
+        adc2 = returned_adc2;
+        gpio0 = returned_gpio0;
 
-    let esp_now_sender = EspNowSender::new(esp_now_arc, app_config.receiver_mac.clone()).map_err(|e| {
-        log::error!("ESP-NOWセンダー初期化に失敗: {:?}", e);
-        if let Err(sleep_err) = AppController::fallback_sleep(
-            &deep_sleep_controller,
-            &app_config,
-            &format!("ESP-NOWセンダー初期化に失敗: {:?}", e),
-        ) {
-            log::error!("Deep sleep failed: {:?}", sleep_err);
-        }
-        anyhow::anyhow!("ESP-NOWセンダー初期化に失敗: {:?}", e)
-    })?;
-    
-    info!("ESP-NOW sender initialized and peer added. Receiver MAC: {}", app_config.receiver_mac);
-
-    // デバイス情報の表示
-    info!("=== デバイス情報 ===");
-    
-    // 実際のMACアドレスを取得・表示
-    let wifi_mac = unsafe {
-        let mut mac = [0u8; 6];
-        let result = esp_idf_sys::esp_wifi_get_mac(esp_idf_sys::wifi_interface_t_WIFI_IF_STA, mac.as_mut_ptr());
-        if result == 0 {
-            format!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", 
-                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+        let voltage_percent = if measured_voltage_percent < crate::core::INVALID_VOLTAGE_PERCENT {
+            last_valid_voltage_percent = Some(measured_voltage_percent);
+            measured_voltage_percent
+        } else if let Some(last_good) = last_valid_voltage_percent {
+            warn!(
+                "ADC2読み取りが無効値(255%)のため、直近の有効値 {}% を使用します（WiFi競合対策）",
+                last_good
+            );
+            last_good
         } else {
-            "UNKNOWN".to_string()
-        }
-    };
-    info!("実際のWiFi STA MAC: {}", wifi_mac);
-    
-    // WiFiチャンネル情報を取得・表示
-    let wifi_channel = unsafe {
-        let mut primary = 0u8;
-        let mut second = 0;
-        let result = esp_idf_sys::esp_wifi_get_channel(&mut primary, &mut second);
-        if result == 0 {
-            format!("Primary: {}, Secondary: {}", primary, second)
-        } else {
-            "UNKNOWN".to_string()
-        }
-    };
-    info!("WiFiチャンネル: {}", wifi_channel);
+            measured_voltage_percent
+        };
 
-    if let Err(e) = DataService::transmit_data(
-        &app_config,
-        &esp_now_sender,
-        &mut led,
-        measured_data,
-    ) {
-        error!("データ送信タスクでエラーが発生しました: {:?}", e);
+        // 画像キャプチャ（短いリトライ付き）
+        let mut capture_result = None;
+        let mut last_capture_err = None;
+        for attempt in 1..=3 {
+            match DataService::capture_image_if_voltage_sufficient(
+                voltage_percent,
+                camera.as_ref(),
+                &app_config,
+                &mut led,
+            ) {
+                Ok(data) => {
+                    capture_result = Some(data);
+                    break;
+                }
+                Err(e) => {
+                    error!("カメラ処理に失敗しました (attempt {}/3): {:?}", attempt, e);
+                    last_capture_err = Some(e);
+                    if attempt < 3 {
+                        esp_idf_svc::hal::delay::FreeRtos::delay_ms(250);
+                    }
+                }
+            }
+        }
+
+        let image_data = match capture_result {
+            Some(data) => data,
+            None => {
+                if app_config.force_camera_test || app_config.bypass_voltage_threshold {
+                    return Err(anyhow::anyhow!(
+                        "カメラキャプチャに失敗したため送信を中止します: {:?}",
+                        last_capture_err
+                    ));
+                }
+                warn!("カメラ処理に失敗したため画像なしで継続します");
+                None
+            }
+        };
+        info!("データ送信タスクを開始します");
+        let measured_data = MeasuredData::new(voltage_percent, image_data);
+
+        // ESP-NOWはサイクルごとに再初期化して内部TXキューをクリーンに保つ
+        info!("ESP-NOWセンダーを初期化中...");
+        let (esp_now_arc, esp_now_receiver) = NetworkManager::initialize_esp_now(&wifi_connection).map_err(|e| {
+            log::error!("ESP-NOW初期化に失敗: {:?}", e);
+            if let Err(sleep_err) = AppController::fallback_sleep(
+                &deep_sleep_controller,
+                &app_config,
+                &format!("ESP-NOW初期化に失敗: {:?}", e),
+            ) {
+                log::error!("Deep sleep failed: {:?}", sleep_err);
+            }
+            anyhow::anyhow!("ESP-NOW初期化に失敗: {:?}", e)
+        })?;
+
+        let esp_now_sender = EspNowSender::new(esp_now_arc, app_config.receiver_mac.clone()).map_err(|e| {
+            log::error!("ESP-NOWセンダー初期化に失敗: {:?}", e);
+            if let Err(sleep_err) = AppController::fallback_sleep(
+                &deep_sleep_controller,
+                &app_config,
+                &format!("ESP-NOWセンダー初期化に失敗: {:?}", e),
+            ) {
+                log::error!("Deep sleep failed: {:?}", sleep_err);
+            }
+            anyhow::anyhow!("ESP-NOWセンダー初期化に失敗: {:?}", e)
+        })?;
+
+        if let Err(e) = DataService::transmit_data(
+            &app_config,
+            &esp_now_sender,
+            &mut led,
+            measured_data,
+        ) {
+            error!("データ送信タスクでエラーが発生しました: {:?}", e);
+        }
+
+        led.turn_off()?;
+
+        // スリープ管理（サーバーからのコマンド待機）
+        let sleep_duration_sec = AppController::resolve_sleep_duration(&esp_now_receiver, &app_config)?;
+
+        // 省電力要件: DeepSleep前にSCCBスタンバイへ移行する。
+        if app_config.camera_soft_standby_enabled {
+            if let Some(cam) = camera.as_ref() {
+                let standby_result = cam.enter_deep_sleep_standby_via_sccb();
+                if let Err(e) = standby_result {
+                    warn!(
+                        "Sleep前のSCCBスタンバイ移行に失敗しました（処理継続）: {:?}",
+                        e
+                    );
+                }
+            }
+        }
+
+        deep_sleep_controller.sleep_for_duration(sleep_duration_sec)?;
+        break;
     }
-
-    // LEDをオフにする
-    led.turn_off()?;
-
-    // スリープ管理（サーバーからのコマンド待機）
-    AppController::handle_sleep_with_server_command(
-        &esp_now_receiver,
-        &deep_sleep_controller,
-        &app_config,
-    )?;
 
     Ok(())
 }
