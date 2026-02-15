@@ -3,7 +3,9 @@ use esp_idf_svc::hal::gpio;
 use esp_idf_sys::camera::*;
 use log::{error, info, warn}; // logクレートの必要な要素をインポート
 use std::sync::Arc;
-use super::ov2640_sequence::{resume_sequence, standby_clkrc_write, standby_sequence, RegWrite};
+use super::ov2640_sequence::{
+    deep_sleep_standby_sequence, resume_sequence, standby_clkrc_write, standby_sequence, RegWrite,
+};
 
 #[derive(Debug, Clone, Copy)] // Added Clone
 pub enum CustomFrameSize {
@@ -125,11 +127,73 @@ pub struct CameraController {
 }
 
 impl CameraController {
+    /// カメラ初期化前にSCCB経由でOV2640のスタンバイ解除を試行します。
+    /// DeepSleep復帰後にセンサーがスタンバイ残留してprobe失敗する個体向け。
+    pub fn pre_probe_exit_standby_via_sccb() -> Result<(), CameraError> {
+        const PORT: esp_idf_sys::i2c_port_t = esp_idf_sys::i2c_port_t_I2C_NUM_1;
+        const SDA_GPIO: i32 = esp_idf_sys::gpio_num_t_GPIO_NUM_25;
+        const SCL_GPIO: i32 = esp_idf_sys::gpio_num_t_GPIO_NUM_23;
+        const CAM_ADDR_7BIT: u8 = 0x30;
+        const I2C_TIMEOUT_TICKS: u32 = 50;
+
+        let mut cfg: esp_idf_sys::i2c_config_t = Default::default();
+        cfg.mode = esp_idf_sys::i2c_mode_t_I2C_MODE_MASTER;
+        cfg.sda_io_num = SDA_GPIO;
+        cfg.scl_io_num = SCL_GPIO;
+        cfg.sda_pullup_en = true;
+        cfg.scl_pullup_en = true;
+        cfg.clk_flags = 0;
+        unsafe {
+            cfg.__bindgen_anon_1.master =
+                esp_idf_sys::i2c_config_t__bindgen_ty_1__bindgen_ty_1 { clk_speed: 100_000 };
+        }
+
+        let param_result = unsafe { esp_idf_sys::i2c_param_config(PORT, &cfg) };
+        if param_result != esp_idf_sys::ESP_OK {
+            return Err(CameraError::InitFailed(format!(
+                "pre-probe SCCB param config failed: {}",
+                param_result
+            )));
+        }
+
+        let install_result = unsafe {
+            esp_idf_sys::i2c_driver_install(
+                PORT,
+                esp_idf_sys::i2c_mode_t_I2C_MODE_MASTER,
+                0,
+                0,
+                0,
+            )
+        };
+        if install_result != esp_idf_sys::ESP_OK {
+            return Err(CameraError::InitFailed(format!(
+                "pre-probe SCCB driver install failed: {}",
+                install_result
+            )));
+        }
+
+        let mut apply_result = Ok(());
+        for write in resume_sequence() {
+            if let Err(e) = apply_reg_write_raw_i2c(PORT, CAM_ADDR_7BIT, write, I2C_TIMEOUT_TICKS) {
+                apply_result = Err(e);
+                break;
+            }
+        }
+
+        let delete_result = unsafe { esp_idf_sys::i2c_driver_delete(PORT) };
+        if delete_result != esp_idf_sys::ESP_OK {
+            warn!("pre-probe SCCB i2c_driver_delete failed: {}", delete_result);
+        }
+
+        apply_result
+    }
+
     /// ペリフェラルから新しいカメラコントローラーを作成します
     ///
     /// # 引数
     ///
     /// * `clock_pin` - カメラクロックピン (gpio27)
+    /// * `reset_pin` - カメラリセットピン (gpio15)
     /// * `d0_pin` - データピン0 (gpio32)
     /// * `d1_pin` - データピン1 (gpio35)
     /// * `d2_pin` - データピン2 (gpio34)
@@ -150,6 +214,7 @@ impl CameraController {
     /// カメラの初期化に失敗した場合にエラーを返します
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        reset_pin: gpio::Gpio15,
         clock_pin: gpio::Gpio27,
         d0_pin: gpio::Gpio32,
         d1_pin: gpio::Gpio35,
@@ -169,7 +234,9 @@ impl CameraController {
         info!("カメラを初期化しています");
 
         let camera_params = CameraParams::new()
+            .set_reset_pin(reset_pin)
             .set_clock_pin(clock_pin)
+            // .set_xclk_freq_hz(20_000_000)
             .set_d0_pin(d0_pin)
             .set_d1_pin(d1_pin)
             .set_d2_pin(d2_pin)
@@ -259,6 +326,28 @@ impl CameraController {
         self.camera.sensor().aec_value() // sensor.aec_value() -> i32 を使用
     }
 
+    /// センサーのソフトリセットを実行します。
+    /// スリープ復帰後のストリーム同期ずれ（NO-SOI）対策で使用します。
+    pub fn reset_sensor_via_sccb(&self) -> Result<(), CameraError> {
+        info!("カメラセンサーをSCCB経由でソフトリセットします...");
+        self.camera
+            .sensor()
+            .reset()
+            .map_err(|e| CameraError::InitFailed(format!("センサーソフトリセット失敗: {:?}", e)))?;
+        info!("✓ カメラセンサーソフトリセット完了");
+        Ok(())
+    }
+
+    /// RESETピン(GPIO15)をトグルしてセンサーをハードリセットします。
+    pub fn hard_reset_via_pin(&self) -> Result<(), CameraError> {
+        info!("カメラRESETピンをトグルしてハードリセットします...");
+        self.camera
+            .pulse_reset_pin(20, 80)
+            .map_err(|e| CameraError::InitFailed(format!("RESETピンリセット失敗: {:?}", e)))?;
+        info!("✓ カメラRESETピンのハードリセット完了");
+        Ok(())
+    }
+
     /// OV2640をSCCB経由でソフトウェアスタンバイに移行します。
     ///
     /// 注意:
@@ -275,6 +364,19 @@ impl CameraController {
         apply_reg_write(&sensor, standby_clkrc_write())?;
 
         info!("✓ カメラをSCCBスタンバイに移行しました");
+        Ok(())
+    }
+
+    /// DeepSleep前のスタンバイ（SCCB応答喪失リスクを下げる軽量シーケンス）
+    pub fn enter_deep_sleep_standby_via_sccb(&self) -> Result<(), CameraError> {
+        info!("カメラをDeepSleep向けSCCBスタンバイに移行します...");
+        let sensor = self.camera.sensor();
+
+        for write in deep_sleep_standby_sequence() {
+            apply_reg_write(&sensor, write)?;
+        }
+
+        info!("✓ カメラをDeepSleep向けSCCBスタンバイに移行しました");
         Ok(())
     }
 
@@ -303,4 +405,74 @@ fn apply_reg_write(sensor: &esp_camera_rs::CameraSensor<'_>, write: RegWrite) ->
                 write.reg, write.mask, write.value, e
             ))
         })
+}
+
+fn apply_reg_write_raw_i2c(
+    port: esp_idf_sys::i2c_port_t,
+    dev_addr: u8,
+    write: RegWrite,
+    timeout_ticks: u32,
+) -> Result<(), CameraError> {
+    let value = if write.mask == 0xFF {
+        write.value as u8
+    } else {
+        let current = read_reg_raw_i2c(port, dev_addr, write.reg as u8, timeout_ticks)?;
+        ((current & !(write.mask as u8)) | ((write.value as u8) & (write.mask as u8))) as u8
+    };
+
+    write_reg_raw_i2c(port, dev_addr, write.reg as u8, value, timeout_ticks)
+}
+
+fn write_reg_raw_i2c(
+    port: esp_idf_sys::i2c_port_t,
+    dev_addr: u8,
+    reg: u8,
+    value: u8,
+    timeout_ticks: u32,
+) -> Result<(), CameraError> {
+    let payload = [reg, value];
+    let err = unsafe {
+        esp_idf_sys::i2c_master_write_to_device(
+            port,
+            dev_addr,
+            payload.as_ptr(),
+            payload.len(),
+            timeout_ticks,
+        )
+    };
+    if err != esp_idf_sys::ESP_OK {
+        return Err(CameraError::InitFailed(format!(
+            "pre-probe SCCB write failed reg=0x{:02X} value=0x{:02X}: {}",
+            reg, value, err
+        )));
+    }
+    Ok(())
+}
+
+fn read_reg_raw_i2c(
+    port: esp_idf_sys::i2c_port_t,
+    dev_addr: u8,
+    reg: u8,
+    timeout_ticks: u32,
+) -> Result<u8, CameraError> {
+    let addr = [reg];
+    let mut data = [0u8; 1];
+    let err = unsafe {
+        esp_idf_sys::i2c_master_write_read_device(
+            port,
+            dev_addr,
+            addr.as_ptr(),
+            addr.len(),
+            data.as_mut_ptr(),
+            data.len(),
+            timeout_ticks,
+        )
+    };
+    if err != esp_idf_sys::ESP_OK {
+        return Err(CameraError::InitFailed(format!(
+            "pre-probe SCCB read failed reg=0x{:02X}: {}",
+            reg, err
+        )));
+    }
+    Ok(data[0])
 }

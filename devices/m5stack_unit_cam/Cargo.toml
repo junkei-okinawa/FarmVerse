@@ -46,3 +46,6 @@ toml-cfg = "=0.2"
 
 [patch.crates-io]
 esp-idf-hal = { git = "https://github.com/junkei-okinawa/esp-idf-hal.git", branch = "custom-gpio-for-M5UnitCam" }
+
+[patch."https://github.com/junkei-okinawa/esp-camera-rs.git"]
+esp-camera-rs = { path = "../../sensors/esp-camera-rs" }

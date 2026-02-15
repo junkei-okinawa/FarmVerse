@@ -12,6 +12,11 @@ M5Stack Unit Cam (ESP32 + OV2640) 向けの送信ファームウェアです。
 - サーバーからのスリープコマンド受信後に Deep Sleep
 - 設定で OV2640 の SCCB ソフトスタンバイ試行（`camera_soft_standby_enabled`）
 
+注記:
+- 本プロジェクトの M5Stack Unit Cam 実装では、運用スリープは Deep Sleep のみを採用しています。
+- Light Sleep は実機検証で 2 サイクル目以降に SCCB 復帰失敗、`NO-SOI`、`Failed to get the frame on time` が再現し、画像品質と安定性を満たせませんでした。
+- そのため、安定運用を優先して Light Sleep 経路は実装から除外しています。
+
 ## ディレクトリ
 
 - `src/core`: アプリ制御、設定、送信ロジック
@@ -48,6 +53,10 @@ cargo espflash flash --release --monitor --partition-table partitions.csv
 
 `.cargo/config.toml` でデフォルトターゲットは `xtensa-esp32-espidf` です。
 
+重要:
+- 再書き込み後は Unit Cam の電源を一度抜き差ししてから実行してください。
+- 電源を切らずに再書き込みすると、カメラがスタンバイ相当の状態を引きずり、`Camera probe failed (ESP_ERR_NOT_FOUND)` が発生する場合があります。
+
 ## 設定（cfg.toml）
 
 主な項目:
@@ -71,8 +80,19 @@ cargo espflash flash --release --monitor --partition-table partitions.csv
 
 ```bash
 cd devices/m5stack_unit_cam/host_frame_tests
-cargo test
+cargo test --target aarch64-apple-darwin
 ```
+
+または、現在のホストターゲットを自動指定:
+
+```bash
+cd devices/m5stack_unit_cam/host_frame_tests
+cargo test --target "$(rustc -vV | awk '/host:/ {print $2}')"
+```
+
+`devices/m5stack_unit_cam/.cargo/config.toml` でデフォルトターゲットが
+`xtensa-esp32-espidf` に固定されているため、`--target` 指定なしの `cargo test`
+は `ldproxy` エラーになります。
 
 対象:
 
@@ -122,6 +142,7 @@ QEMU_POC_SKIP_BUILD=1 ./qemu_unittest.sh
 - GPIO0 はブートストラップに関係するため、起動時の配線に注意してください。
 - OV2640 のソフトスタンバイは SCCB レジスタ操作です。PWDN 電源遮断とは別方式です。
 - 消費電力や復帰挙動はボード配線と周辺回路に依存します。
+- 再書き込み直後にカメラ初期化失敗が出る場合は、まず電源抜き差し後に再試行してください。
 
 ## 関連
 

@@ -2,6 +2,7 @@ use crate::mac_address::MacAddress;
 use crate::core::config_validation::{
     parse_camera_warmup_frames, parse_receiver_mac, ValidationError,
 };
+use crate::core::clamp_wifi_tx_power_dbm;
 
 /// アプリケーション設定
 ///
@@ -55,11 +56,11 @@ pub struct Config {
     sleep_command_timeout_seconds: u64,
 
     // ADC電圧測定設定
-    #[default(128.0)] // UnitCam GPIO0 の実測値に合わせて調整
-    adc_voltage_min_mv: f32,
+    #[default(128)] // UnitCam GPIO0 の実測値に合わせて調整
+    adc_voltage_min_mv: u16,
 
-    #[default(3130.0)] // UnitCam GPIO0 の実測値に合わせて調整
-    adc_voltage_max_mv: f32,
+    #[default(3130)] // UnitCam GPIO0 の実測値に合わせて調整
+    adc_voltage_max_mv: u16,
 
     // ESP-NOW 画像送信設定
     #[default(250)] // チャンクサイズ（バイト）
@@ -67,6 +68,23 @@ pub struct Config {
 
     #[default(50)] // チャンク間遅延（ミリ秒）
     esp_now_chunk_delay_ms: u32,
+
+    // テスト・デバッグ設定
+    #[default(false)]
+    force_voltage_percent_50: bool,
+
+    #[default(false)]
+    force_camera_test: bool,
+
+    #[default(false)]
+    bypass_voltage_threshold: bool,
+
+    #[default(false)]
+    debug_mode: bool,
+
+    // WiFi送信パワー設定（dBm）
+    #[default(8)]
+    wifi_tx_power_dbm: i8,
 }
 
 /// 設定エラー
@@ -106,16 +124,31 @@ pub struct AppConfig {
     pub sleep_command_timeout_seconds: u64,
 
     /// ADC電圧測定最小値（mV）
-    pub adc_voltage_min_mv: f32,
+    pub adc_voltage_min_mv: u16,
 
     /// ADC電圧測定最大値（mV）
-    pub adc_voltage_max_mv: f32,
+    pub adc_voltage_max_mv: u16,
 
     /// ESP-NOW画像送信チャンクサイズ（バイト）
     pub esp_now_chunk_size: u16,
 
     /// ESP-NOWチャンク間遅延時間（ミリ秒）
     pub esp_now_chunk_delay_ms: u32,
+
+    /// 電圧チェックを無視してカメラテストを強制実行
+    pub force_camera_test: bool,
+
+    /// 電圧パーセンテージを強制的に50%として扱う（デバッグ用）
+    pub force_voltage_percent_50: bool,
+
+    /// 電圧閾値を無視して実画像送信を行う
+    pub bypass_voltage_threshold: bool,
+
+    /// デバッグモード（詳細ログ）
+    pub debug_mode: bool,
+
+    /// WiFi送信パワー（dBm, 2-20 にクランプ）
+    pub wifi_tx_power_dbm: i8,
 }
 
 impl AppConfig {
@@ -155,6 +188,15 @@ impl AppConfig {
         let esp_now_chunk_size = config.esp_now_chunk_size;
         let esp_now_chunk_delay_ms = config.esp_now_chunk_delay_ms;
 
+        // テスト・デバッグ設定
+        let force_voltage_percent_50 = config.force_voltage_percent_50;
+        let force_camera_test = config.force_camera_test;
+        let bypass_voltage_threshold = config.bypass_voltage_threshold;
+        let debug_mode = config.debug_mode;
+
+        // WiFi送信パワー（安全範囲へクランプ）
+        let wifi_tx_power_dbm = clamp_wifi_tx_power_dbm(config.wifi_tx_power_dbm);
+
         Ok(AppConfig {
             receiver_mac,
             sleep_duration_seconds,
@@ -168,6 +210,11 @@ impl AppConfig {
             adc_voltage_max_mv,
             esp_now_chunk_size,
             esp_now_chunk_delay_ms,
+            force_voltage_percent_50,
+            force_camera_test,
+            bypass_voltage_threshold,
+            debug_mode,
+            wifi_tx_power_dbm,
         })
     }
 }

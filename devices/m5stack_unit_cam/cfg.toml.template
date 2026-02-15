@@ -60,10 +60,10 @@ sleep_command_timeout_seconds = 10
 # ADC電圧測定設定
 # -------------------------------------------------------------------------
 # ADC最小電圧値（mV）- キャリブレーション用
-adc_voltage_min_mv = 128.0
+adc_voltage_min_mv = 128
 
 # ADC最大電圧値（mV）- キャリブレーション用  
-adc_voltage_max_mv = 3130.0
+adc_voltage_max_mv = 3130
 
 # ESP-NOW 画像送信設定
 # -------------------------------------------------------------------------
@@ -80,6 +80,25 @@ esp_now_chunk_delay_ms = 5
 
 # デバッグ用設定
 # -------------------------------------------------------------------------
+# 電圧パーセンテージを強制的に50%として扱う（デバッグ用）
+force_voltage_percent_50 = false
+# force_voltage_percent_50 = true
+
+# 電圧チェックを無視してカメラテストを強制実行
+force_camera_test = false
+# force_camera_test = true
+
+# 電圧閾値を無視して実際の画像送信を行う
+bypass_voltage_threshold = false
+# bypass_voltage_threshold = true
+
+# デバッグモード（詳細ログ出力）
+debug_mode = false
+# debug_mode = true
+
+# WiFi送信パワー（dBm, 2-20）
+wifi_tx_power_dbm = 8
+
 # ログレベル（trace, debug, info, warn, error）
 # log_level = "info"
 
