@@ -9,7 +9,7 @@ User=<user_name>
 # (Optional) Set the group to run the service. Replace <group_name> with your actual group name, or remove this line if not needed.
 Group=<group_name>
 WorkingDirectory=/home/<user_name>/sensor_data_reciver
-ExecStart=/home/<user_name>/sensor_data_reciver/.venv/bin/python app.py
+ExecStart=/home/<user_name>/sensor_data_reciver/.venv/bin/python app.py --streaming
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
