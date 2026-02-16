@@ -7,7 +7,7 @@
 uv venv # 仮想環境作成
 source .venv/bin/activate # 仮想環境有効化
 uv sync # 依存関係のインストール
-.venv/bin/python app.py
+.venv/bin/gunicorn main:app --bind 0.0.0.0:8000 --keyfile key.pem --certfile cert.pem --reload
 ```
 
 ## systemd サービスとして常駐起動する手順
