@@ -1,0 +1,18 @@
+[Unit]
+Description=Python Image Viewer Service
+After=network.target
+
+[Service]
+Type=simple
+# Set the user to run the service. Replace <user_name> with your actual username.
+User=<user_name>
+# (Optional) Set the group to run the service. Replace <group_name> with your actual group name, or remove this line if not needed.
+Group=<group_name>
+WorkingDirectory=/home/<user_name>/production/image_viewer
+ExecStart=/home/<user_name>/production/image_viewer/.venv/bin/gunicorn main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --keyfile /home/<user_name>/production/image_viewer/key.pem --certfile /home/<user_name>/production/image_viewer/cert.pem --reload
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

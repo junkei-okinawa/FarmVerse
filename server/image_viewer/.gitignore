@@ -4,3 +4,5 @@ activate
 __pycache__/
 
 *.pem
+systemd/image_viewer.service
+
