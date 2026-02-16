@@ -2,3 +2,5 @@
 .venv
 activate
 __pycache__/
+
+*.pem
