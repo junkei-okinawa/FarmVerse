@@ -7,7 +7,7 @@ Before setting up as a service, make sure the application works by running the f
 uv venv # Create virtual environment
 source .venv/bin/activate # Activate virtual environment
 uv sync # Install dependencies
-.venv/bin/python app.py
+.venv/bin/gunicorn main:app --bind 0.0.0.0:8000 --keyfile key.pem --certfile cert.pem --reload
 ```
 
 ## How to Run as a systemd Service
