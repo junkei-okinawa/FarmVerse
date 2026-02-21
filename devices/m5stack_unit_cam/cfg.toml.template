@@ -49,6 +49,13 @@ auto_exposure_enabled = true
 # false: スタンバイ制御を行わない（デフォルト）
 camera_soft_standby_enabled = false
 
+# カメラスタンバイ方式（A/Bテスト用）
+# auto    : 旧camera_soft_standby_enabled設定を継承
+# off     : スタンバイ制御なし
+# minimal : DeepSleep向け軽量スタンバイ（R_DVP_SPのみ）
+# full    : 従来スタンバイ（CLKRC分周含む）
+camera_standby_mode = "auto"
+
 # 画像品質安定化のための捨て画像撮影回数
 camera_warmup_frames = 2
 

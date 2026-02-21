@@ -5,7 +5,7 @@ use crate::communication::esp_now::EspNowSender;
 use crate::core::{
     should_capture_image_with_overrides, INVALID_VOLTAGE_PERCENT, LOW_VOLTAGE_THRESHOLD_PERCENT,
 };
-use crate::core::config::AppConfig;
+use crate::core::config::{AppConfig, CameraStandbyMode};
 use crate::core::prepare_image_payload;
 use crate::hardware::camera::CameraController;
 use crate::hardware::led::StatusLed;
@@ -68,7 +68,7 @@ impl DataService {
 
         // Deep/Light Sleep後にSCCBスタンバイ状態が残るケースに備えて、
         // スタンバイ有効時は撮影前に復帰シーケンスを試行する。
-        if app_config.camera_soft_standby_enabled {
+        if app_config.camera_standby_mode != CameraStandbyMode::Off {
             if let Err(e) = camera.exit_standby_via_sccb() {
                 warn!("SCCBスタンバイ解除に失敗しました（処理継続）: {:?}", e);
             }
