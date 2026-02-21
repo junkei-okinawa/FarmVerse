@@ -68,6 +68,7 @@ cargo espflash flash --release --monitor --partition-table partitions.csv
 - `frame_size`: カメラ解像度
 - `camera_warmup_frames`: 捨てフレーム数
 - `camera_soft_standby_enabled`: SCCB ソフトスタンバイ有効化
+- `camera_standby_mode`: SCCBスタンバイ方式（`auto`/`off`/`minimal`/`full`）
 - `adc_voltage_min_mv` / `adc_voltage_max_mv`: 電圧換算キャリブレーション
 - `esp_now_chunk_size` / `esp_now_chunk_delay_ms`: 送信チャンク設定
 - `timezone`: タイムゾーン

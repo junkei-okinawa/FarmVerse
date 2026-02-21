@@ -4,6 +4,17 @@ use crate::core::config_validation::{
 };
 use crate::core::clamp_wifi_tx_power_dbm;
 
+/// カメラのSCCBスタンバイ方式
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CameraStandbyMode {
+    /// スタンバイ制御を行わない
+    Off,
+    /// DeepSleep向け軽量スタンバイ（R_DVP_SPのみ）
+    Minimal,
+    /// 従来のフルスタンバイ（CLKRC分周含む）
+    Full,
+}
+
 /// アプリケーション設定
 ///
 /// この構造体はビルド時に`build.rs`によって`cfg.toml`ファイルから
@@ -33,6 +44,9 @@ pub struct Config {
 
     #[default(false)]
     camera_soft_standby_enabled: bool,
+
+    #[default("auto")]
+    camera_standby_mode: &'static str,
 
     #[default(255)]
     camera_warmup_frames: u8,
@@ -94,6 +108,8 @@ pub enum ConfigError {
     InvalidReceiverMac(String),
     #[error("camera_warmup_frames の値が無効です (0-10): {0}")]
     InvalidCameraWarmupFrames(u8),
+    #[error("camera_standby_mode の値が無効です: {0} (有効値: auto/off/minimal/full)")]
+    InvalidCameraStandbyMode(String),
 }
 
 /// アプリケーション設定を表す構造体
@@ -113,6 +129,9 @@ pub struct AppConfig {
 
     /// SCCB経由のソフトスタンバイ制御を有効化
     pub camera_soft_standby_enabled: bool,
+
+    /// カメラスタンバイ方式
+    pub camera_standby_mode: CameraStandbyMode,
 
     /// カメラウォームアップフレーム数
     pub camera_warmup_frames: Option<u8>,
@@ -169,6 +188,10 @@ impl AppConfig {
         // 自動露出設定を取得
         let auto_exposure_enabled = config.auto_exposure_enabled;
         let camera_soft_standby_enabled = config.camera_soft_standby_enabled;
+        let camera_standby_mode = parse_camera_standby_mode(
+            config.camera_standby_mode,
+            camera_soft_standby_enabled,
+        )?;
 
         // カメラウォームアップフレーム数を取得・検証
         let camera_warmup_frames =
@@ -203,6 +226,7 @@ impl AppConfig {
             frame_size,
             auto_exposure_enabled,
             camera_soft_standby_enabled,
+            camera_standby_mode,
             camera_warmup_frames,
             timezone,
             sleep_command_timeout_seconds,
@@ -231,5 +255,23 @@ fn map_validation_error(err: ValidationError) -> ConfigError {
         | ValidationError::MissingWifiSsid => {
             unreachable!("core/config では target digits / wifi_ssid の検証は呼び出さない")
         }
+    }
+}
+
+fn parse_camera_standby_mode(
+    mode: &str,
+    camera_soft_standby_enabled: bool,
+) -> Result<CameraStandbyMode, ConfigError> {
+    match mode.trim().to_ascii_lowercase().as_str() {
+        // 既存の bool 設定との後方互換
+        "auto" => Ok(if camera_soft_standby_enabled {
+            CameraStandbyMode::Minimal
+        } else {
+            CameraStandbyMode::Off
+        }),
+        "off" => Ok(CameraStandbyMode::Off),
+        "minimal" => Ok(CameraStandbyMode::Minimal),
+        "full" => Ok(CameraStandbyMode::Full),
+        other => Err(ConfigError::InvalidCameraStandbyMode(other.to_string())),
     }
 }
