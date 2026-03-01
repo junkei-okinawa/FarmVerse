@@ -5,7 +5,7 @@ use esp_idf_hal::delay::FreeRtos;
 use esp_idf_hal::i2c::{I2cConfig, I2cDriver};
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::units::Hertz;
-use ina226::{Averaging, Configuration, ConversionTime, Ina226, Mode, CONFIG_RESET_DEFAULT_RAW};
+use ina226::{Ina226, CONFIG_RESET_DEFAULT_RAW};
 use log::{info, warn};
 
 mod config;
@@ -50,57 +50,36 @@ fn main() -> anyhow::Result<()> {
         );
     }
 
-    let ina_addr = monitor::resolve_ina226_address(&detected, app_config.ina226_addr)?;
+    let ina_addr = match monitor::resolve_ina226_address(&detected, app_config.ina226_addr) {
+        Ok(addr) => addr,
+        Err(e) => {
+            warn!("{e}");
+            warn!(
+                "falling back to configured INA226 address: 0x{:02X}",
+                app_config.ina226_addr
+            );
+            app_config.ina226_addr
+        }
+    };
     info!("using INA226 address: 0x{ina_addr:02X}");
 
-    let mut ina = Ina226::new(i2c, ina_addr, app_config.shunt_resistor_ohm)
-        .map_err(|e| anyhow::anyhow!("failed to initialize INA226: {:?}", e))?;
+    let mut ina = Ina226::new_unchecked(i2c, ina_addr, app_config.shunt_resistor_ohm);
 
-    let reset_cfg_raw = ina
-        .read_configuration_raw()
-        .map_err(|e| anyhow::anyhow!("failed to read INA226 config after reset: {:?}", e))?;
-    info!(
-        "INA226 config after reset: raw=0x{reset_cfg_raw:04X}, expected_default=0x{:04X}",
-        CONFIG_RESET_DEFAULT_RAW
-    );
+    // Best-effort startup diagnostics only. Real initialization/retry runs in measurement task.
+    match ina.read_configuration_raw() {
+        Ok(reset_cfg_raw) => info!(
+            "INA226 config after reset: raw=0x{reset_cfg_raw:04X}, expected_default=0x{:04X}",
+            CONFIG_RESET_DEFAULT_RAW
+        ),
+        Err(e) => warn!("INA226 probe not ready at boot: {:?}", e),
+    }
 
-    let config = Configuration {
-        averaging: Averaging::Avg16,
-        bus_conversion_time: ConversionTime::Us1100,
-        shunt_conversion_time: ConversionTime::Us1100,
-        mode: Mode::ShuntAndBusContinuous,
-    };
-    ina.set_configuration(config)
-        .map_err(|e| anyhow::anyhow!("failed to apply INA226 configuration: {:?}", e))?;
-
-    let manufacturer_id = ina
-        .read_manufacturer_id()
-        .map_err(|e| anyhow::anyhow!("failed to read INA226 manufacturer ID: {:?}", e))?;
-    let die_id = ina
-        .read_die_id()
-        .map_err(|e| anyhow::anyhow!("failed to read INA226 die ID: {:?}", e))?;
-
-    info!(
-        "INA226 communication OK: addr=0x{ina_addr:02X}, manufacturer_id=0x{manufacturer_id:04X}, die_id=0x{die_id:04X}"
-    );
-    let cfg_raw = ina
-        .read_configuration_raw()
-        .map_err(|e| anyhow::anyhow!("failed to read INA226 config raw: {:?}", e))?;
-    let cal_raw = ina
-        .read_calibration_raw()
-        .map_err(|e| anyhow::anyhow!("failed to read INA226 calibration raw: {:?}", e))?;
-    let shunt_raw = ina
-        .read_shunt_voltage_raw()
-        .map_err(|e| anyhow::anyhow!("failed to read INA226 shunt raw: {:?}", e))?;
-    let bus_raw = ina
-        .read_bus_voltage_raw()
-        .map_err(|e| anyhow::anyhow!("failed to read INA226 bus raw: {:?}", e))?;
-    info!(
-        "INA226 register snapshot: config=0x{cfg_raw:04X} (expected=0x{:04X}), calibration=0x{cal_raw:04X}, shunt_raw={}, bus_raw={}",
-        config.raw(),
-        shunt_raw,
-        bus_raw
-    );
+    match (ina.read_manufacturer_id(), ina.read_die_id()) {
+        (Ok(manufacturer_id), Ok(die_id)) => info!(
+            "INA226 communication OK: addr=0x{ina_addr:02X}, manufacturer_id=0x{manufacturer_id:04X}, die_id=0x{die_id:04X}"
+        ),
+        _ => warn!("INA226 ID read failed at boot; monitoring task will keep retrying"),
+    }
 
     println!("timestamp_ms,bus_raw,bus_voltage_v,current_raw,current_ma,power_raw,power_mw,target");
 

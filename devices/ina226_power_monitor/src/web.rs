@@ -89,6 +89,7 @@ pub fn start(
     })?;
 
     info!("HTTP endpoints: GET /, GET /metrics");
+    info!("Web UI: http://192.168.71.1/");
 
     Ok(WebRuntime {
         _wifi: wifi,
@@ -440,11 +441,11 @@ async function poll() {{
 }}
 
 function downloadCsv(rows) {{
-  const header = "timestamp_ms,bus_raw,bus_voltage_v,current_raw,current_ma,power_raw,power_mw,target\\n";
+  const header = "timestamp_ms,bus_raw,bus_voltage_v,current_raw,current_ma,power_raw,power_mw,target\n";
   const body = rows.sort((a,b)=>a.timestamp_ms-b.timestamp_ms).map(s =>
     `${{s.timestamp_ms}},${{s.bus_raw}},${{s.bus_voltage_v}},${{s.current_raw}},${{s.current_ma}},${{s.power_raw}},${{s.power_mw}},${{s.target}}`
-  ).join("\\n");
-  const blob = new Blob([header + body + "\\n"], {{ type: "text/csv" }});
+  ).join("\n");
+  const blob = new Blob([header + body + "\n"], {{ type: "text/csv" }});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "ina226_samples.csv";

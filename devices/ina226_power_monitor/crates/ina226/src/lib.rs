@@ -104,6 +104,7 @@ pub struct Ina226<I2C> {
     address: u8,
     current_lsb_a: f32,
     power_lsb_w: f32,
+    calibration_raw: u16,
 }
 
 impl<I2C, E> Ina226<I2C>
@@ -119,12 +120,30 @@ where
             address,
             current_lsb_a,
             power_lsb_w: current_lsb_a * 25.0,
+            calibration_raw: calibration,
         };
 
         // Keep initialization flow close to known-good ESP-IDF component behavior.
-        dev.reset()?;
-        dev.write_u16(REG_CALIBRATION, calibration)?;
+        dev.init()?;
         Ok(dev)
+    }
+
+    pub fn new_unchecked(i2c: I2C, address: u8, shunt_ohm: f32) -> Self {
+        let current_lsb_a = 0.0001_f32;
+        let calibration = (0.00512_f32 / (current_lsb_a * shunt_ohm)) as u16;
+
+        Self {
+            i2c,
+            address,
+            current_lsb_a,
+            power_lsb_w: current_lsb_a * 25.0,
+            calibration_raw: calibration,
+        }
+    }
+
+    pub fn init(&mut self) -> Result<(), Error<E>> {
+        self.reset()?;
+        self.write_u16(REG_CALIBRATION, self.calibration_raw)
     }
 
     pub fn reset(&mut self) -> Result<(), Error<E>> {
