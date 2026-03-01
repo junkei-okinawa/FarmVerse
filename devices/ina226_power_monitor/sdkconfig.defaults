@@ -1,0 +1,20 @@
+# Rust main task stack
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Use USB Serial/JTAG console on XIAO ESP32S3
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Keep logging readable while measuring
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+CONFIG_LOG_MAXIMUM_LEVEL=3
+
+# Increase default pthread stack (Rust std::thread uses pthread task)
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=12288
+
+# Flash size: 8MB (matches the actual module)
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+
+# Use large single-app partition (3MB)
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
