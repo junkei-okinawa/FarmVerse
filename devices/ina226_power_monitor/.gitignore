@@ -1,0 +1,20 @@
+# Build artifacts
+target/
+
+# ESP-IDF managed environment
+.embuild/
+
+# macOS
+.DS_Store
+
+# Local editor/runtime files
+*.log
+
+# Exported measurement files
+docs/*.csv
+
+# Exported measurement files
+docs/*.csv
+
+# Local runtime config
+cfg.toml
