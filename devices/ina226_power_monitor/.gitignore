@@ -15,3 +15,6 @@ docs/*.csv
 
 # Exported measurement files
 docs/*.csv
+
+# Local runtime config
+cfg.toml
