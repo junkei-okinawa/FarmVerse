@@ -265,11 +265,12 @@ fn main() -> anyhow::Result<()> {
             };
 
             if let Err(e) = standby_result {
-                warn!(
-                    "Sleep前のSCCBスタンバイ移行に失敗しました（mode={:?}, 継続）: {:?}",
-                    app_config.camera_standby_mode,
-                    e
+                let message = format!(
+                    "Sleep前のSCCBスタンバイ検証に失敗しました（mode={:?}）: {:?}",
+                    app_config.camera_standby_mode, e
                 );
+                error!("{}", message);
+                return Err(anyhow::anyhow!(message));
             }
         }
 

@@ -127,6 +127,10 @@ pub struct CameraController {
 }
 
 impl CameraController {
+    const SCCB_I2C_PORT: esp_idf_sys::i2c_port_t = esp_idf_sys::i2c_port_t_I2C_NUM_1;
+    const SCCB_ADDR_7BIT: u8 = 0x30;
+    const SCCB_TIMEOUT_TICKS: u32 = 50;
+
     /// カメラ初期化前にSCCB経由でOV2640のスタンバイ解除を試行します。
     /// DeepSleep復帰後にセンサーがスタンバイ残留してprobe失敗する個体向け。
     pub fn pre_probe_exit_standby_via_sccb() -> Result<(), CameraError> {
@@ -362,6 +366,7 @@ impl CameraController {
         }
         // Keep CLKRC write explicit for easier tuning.
         apply_reg_write(&sensor, standby_clkrc_write())?;
+        self.verify_standby_full()?;
 
         info!("✓ カメラをSCCBスタンバイに移行しました");
         Ok(())
@@ -375,6 +380,7 @@ impl CameraController {
         for write in deep_sleep_standby_sequence() {
             apply_reg_write(&sensor, write)?;
         }
+        self.verify_standby_minimal()?;
 
         info!("✓ カメラをDeepSleep向けSCCBスタンバイに移行しました");
         Ok(())
@@ -390,9 +396,81 @@ impl CameraController {
         for write in resume_sequence() {
             apply_reg_write(&sensor, write)?;
         }
+        self.verify_standby_released()?;
 
         info!("✓ カメラのSCCBスタンバイを解除しました");
         Ok(())
+    }
+
+    fn verify_standby_minimal(&self) -> Result<(), CameraError> {
+        // MinimalはDSPバンクのDVP停止のみ確認
+        self.select_bank_sensor_api(0x00)?;
+        let dvp = self.read_reg_raw(0xD3)?;
+        if dvp != 0x00 {
+            return Err(CameraError::InitFailed(format!(
+                "standby verify failed (minimal): reg=0xD3 expected=0x00 actual=0x{:02X}",
+                dvp
+            )));
+        }
+        info!("standby verify ok (minimal): DVP=0x{:02X}", dvp);
+        Ok(())
+    }
+
+    fn verify_standby_full(&self) -> Result<(), CameraError> {
+        // FullはDSP DVP停止 + SENSOR CLKRC分周を確認
+        self.select_bank_sensor_api(0x00)?;
+        let dvp = self.read_reg_raw(0xD3)?;
+        if dvp != 0x00 {
+            return Err(CameraError::InitFailed(format!(
+                "standby verify failed (full/DVP): reg=0xD3 expected=0x00 actual=0x{:02X}",
+                dvp
+            )));
+        }
+
+        self.select_bank_sensor_api(0x01)?;
+        let clkrc = self.read_reg_raw(0x11)?;
+        if (clkrc & 0x3F) != 0x3F {
+            return Err(CameraError::InitFailed(format!(
+                "standby verify failed (full/CLKRC): reg=0x11 expected_masked=0x3F actual=0x{:02X}",
+                clkrc
+            )));
+        }
+
+        info!(
+            "standby verify ok (full): DVP=0x{:02X} CLKRC=0x{:02X}",
+            dvp, clkrc
+        );
+        Ok(())
+    }
+
+    fn verify_standby_released(&self) -> Result<(), CameraError> {
+        // 復帰はSENSORバンクのCLKRCがデフォルト寄りに戻ったことを確認
+        self.select_bank_sensor_api(0x01)?;
+        let clkrc = self.read_reg_raw(0x11)?;
+        if (clkrc & 0x3F) != 0x00 {
+            return Err(CameraError::InitFailed(format!(
+                "resume verify failed: reg=0x11 expected_masked=0x00 actual=0x{:02X}",
+                clkrc
+            )));
+        }
+        info!("resume verify ok: CLKRC=0x{:02X}", clkrc);
+        Ok(())
+    }
+
+    fn select_bank_sensor_api(&self, bank: i32) -> Result<(), CameraError> {
+        self.camera
+            .sensor()
+            .set_reg(0xFF, 0xFF, bank)
+            .map_err(|e| CameraError::InitFailed(format!("BANK_SEL設定失敗 bank=0x{:02X}: {:?}", bank, e)))
+    }
+
+    fn read_reg_raw(&self, reg: u8) -> Result<u8, CameraError> {
+        read_reg_raw_i2c(
+            Self::SCCB_I2C_PORT,
+            Self::SCCB_ADDR_7BIT,
+            reg,
+            Self::SCCB_TIMEOUT_TICKS,
+        )
     }
 }
 
