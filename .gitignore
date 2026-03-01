@@ -27,3 +27,7 @@ __pycache__/
 *.log
 
 data/
+
+# Keep cargo config for INA226 monitor (target/toolchain reproducibility)
+!devices/ina226_power_monitor/.cargo/
+!devices/ina226_power_monitor/.cargo/config.toml
