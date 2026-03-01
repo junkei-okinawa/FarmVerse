@@ -1,0 +1,26 @@
+[ina226-power-monitor]
+# INA226 Power Monitor configuration
+
+# SoftAP settings for web monitor
+ap_ssid = "ina226-monitor-local"
+# Empty means open AP. For WPA2, set 8+ chars.
+ap_password = "chigemotsu"
+ap_channel = 1
+
+# Measurement metadata
+measurement_target = "M5StackUnitCam"
+
+# INA226 settings
+ina226_addr = 64         # 0x40
+shunt_resistor_ohm = 0.1
+
+# I2C settings
+i2c_frequency_hz = 100000
+
+# Sample interval
+sample_interval_ms = 200
+
+# Invalid sample guard
+invalid_guard_enabled = true
+bus_voltage_min_v = 0.1
+bus_voltage_max_v = 6.0
