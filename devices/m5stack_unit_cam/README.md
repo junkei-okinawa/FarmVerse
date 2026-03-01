@@ -75,6 +75,38 @@ cargo espflash flash --release --monitor --partition-table partitions.csv
 
 詳細とコメント付きテンプレートは `cfg.toml.template` を参照してください。
 
+### INA226 A/B測定（`camera_standby_mode`）
+
+`camera_standby_mode` を以下の3条件で比較してください。
+
+- `off`
+- `minimal`
+- `full`
+
+実施手順:
+
+1. `cfg.toml` の `camera_standby_mode` を対象値へ変更
+2. 再ビルド・再書き込み
+3. 同一条件（送信間隔/画質/電源）で 10 分以上測定
+4. 次のモードへ切り替えて同じ手順を繰り返し
+
+補助スクリプト（`devices/m5stack_unit_cam/dist`）:
+
+- `ina226_prepare_csv.py`: CSV整形＋`standby_mode`列付与
+- `ina226_analyze.py`: sleep/active 平均電流と消費エネルギーを集計
+
+例:
+
+```bash
+cd devices/m5stack_unit_cam
+python3 dist/ina226_prepare_csv.py \
+  --input dist/ina226_samples.csv \
+  --output dist/ina226_samples_off.csv \
+  --mode off
+
+python3 dist/ina226_analyze.py --input dist/ina226_samples_off.csv
+```
+
 ## テスト
 
 ### 1. ホストユニットテスト（ESP-IDF 不要）
