@@ -12,8 +12,8 @@ use super::ov3660_sequence::{
     REG_SYSTEM_CTRL0,
 };
 
-const OV3660_CTRL_RUN: u8 = super::ov3660_sequence::CTRL_RUN as u8;
-const OV3660_CTRL_STANDBY: u8 = super::ov3660_sequence::CTRL_STANDBY as u8;
+const OV3660_CTRL_RUN: u8 = super::ov3660_sequence::CTRL_RUN;
+const OV3660_CTRL_STANDBY: u8 = super::ov3660_sequence::CTRL_STANDBY;
 
 #[derive(Debug, Clone, Copy)] // Added Clone
 pub enum CustomFrameSize {
