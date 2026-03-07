@@ -1,8 +1,8 @@
 use super::ov2640_sequence::RegWrite;
 
-const REG_SYSTEM_CTRL0: i32 = 0x3008;
-const OV3660_CTRL_RUN: i32 = 0x02;
-const OV3660_CTRL_STANDBY: i32 = 0x42;
+pub const REG_SYSTEM_CTRL0: i32 = 0x3008;
+pub const OV3660_CTRL_RUN: i32 = 0x02;
+pub const OV3660_CTRL_STANDBY: i32 = 0x42;
 
 // 0x3008:
 // - Bit7: software reset
