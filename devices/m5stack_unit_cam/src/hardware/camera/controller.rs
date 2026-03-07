@@ -121,6 +121,12 @@ pub enum CameraError {
     #[error("カメラの初期化に失敗しました: {0}")]
     InitFailed(String),
 
+    #[error("カメラのスタンバイ制御に失敗しました: {0}")]
+    StandbyControlFailed(String),
+
+    #[error("未対応センサーのためスタンバイ制御できません: {0}")]
+    UnsupportedSensor(String),
+
     #[error("画像キャプチャに失敗しました")]
     CaptureFailed,
 }
@@ -129,7 +135,6 @@ pub enum CameraError {
 pub struct CameraController {
     camera: Arc<Camera<'static>>,
     sensor_model: DetectedSensorModel,
-    sccb_addr: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -286,7 +291,7 @@ impl CameraController {
             Self::OV3660_PID => DetectedSensorModel::Ov3660,
             other => {
                 warn!(
-                    "未対応センサーPID=0x{:04X}。スタンバイ制御はOV2640互換として扱います。",
+                    "未対応センサーPID=0x{:04X}。このセンサーではスタンバイ制御は利用できません。",
                     other
                 );
                 DetectedSensorModel::Other(other)
@@ -300,7 +305,6 @@ impl CameraController {
         Ok(Self {
             camera: Arc::new(camera),
             sensor_model,
-            sccb_addr,
         })
     }
 
@@ -413,8 +417,8 @@ impl CameraController {
                 }
             }
             DetectedSensorModel::Other(pid) => {
-                return Err(CameraError::InitFailed(format!(
-                    "未対応センサーではSCCBスタンバイできません: pid=0x{:04X}",
+                return Err(CameraError::UnsupportedSensor(format!(
+                    "SCCBスタンバイできません: pid=0x{:04X}",
                     pid
                 )));
             }
@@ -442,8 +446,8 @@ impl CameraController {
                 }
             }
             DetectedSensorModel::Other(pid) => {
-                return Err(CameraError::InitFailed(format!(
-                    "未対応センサーではDeepSleep向けSCCBスタンバイできません: pid=0x{:04X}",
+                return Err(CameraError::UnsupportedSensor(format!(
+                    "DeepSleep向けSCCBスタンバイできません: pid=0x{:04X}",
                     pid
                 )));
             }
@@ -473,8 +477,8 @@ impl CameraController {
                 }
             }
             DetectedSensorModel::Other(pid) => {
-                return Err(CameraError::InitFailed(format!(
-                    "未対応センサーではSCCBスタンバイ解除できません: pid=0x{:04X}",
+                return Err(CameraError::UnsupportedSensor(format!(
+                    "SCCBスタンバイ解除できません: pid=0x{:04X}",
                     pid
                 )));
             }
@@ -492,7 +496,7 @@ impl CameraController {
                 self.select_bank_sensor_api(0x00)?;
                 let dvp = self.read_reg_raw8(0xD3)?;
                 if dvp != 0x00 {
-                    return Err(CameraError::InitFailed(format!(
+                    return Err(CameraError::StandbyControlFailed(format!(
                         "standby verify failed (minimal/ov2640): reg=0xD3 expected=0x00 actual=0x{:02X}",
                         dvp
                     )));
@@ -501,9 +505,9 @@ impl CameraController {
                 Ok(())
             }
             DetectedSensorModel::Ov3660 => {
-                let ctrl0 = self.read_reg_raw16(0x3008)?;
+                let ctrl0 = self.read_reg_by_16bit_addr(0x3008)?;
                 if (ctrl0 & 0x40) == 0 {
-                    return Err(CameraError::InitFailed(format!(
+                    return Err(CameraError::StandbyControlFailed(format!(
                         "standby verify failed (minimal/ov3660): reg=0x3008 expected_bit6=1 actual=0x{:02X}",
                         ctrl0
                     )));
@@ -511,8 +515,8 @@ impl CameraController {
                 info!("standby verify ok (minimal/ov3660): CTRL0=0x{:02X}", ctrl0);
                 Ok(())
             }
-            DetectedSensorModel::Other(pid) => Err(CameraError::InitFailed(format!(
-                "未対応センサーではstandby検証できません: pid=0x{:04X}",
+            DetectedSensorModel::Other(pid) => Err(CameraError::UnsupportedSensor(format!(
+                "standby検証できません: pid=0x{:04X}",
                 pid
             ))),
         }
@@ -525,7 +529,7 @@ impl CameraController {
                 self.select_bank_sensor_api(0x00)?;
                 let dvp = self.read_reg_raw8(0xD3)?;
                 if dvp != 0x00 {
-                    return Err(CameraError::InitFailed(format!(
+                    return Err(CameraError::StandbyControlFailed(format!(
                         "standby verify failed (full/ov2640/DVP): reg=0xD3 expected=0x00 actual=0x{:02X}",
                         dvp
                     )));
@@ -534,7 +538,7 @@ impl CameraController {
                 self.select_bank_sensor_api(0x01)?;
                 let clkrc = self.read_reg_raw8(0x11)?;
                 if (clkrc & 0x3F) != 0x3F {
-                    return Err(CameraError::InitFailed(format!(
+                    return Err(CameraError::StandbyControlFailed(format!(
                         "standby verify failed (full/ov2640/CLKRC): reg=0x11 expected_masked=0x3F actual=0x{:02X}",
                         clkrc
                     )));
@@ -547,9 +551,9 @@ impl CameraController {
                 Ok(())
             }
             DetectedSensorModel::Ov3660 => {
-                let ctrl0 = self.read_reg_raw16(0x3008)?;
+                let ctrl0 = self.read_reg_by_16bit_addr(0x3008)?;
                 if (ctrl0 & 0x40) == 0 {
-                    return Err(CameraError::InitFailed(format!(
+                    return Err(CameraError::StandbyControlFailed(format!(
                         "standby verify failed (full/ov3660): reg=0x3008 expected_bit6=1 actual=0x{:02X}",
                         ctrl0
                     )));
@@ -557,8 +561,8 @@ impl CameraController {
                 info!("standby verify ok (full/ov3660): CTRL0=0x{:02X}", ctrl0);
                 Ok(())
             }
-            DetectedSensorModel::Other(pid) => Err(CameraError::InitFailed(format!(
-                "未対応センサーではstandby検証できません: pid=0x{:04X}",
+            DetectedSensorModel::Other(pid) => Err(CameraError::UnsupportedSensor(format!(
+                "standby検証できません: pid=0x{:04X}",
                 pid
             ))),
         }
@@ -571,7 +575,7 @@ impl CameraController {
                 self.select_bank_sensor_api(0x01)?;
                 let clkrc = self.read_reg_raw8(0x11)?;
                 if (clkrc & 0x3F) != 0x00 {
-                    return Err(CameraError::InitFailed(format!(
+                    return Err(CameraError::StandbyControlFailed(format!(
                         "resume verify failed (ov2640): reg=0x11 expected_masked=0x00 actual=0x{:02X}",
                         clkrc
                     )));
@@ -580,9 +584,9 @@ impl CameraController {
                 Ok(())
             }
             DetectedSensorModel::Ov3660 => {
-                let ctrl0 = self.read_reg_raw16(0x3008)?;
+                let ctrl0 = self.read_reg_by_16bit_addr(0x3008)?;
                 if (ctrl0 & 0x40) != 0 {
-                    return Err(CameraError::InitFailed(format!(
+                    return Err(CameraError::StandbyControlFailed(format!(
                         "resume verify failed (ov3660): reg=0x3008 expected_bit6=0 actual=0x{:02X}",
                         ctrl0
                     )));
@@ -590,8 +594,8 @@ impl CameraController {
                 info!("resume verify ok (ov3660): CTRL0=0x{:02X}", ctrl0);
                 Ok(())
             }
-            DetectedSensorModel::Other(pid) => Err(CameraError::InitFailed(format!(
-                "未対応センサーではresume検証できません: pid=0x{:04X}",
+            DetectedSensorModel::Other(pid) => Err(CameraError::UnsupportedSensor(format!(
+                "resume検証できません: pid=0x{:04X}",
                 pid
             ))),
         }
@@ -611,20 +615,20 @@ impl CameraController {
             .get_reg(reg as i32, 0xFF)
             .map(|value| (value & 0xFF) as u8)
             .map_err(|e| {
-                CameraError::InitFailed(format!(
+                CameraError::StandbyControlFailed(format!(
                     "SCCBレジスタ読み取り失敗 reg=0x{:02X}: {:?}",
                     reg, e
                 ))
             })
     }
 
-    fn read_reg_raw16(&self, reg: u16) -> Result<u8, CameraError> {
+    fn read_reg_by_16bit_addr(&self, reg: u16) -> Result<u8, CameraError> {
         self.camera
             .sensor()
             .get_reg(reg as i32, 0xFF)
             .map(|value| (value & 0xFF) as u8)
             .map_err(|e| {
-                CameraError::InitFailed(format!(
+                CameraError::StandbyControlFailed(format!(
                     "SCCBレジスタ読み取り失敗 reg=0x{:04X}: {:?}",
                     reg, e
                 ))
@@ -636,7 +640,7 @@ fn apply_reg_write(sensor: &esp_camera_rs::CameraSensor<'_>, write: RegWrite) ->
     sensor
         .set_reg(write.reg, write.mask, write.value)
         .map_err(|e| {
-            CameraError::InitFailed(format!(
+            CameraError::StandbyControlFailed(format!(
                 "SCCBレジスタ設定失敗 reg=0x{:04X} mask=0x{:02X} value=0x{:02X}: {:?}",
                 write.reg, write.mask, write.value, e
             ))
@@ -707,34 +711,6 @@ fn read_reg_raw_i2c(
     if err != esp_idf_sys::ESP_OK {
         return Err(CameraError::InitFailed(format!(
             "pre-probe SCCB read failed reg=0x{:02X}: {}",
-            reg, err
-        )));
-    }
-    Ok(data[0])
-}
-
-fn read_reg_raw_i2c16(
-    port: esp_idf_sys::i2c_port_t,
-    dev_addr: u8,
-    reg: u16,
-    timeout_ticks: u32,
-) -> Result<u8, CameraError> {
-    let addr = [(reg >> 8) as u8, (reg & 0xFF) as u8];
-    let mut data = [0u8; 1];
-    let err = unsafe {
-        esp_idf_sys::i2c_master_write_read_device(
-            port,
-            dev_addr,
-            addr.as_ptr(),
-            addr.len(),
-            data.as_mut_ptr(),
-            data.len(),
-            timeout_ticks,
-        )
-    };
-    if err != esp_idf_sys::ESP_OK {
-        return Err(CameraError::InitFailed(format!(
-            "SCCB read16 failed reg=0x{:04X}: {}",
             reg, err
         )));
     }
