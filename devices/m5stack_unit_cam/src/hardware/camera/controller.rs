@@ -9,7 +9,7 @@ use super::ov2640_sequence::{
 use super::ov3660_sequence::{
     deep_sleep_standby_sequence as ov3660_deep_sleep_standby_sequence,
     resume_sequence as ov3660_resume_sequence, standby_sequence as ov3660_standby_sequence,
-    OV3660_CTRL_RUN, OV3660_CTRL_STANDBY, REG_SYSTEM_CTRL0,
+    CTRL_RUN, CTRL_STANDBY, REG_SYSTEM_CTRL0,
 };
 
 #[derive(Debug, Clone, Copy)] // Added Clone
@@ -604,9 +604,9 @@ impl CameraController {
                 phase,
                 REG_SYSTEM_CTRL0,
                 if expected_set {
-                    OV3660_CTRL_STANDBY
+                    CTRL_STANDBY
                 } else {
-                    OV3660_CTRL_RUN
+                    CTRL_RUN
                 },
                 ctrl0
             )));
