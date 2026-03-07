@@ -275,22 +275,37 @@ fn parse_camera_standby_mode(
     mode: &str,
     camera_soft_standby_enabled: bool,
 ) -> Result<CameraStandbyMode, ConfigError> {
-    match mode.trim().to_ascii_lowercase().as_str() {
+    match parse_explicit_camera_standby_mode(mode) {
         // 既存の bool 設定との後方互換
-        "auto" => Ok(if camera_soft_standby_enabled {
+        Some("auto") => Ok(if camera_soft_standby_enabled {
             CameraStandbyMode::Minimal
         } else {
             CameraStandbyMode::Off
         }),
-        "off" => Ok(CameraStandbyMode::Off),
-        "minimal" => Ok(CameraStandbyMode::Minimal),
-        "full" => Ok(CameraStandbyMode::Full),
-        other => Err(ConfigError::InvalidCameraStandbyMode(other.to_string())),
+        Some("off") => Ok(CameraStandbyMode::Off),
+        Some("minimal") => Ok(CameraStandbyMode::Minimal),
+        Some("full") => Ok(CameraStandbyMode::Full),
+        Some(other) => Err(ConfigError::InvalidCameraStandbyMode(other.to_string())),
+        None => Err(ConfigError::InvalidCameraStandbyMode(
+            mode.trim().to_ascii_lowercase(),
+        )),
+    }
+}
+
+fn parse_explicit_camera_standby_mode(mode: &str) -> Option<&str> {
+    match mode.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some("auto"),
+        "off" => Some("off"),
+        "minimal" => Some("minimal"),
+        "full" => Some("full"),
+        _ => None,
     }
 }
 
 fn warn_if_camera_standby_settings_conflict(mode: &str, camera_soft_standby_enabled: bool) {
-    let mode = mode.trim().to_ascii_lowercase();
+    let Some(mode) = parse_explicit_camera_standby_mode(mode) else {
+        return;
+    };
     if mode == "auto" {
         return;
     }
@@ -301,20 +316,18 @@ fn warn_if_camera_standby_settings_conflict(mode: &str, camera_soft_standby_enab
         CameraStandbyMode::Off
     };
 
-    let explicit_mode = match mode.as_str() {
-        "off" => Some(CameraStandbyMode::Off),
-        "minimal" => Some(CameraStandbyMode::Minimal),
-        "full" => Some(CameraStandbyMode::Full),
-        _ => None,
+    let explicit_mode = match mode {
+        "off" => CameraStandbyMode::Off,
+        "minimal" => CameraStandbyMode::Minimal,
+        "full" => CameraStandbyMode::Full,
+        _ => return,
     };
 
-    if let Some(explicit_mode) = explicit_mode {
-        if explicit_mode != legacy_mode {
-            warn!(
-                "camera_standby_mode='{}' を優先します。camera_soft_standby_enabled={} は auto 指定時のみ有効です。",
-                mode,
-                camera_soft_standby_enabled
-            );
-        }
+    if explicit_mode != legacy_mode {
+        warn!(
+            "camera_standby_mode='{}' を優先します。camera_soft_standby_enabled={} は auto 指定時のみ有効です。",
+            mode,
+            camera_soft_standby_enabled
+        );
     }
 }
