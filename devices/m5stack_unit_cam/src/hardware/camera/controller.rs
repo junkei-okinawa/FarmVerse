@@ -142,15 +142,15 @@ enum DetectedSensorModel {
 impl CameraController {
     const SCCB_I2C_PORT: esp_idf_sys::i2c_port_t = esp_idf_sys::i2c_port_t_I2C_NUM_1;
     const SCCB_TIMEOUT_TICKS: u32 = 50;
+    const OV2640_PID: u16 = 0x0026;
+    const OV3660_PID: u16 = 0x3660;
+    const OV2640_SCCB_ADDR_7BIT: u8 = 0x30;
 
     /// カメラ初期化前にSCCB経由でOV2640のスタンバイ解除を試行します。
     /// DeepSleep復帰後にセンサーがスタンバイ残留してprobe失敗する個体向け。
     pub fn pre_probe_exit_standby_via_sccb() -> Result<(), CameraError> {
-        const PORT: esp_idf_sys::i2c_port_t = esp_idf_sys::i2c_port_t_I2C_NUM_1;
         const SDA_GPIO: i32 = esp_idf_sys::gpio_num_t_GPIO_NUM_25;
         const SCL_GPIO: i32 = esp_idf_sys::gpio_num_t_GPIO_NUM_23;
-        const CAM_ADDR_7BIT: u8 = 0x30;
-        const I2C_TIMEOUT_TICKS: u32 = 50;
 
         let mut cfg: esp_idf_sys::i2c_config_t = Default::default();
         cfg.mode = esp_idf_sys::i2c_mode_t_I2C_MODE_MASTER;
@@ -164,7 +164,7 @@ impl CameraController {
                 esp_idf_sys::i2c_config_t__bindgen_ty_1__bindgen_ty_1 { clk_speed: 100_000 };
         }
 
-        let param_result = unsafe { esp_idf_sys::i2c_param_config(PORT, &cfg) };
+        let param_result = unsafe { esp_idf_sys::i2c_param_config(Self::SCCB_I2C_PORT, &cfg) };
         if param_result != esp_idf_sys::ESP_OK {
             return Err(CameraError::InitFailed(format!(
                 "pre-probe SCCB param config failed: {}",
@@ -174,7 +174,7 @@ impl CameraController {
 
         let install_result = unsafe {
             esp_idf_sys::i2c_driver_install(
-                PORT,
+                Self::SCCB_I2C_PORT,
                 esp_idf_sys::i2c_mode_t_I2C_MODE_MASTER,
                 0,
                 0,
@@ -190,13 +190,18 @@ impl CameraController {
 
         let mut apply_result = Ok(());
         for write in resume_sequence() {
-            if let Err(e) = apply_reg_write_raw_i2c(PORT, CAM_ADDR_7BIT, write, I2C_TIMEOUT_TICKS) {
+            if let Err(e) = apply_reg_write_raw_i2c(
+                Self::SCCB_I2C_PORT,
+                Self::OV2640_SCCB_ADDR_7BIT,
+                write,
+                Self::SCCB_TIMEOUT_TICKS,
+            ) {
                 apply_result = Err(e);
                 break;
             }
         }
 
-        let delete_result = unsafe { esp_idf_sys::i2c_driver_delete(PORT) };
+        let delete_result = unsafe { esp_idf_sys::i2c_driver_delete(Self::SCCB_I2C_PORT) };
         if delete_result != esp_idf_sys::ESP_OK {
             warn!("pre-probe SCCB i2c_driver_delete failed: {}", delete_result);
         }
@@ -277,8 +282,8 @@ impl CameraController {
         let pid = sensor.pid();
         let sccb_addr = sensor.sccb_addr();
         let sensor_model = match pid {
-            0x26 => DetectedSensorModel::Ov2640,
-            0x3660 => DetectedSensorModel::Ov3660,
+            Self::OV2640_PID => DetectedSensorModel::Ov2640,
+            Self::OV3660_PID => DetectedSensorModel::Ov3660,
             other => {
                 warn!(
                     "未対応センサーPID=0x{:04X}。スタンバイ制御はOV2640互換として扱います。",
@@ -562,6 +567,7 @@ impl CameraController {
         }
     }
 
+    /// OV2640系センサーのみが使用する BANK_SEL(0xFF) 切り替え。
     fn select_bank_sensor_api(&self, bank: i32) -> Result<(), CameraError> {
         self.camera
             .sensor()

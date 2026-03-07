@@ -1,6 +1,8 @@
 use super::ov2640_sequence::RegWrite;
 
 const REG_SYSTEM_CTRL0: i32 = 0x3008;
+const OV3660_CTRL_RUN: i32 = 0x02;
+const OV3660_CTRL_STANDBY: i32 = 0x42;
 
 // 0x3008:
 // - Bit7: software reset
@@ -11,22 +13,20 @@ pub fn standby_sequence() -> [RegWrite; 1] {
     [RegWrite {
         reg: REG_SYSTEM_CTRL0,
         mask: 0xFF,
-        value: 0x42,
+        value: OV3660_CTRL_STANDBY,
     }]
 }
 
+/// OV3660は通常スタンバイとDeepSleep前スタンバイで同じレジスタ列を使う。
+/// API対称性と将来の分岐余地のため関数を分けている。
 pub fn deep_sleep_standby_sequence() -> [RegWrite; 1] {
-    [RegWrite {
-        reg: REG_SYSTEM_CTRL0,
-        mask: 0xFF,
-        value: 0x42,
-    }]
+    standby_sequence()
 }
 
 pub fn resume_sequence() -> [RegWrite; 1] {
     [RegWrite {
         reg: REG_SYSTEM_CTRL0,
         mask: 0xFF,
-        value: 0x02,
+        value: OV3660_CTRL_RUN,
     }]
 }
