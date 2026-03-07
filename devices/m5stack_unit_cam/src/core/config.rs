@@ -3,6 +3,18 @@ use crate::core::config_validation::{
     parse_camera_warmup_frames, parse_receiver_mac, ValidationError,
 };
 use crate::core::clamp_wifi_tx_power_dbm;
+use log::warn;
+
+/// カメラのSCCBスタンバイ方式
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CameraStandbyMode {
+    /// スタンバイ制御を行わない
+    Off,
+    /// DeepSleep向け軽量スタンバイ（R_DVP_SPのみ）
+    Minimal,
+    /// 従来のフルスタンバイ（CLKRC分周含む）
+    Full,
+}
 
 /// アプリケーション設定
 ///
@@ -34,6 +46,9 @@ pub struct Config {
     #[default(false)]
     camera_soft_standby_enabled: bool,
 
+    #[default("auto")]
+    camera_standby_mode: &'static str,
+
     #[default(255)]
     camera_warmup_frames: u8,
 
@@ -54,6 +69,9 @@ pub struct Config {
 
     #[default(10)] // デフォルト10秒
     sleep_command_timeout_seconds: u64,
+
+    #[default(false)]
+    force_sleep_duration_by_device: bool,
 
     // ADC電圧測定設定
     #[default(128)] // UnitCam GPIO0 の実測値に合わせて調整
@@ -94,6 +112,8 @@ pub enum ConfigError {
     InvalidReceiverMac(String),
     #[error("camera_warmup_frames の値が無効です (0-10): {0}")]
     InvalidCameraWarmupFrames(u8),
+    #[error("camera_standby_mode の値が無効です: {0} (有効値: auto/off/minimal/full)")]
+    InvalidCameraStandbyMode(String),
 }
 
 /// アプリケーション設定を表す構造体
@@ -114,6 +134,9 @@ pub struct AppConfig {
     /// SCCB経由のソフトスタンバイ制御を有効化
     pub camera_soft_standby_enabled: bool,
 
+    /// カメラスタンバイ方式
+    pub camera_standby_mode: CameraStandbyMode,
+
     /// カメラウォームアップフレーム数
     pub camera_warmup_frames: Option<u8>,
 
@@ -122,6 +145,9 @@ pub struct AppConfig {
 
     /// スリープコマンド待機タイムアウト（秒）
     pub sleep_command_timeout_seconds: u64,
+
+    /// サーバー応答を無視して sleep_duration_seconds を強制使用
+    pub force_sleep_duration_by_device: bool,
 
     /// ADC電圧測定最小値（mV）
     pub adc_voltage_min_mv: u16,
@@ -169,6 +195,14 @@ impl AppConfig {
         // 自動露出設定を取得
         let auto_exposure_enabled = config.auto_exposure_enabled;
         let camera_soft_standby_enabled = config.camera_soft_standby_enabled;
+        let camera_standby_mode = parse_camera_standby_mode(
+            config.camera_standby_mode,
+            camera_soft_standby_enabled,
+        )?;
+        warn_if_camera_standby_settings_conflict(
+            config.camera_standby_mode,
+            camera_soft_standby_enabled,
+        );
 
         // カメラウォームアップフレーム数を取得・検証
         let camera_warmup_frames =
@@ -179,6 +213,7 @@ impl AppConfig {
 
         // スリープコマンドタイムアウトを取得
         let sleep_command_timeout_seconds = config.sleep_command_timeout_seconds;
+        let force_sleep_duration_by_device = config.force_sleep_duration_by_device;
 
         // ADC電圧測定設定を取得
         let adc_voltage_min_mv = config.adc_voltage_min_mv;
@@ -203,9 +238,11 @@ impl AppConfig {
             frame_size,
             auto_exposure_enabled,
             camera_soft_standby_enabled,
+            camera_standby_mode,
             camera_warmup_frames,
             timezone,
             sleep_command_timeout_seconds,
+            force_sleep_duration_by_device,
             adc_voltage_min_mv,
             adc_voltage_max_mv,
             esp_now_chunk_size,
@@ -231,5 +268,67 @@ fn map_validation_error(err: ValidationError) -> ConfigError {
         | ValidationError::MissingWifiSsid => {
             unreachable!("core/config では target digits / wifi_ssid の検証は呼び出さない")
         }
+    }
+}
+
+fn parse_camera_standby_mode(
+    mode: &str,
+    camera_soft_standby_enabled: bool,
+) -> Result<CameraStandbyMode, ConfigError> {
+    match parse_camera_standby_mode_setting(mode) {
+        // 既存の bool 設定との後方互換
+        Some(ParsedCameraStandbyMode::Auto) => Ok(if camera_soft_standby_enabled {
+            CameraStandbyMode::Minimal
+        } else {
+            CameraStandbyMode::Off
+        }),
+        Some(ParsedCameraStandbyMode::Explicit(mode)) => Ok(mode),
+        None => Err(ConfigError::InvalidCameraStandbyMode(
+            mode.trim().to_ascii_lowercase(),
+        )),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParsedCameraStandbyMode {
+    Auto,
+    Explicit(CameraStandbyMode),
+}
+
+fn parse_camera_standby_mode_setting(mode: &str) -> Option<ParsedCameraStandbyMode> {
+    match mode.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(ParsedCameraStandbyMode::Auto),
+        "off" => Some(ParsedCameraStandbyMode::Explicit(CameraStandbyMode::Off)),
+        "minimal" => Some(ParsedCameraStandbyMode::Explicit(CameraStandbyMode::Minimal)),
+        "full" => Some(ParsedCameraStandbyMode::Explicit(CameraStandbyMode::Full)),
+        _ => None,
+    }
+}
+
+fn warn_if_camera_standby_settings_conflict(mode: &str, camera_soft_standby_enabled: bool) {
+    let Some(parsed_mode) = parse_camera_standby_mode_setting(mode) else {
+        return;
+    };
+    if parsed_mode == ParsedCameraStandbyMode::Auto {
+        return;
+    }
+
+    let legacy_mode = if camera_soft_standby_enabled {
+        CameraStandbyMode::Minimal
+    } else {
+        CameraStandbyMode::Off
+    };
+
+    let explicit_mode = match parsed_mode {
+        ParsedCameraStandbyMode::Explicit(mode) => mode,
+        ParsedCameraStandbyMode::Auto => return,
+    };
+
+    if explicit_mode != legacy_mode {
+        warn!(
+            "camera_standby_mode='{}' を優先します。camera_soft_standby_enabled={} は auto 指定時のみ有効です。",
+            mode.trim().to_ascii_lowercase(),
+            camera_soft_standby_enabled
+        );
     }
 }

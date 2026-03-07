@@ -16,6 +16,7 @@ mod power;
 // 使用するモジュールのインポート
 use communication::{NetworkManager, esp_now::EspNowSender};
 use core::{AppController, AppConfig, DataService, MeasuredData, RtcManager};
+use core::config::CameraStandbyMode;
 use hardware::camera::{CameraController, M5UnitCamConfig};
 use hardware::VoltageSensor;
 use hardware::led::StatusLed;
@@ -72,6 +73,11 @@ fn main() -> anyhow::Result<()> {
     
     info!("設定されている受信先MAC: {}", app_config.receiver_mac);
     info!("設定されているスリープ時間: {}秒", app_config.sleep_duration_seconds);
+    info!(
+        "カメラスタンバイ設定: mode={:?} (legacy camera_soft_standby_enabled={})",
+        app_config.camera_standby_mode,
+        app_config.camera_soft_standby_enabled
+    );
     let reset_reason = ResetReason::get();
     info!("リセット理由: {:?}", reset_reason);
 
@@ -241,16 +247,30 @@ fn main() -> anyhow::Result<()> {
         // スリープ管理（サーバーからのコマンド待機）
         let sleep_duration_sec = AppController::resolve_sleep_duration(&esp_now_receiver, &app_config)?;
 
-        // 省電力要件: DeepSleep前にSCCBスタンバイへ移行する。
-        if app_config.camera_soft_standby_enabled {
-            if let Some(cam) = camera.as_ref() {
-                let standby_result = cam.enter_deep_sleep_standby_via_sccb();
-                if let Err(e) = standby_result {
-                    warn!(
-                        "Sleep前のSCCBスタンバイ移行に失敗しました（処理継続）: {:?}",
-                        e
-                    );
+        // 省電力要件: DeepSleep前にSCCBスタンバイへ移行する（A/Bテスト対応）。
+        if let Some(cam) = camera.as_ref() {
+            let standby_result = match app_config.camera_standby_mode {
+                CameraStandbyMode::Off => {
+                    info!("Sleep前カメラスタンバイ: OFF");
+                    Ok(())
                 }
+                CameraStandbyMode::Minimal => {
+                    info!("Sleep前カメラスタンバイ: MINIMAL");
+                    cam.enter_deep_sleep_standby_via_sccb()
+                }
+                CameraStandbyMode::Full => {
+                    info!("Sleep前カメラスタンバイ: FULL");
+                    cam.enter_standby_via_sccb()
+                }
+            };
+
+            if let Err(e) = standby_result {
+                let message = format!(
+                    "Sleep前のSCCBスタンバイ検証に失敗しました（mode={:?}）: {:?}",
+                    app_config.camera_standby_mode, e
+                );
+                error!("{}", message);
+                return Err(anyhow::anyhow!(message));
             }
         }
 
