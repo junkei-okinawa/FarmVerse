@@ -9,8 +9,11 @@ use super::ov2640_sequence::{
 use super::ov3660_sequence::{
     deep_sleep_standby_sequence as ov3660_deep_sleep_standby_sequence,
     resume_sequence as ov3660_resume_sequence, standby_sequence as ov3660_standby_sequence,
-    CTRL_RUN, CTRL_STANDBY, REG_SYSTEM_CTRL0,
+    REG_SYSTEM_CTRL0,
 };
+
+const OV3660_CTRL_RUN: u8 = super::ov3660_sequence::CTRL_RUN as u8;
+const OV3660_CTRL_STANDBY: u8 = super::ov3660_sequence::CTRL_STANDBY as u8;
 
 #[derive(Debug, Clone, Copy)] // Added Clone
 pub enum CustomFrameSize {
@@ -572,27 +575,26 @@ impl CameraController {
             })
     }
 
-    fn read_reg_common(&self, reg: i32, addr_hex_width: usize) -> Result<u8, CameraError> {
+    fn read_reg_common(&self, reg: i32) -> Result<u8, CameraError> {
         self.camera
             .sensor()
             .get_reg(reg, 0xFF)
             .map(|value| (value & 0xFF) as u8)
             .map_err(|e| {
                 CameraError::StandbyControlFailed(format!(
-                    "SCCBレジスタ読み取り失敗 reg=0x{:0addr_hex_width$X}: {:?}",
+                    "SCCBレジスタ読み取り失敗 reg=0x{:04X}: {:?}",
                     reg,
                     e,
-                    addr_hex_width = addr_hex_width
                 ))
             })
     }
 
     fn read_reg_raw8(&self, reg: u8) -> Result<u8, CameraError> {
-        self.read_reg_common(reg as i32, 2)
+        self.read_reg_common(reg as i32)
     }
 
     fn read_reg_by_16bit_addr(&self, reg: u16) -> Result<u8, CameraError> {
-        self.read_reg_common(reg as i32, 4)
+        self.read_reg_common(reg as i32)
     }
 
     fn verify_ov3660_ctrl0_bit6(&self, expected_set: bool, phase: &str) -> Result<(), CameraError> {
@@ -604,9 +606,9 @@ impl CameraController {
                 phase,
                 REG_SYSTEM_CTRL0,
                 if expected_set {
-                    CTRL_STANDBY
+                    OV3660_CTRL_STANDBY
                 } else {
-                    CTRL_RUN
+                    OV3660_CTRL_RUN
                 },
                 ctrl0
             )));
