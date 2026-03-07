@@ -64,6 +64,11 @@ camera_warmup_frames = 2
 # スリープコマンド待機タイムアウト（秒）
 sleep_command_timeout_seconds = 10
 
+# デバイス側でスリープ時間を強制（デバッグ用）
+# true: サーバーからのスリープ時間コマンドを待たず、sleep_duration_secondsを使用
+# false: サーバー応答を優先し、未受信時のみsleep_duration_secondsを使用
+force_sleep_duration_by_device = false
+
 # ADC電圧測定設定
 # -------------------------------------------------------------------------
 # ADC最小電圧値（mV）- キャリブレーション用

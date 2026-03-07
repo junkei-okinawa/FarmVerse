@@ -17,6 +17,13 @@ impl AppController {
     ) -> anyhow::Result<u64> {
         info!("=== サーバーからのスリープコマンド待機開始 ===");
         info!("設定されたデフォルトスリープ時間: {}秒", config.sleep_duration_seconds);
+        if config.force_sleep_duration_by_device {
+            warn!(
+                "force_sleep_duration_by_device=true のため、サーバー応答を無視して {}秒 を使用します。",
+                config.sleep_duration_seconds
+            );
+            return Ok(config.sleep_duration_seconds);
+        }
         info!("スリープコマンド待機タイムアウト: {}秒", config.sleep_command_timeout_seconds);
         
         // ESP-NOW受信状態をリセット（前回の受信データをクリア）
