@@ -9,6 +9,7 @@ pub const OV3660_CTRL_STANDBY: i32 = 0x42;
 // - Bit6: software power down (standby)
 // 常用値として 0x02(動作) / 0x42(standby) を使う。
 
+/// OV3660 を通常スタンバイへ移行するレジスタ列です。
 pub fn standby_sequence() -> [RegWrite; 1] {
     [RegWrite {
         reg: REG_SYSTEM_CTRL0,
@@ -23,6 +24,7 @@ pub fn deep_sleep_standby_sequence() -> [RegWrite; 1] {
     standby_sequence()
 }
 
+/// OV3660 を通常動作へ復帰させるレジスタ列です。
 pub fn resume_sequence() -> [RegWrite; 1] {
     [RegWrite {
         reg: REG_SYSTEM_CTRL0,

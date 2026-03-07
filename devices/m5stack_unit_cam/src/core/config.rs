@@ -3,6 +3,7 @@ use crate::core::config_validation::{
     parse_camera_warmup_frames, parse_receiver_mac, ValidationError,
 };
 use crate::core::clamp_wifi_tx_power_dbm;
+use log::warn;
 
 /// カメラのSCCBスタンバイ方式
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,6 +199,10 @@ impl AppConfig {
             config.camera_standby_mode,
             camera_soft_standby_enabled,
         )?;
+        warn_if_camera_standby_settings_conflict(
+            config.camera_standby_mode,
+            camera_soft_standby_enabled,
+        );
 
         // カメラウォームアップフレーム数を取得・検証
         let camera_warmup_frames =
@@ -281,5 +286,35 @@ fn parse_camera_standby_mode(
         "minimal" => Ok(CameraStandbyMode::Minimal),
         "full" => Ok(CameraStandbyMode::Full),
         other => Err(ConfigError::InvalidCameraStandbyMode(other.to_string())),
+    }
+}
+
+fn warn_if_camera_standby_settings_conflict(mode: &str, camera_soft_standby_enabled: bool) {
+    let mode = mode.trim().to_ascii_lowercase();
+    if mode == "auto" {
+        return;
+    }
+
+    let legacy_mode = if camera_soft_standby_enabled {
+        CameraStandbyMode::Minimal
+    } else {
+        CameraStandbyMode::Off
+    };
+
+    let explicit_mode = match mode.as_str() {
+        "off" => Some(CameraStandbyMode::Off),
+        "minimal" => Some(CameraStandbyMode::Minimal),
+        "full" => Some(CameraStandbyMode::Full),
+        _ => None,
+    };
+
+    if let Some(explicit_mode) = explicit_mode {
+        if explicit_mode != legacy_mode {
+            warn!(
+                "camera_standby_mode='{}' を優先します。camera_soft_standby_enabled={} は auto 指定時のみ有効です。",
+                mode,
+                camera_soft_standby_enabled
+            );
+        }
     }
 }
