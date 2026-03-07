@@ -494,16 +494,7 @@ impl CameraController {
         match self.sensor_model {
             DetectedSensorModel::Ov2640 => {
                 // OV2640 minimalはDSPバンクのDVP停止のみ確認
-                self.select_bank_sensor_api(0x00)?;
-                let dvp = self.read_reg_raw8(0xD3)?;
-                if dvp != 0x00 {
-                    return Err(CameraError::StandbyControlFailed(format!(
-                        "standby verify failed (minimal/ov2640): reg=0xD3 expected=0x00 actual=0x{:02X}",
-                        dvp
-                    )));
-                }
-                info!("standby verify ok (minimal/ov2640): DVP=0x{:02X}", dvp);
-                Ok(())
+                self.verify_ov2640_dvp_stopped("minimal/ov2640")
             }
             DetectedSensorModel::Ov3660 => {
                 self.verify_ov3660_ctrl0_bit6(true, "standby verify (minimal)")
@@ -519,14 +510,7 @@ impl CameraController {
         match self.sensor_model {
             DetectedSensorModel::Ov2640 => {
                 // OV2640 fullはDSP DVP停止 + SENSOR CLKRC分周を確認
-                self.select_bank_sensor_api(0x00)?;
-                let dvp = self.read_reg_raw8(0xD3)?;
-                if dvp != 0x00 {
-                    return Err(CameraError::StandbyControlFailed(format!(
-                        "standby verify failed (full/ov2640/DVP): reg=0xD3 expected=0x00 actual=0x{:02X}",
-                        dvp
-                    )));
-                }
+                self.verify_ov2640_dvp_stopped("full/ov2640/DVP")?;
 
                 self.select_bank_sensor_api(0x01)?;
                 let clkrc = self.read_reg_raw8(0x11)?;
@@ -537,10 +521,7 @@ impl CameraController {
                     )));
                 }
 
-                info!(
-                    "standby verify ok (full/ov2640): DVP=0x{:02X} CLKRC=0x{:02X}",
-                    dvp, clkrc
-                );
+                info!("standby verify ok (full/ov2640): CLKRC=0x{:02X}", clkrc);
                 Ok(())
             }
             DetectedSensorModel::Ov3660 => {
@@ -583,7 +564,12 @@ impl CameraController {
         self.camera
             .sensor()
             .set_reg(0xFF, 0xFF, bank)
-            .map_err(|e| CameraError::InitFailed(format!("BANK_SEL設定失敗 bank=0x{:02X}: {:?}", bank, e)))
+            .map_err(|e| {
+                CameraError::StandbyControlFailed(format!(
+                    "BANK_SEL設定失敗 bank=0x{:02X}: {:?}",
+                    bank, e
+                ))
+            })
     }
 
     fn read_reg_common(&self, reg: i32, addr_hex_width: usize) -> Result<u8, CameraError> {
@@ -627,6 +613,19 @@ impl CameraController {
         }
 
         info!("{} ok (ov3660): CTRL0=0x{:02X}", phase, ctrl0);
+        Ok(())
+    }
+
+    fn verify_ov2640_dvp_stopped(&self, context: &str) -> Result<(), CameraError> {
+        self.select_bank_sensor_api(0x00)?;
+        let dvp = self.read_reg_raw8(0xD3)?;
+        if dvp != 0x00 {
+            return Err(CameraError::StandbyControlFailed(format!(
+                "standby verify failed ({}): reg=0xD3 expected=0x00 actual=0x{:02X}",
+                context, dvp
+            )));
+        }
+        info!("standby verify ok ({}): DVP=0x{:02X}", context, dvp);
         Ok(())
     }
 }
