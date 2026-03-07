@@ -38,7 +38,7 @@ thiserror = "2.0.12"
 chrono = "0.4.41"
 chrono-tz = "0.10.3"
 
-esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git" }
+esp-camera-rs = { git = "https://github.com/junkei-okinawa/esp-camera-rs.git", rev = "369ab6c40dcc6043548719512bb8eb8a26dd0e45" }
 
 [build-dependencies]
 embuild = "0.33"
@@ -46,6 +46,3 @@ toml-cfg = "=0.2"
 
 [patch.crates-io]
 esp-idf-hal = { git = "https://github.com/junkei-okinawa/esp-idf-hal.git", branch = "custom-gpio-for-M5UnitCam" }
-
-[patch."https://github.com/junkei-okinawa/esp-camera-rs.git"]
-esp-camera-rs = { path = "../../sensors/esp-camera-rs" }
