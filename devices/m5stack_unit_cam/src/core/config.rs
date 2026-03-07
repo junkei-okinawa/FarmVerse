@@ -69,6 +69,9 @@ pub struct Config {
     #[default(10)] // デフォルト10秒
     sleep_command_timeout_seconds: u64,
 
+    #[default(false)]
+    force_sleep_duration_by_device: bool,
+
     // ADC電圧測定設定
     #[default(128)] // UnitCam GPIO0 の実測値に合わせて調整
     adc_voltage_min_mv: u16,
@@ -142,6 +145,9 @@ pub struct AppConfig {
     /// スリープコマンド待機タイムアウト（秒）
     pub sleep_command_timeout_seconds: u64,
 
+    /// サーバー応答を無視して sleep_duration_seconds を強制使用
+    pub force_sleep_duration_by_device: bool,
+
     /// ADC電圧測定最小値（mV）
     pub adc_voltage_min_mv: u16,
 
@@ -202,6 +208,7 @@ impl AppConfig {
 
         // スリープコマンドタイムアウトを取得
         let sleep_command_timeout_seconds = config.sleep_command_timeout_seconds;
+        let force_sleep_duration_by_device = config.force_sleep_duration_by_device;
 
         // ADC電圧測定設定を取得
         let adc_voltage_min_mv = config.adc_voltage_min_mv;
@@ -230,6 +237,7 @@ impl AppConfig {
             camera_warmup_frames,
             timezone,
             sleep_command_timeout_seconds,
+            force_sleep_duration_by_device,
             adc_voltage_min_mv,
             adc_voltage_max_mv,
             esp_now_chunk_size,
