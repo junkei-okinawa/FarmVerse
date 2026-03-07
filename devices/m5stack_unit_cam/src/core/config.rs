@@ -306,7 +306,6 @@ fn parse_camera_standby_mode_setting(mode: &str) -> Option<ParsedCameraStandbyMo
 }
 
 fn warn_if_camera_standby_settings_conflict(mode: &str, camera_soft_standby_enabled: bool) {
-    let normalized_mode = mode.trim().to_ascii_lowercase();
     let Some(parsed_mode) = parse_camera_standby_mode_setting(mode) else {
         return;
     };
@@ -328,7 +327,7 @@ fn warn_if_camera_standby_settings_conflict(mode: &str, camera_soft_standby_enab
     if explicit_mode != legacy_mode {
         warn!(
             "camera_standby_mode='{}' を優先します。camera_soft_standby_enabled={} は auto 指定時のみ有効です。",
-            normalized_mode,
+            mode.trim().to_ascii_lowercase(),
             camera_soft_standby_enabled
         );
     }

@@ -1,8 +1,8 @@
 use super::ov2640_sequence::RegWrite;
 
 pub const REG_SYSTEM_CTRL0: i32 = 0x3008;
-pub const CTRL_RUN: i32 = 0x02;
-pub const CTRL_STANDBY: i32 = 0x42;
+pub const CTRL_RUN: u8 = 0x02;
+pub const CTRL_STANDBY: u8 = 0x42;
 
 // 0x3008:
 // - Bit7: software reset
@@ -14,7 +14,7 @@ pub fn standby_sequence() -> [RegWrite; 1] {
     [RegWrite {
         reg: REG_SYSTEM_CTRL0,
         mask: 0xFF,
-        value: CTRL_STANDBY,
+        value: CTRL_STANDBY as i32,
     }]
 }
 
@@ -29,6 +29,6 @@ pub fn resume_sequence() -> [RegWrite; 1] {
     [RegWrite {
         reg: REG_SYSTEM_CTRL0,
         mask: 0xFF,
-        value: CTRL_RUN,
+        value: CTRL_RUN as i32,
     }]
 }
