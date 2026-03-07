@@ -609,30 +609,27 @@ impl CameraController {
             .map_err(|e| CameraError::InitFailed(format!("BANK_SEL設定失敗 bank=0x{:02X}: {:?}", bank, e)))
     }
 
-    fn read_reg_raw8(&self, reg: u8) -> Result<u8, CameraError> {
+    fn read_reg_common(&self, reg: i32, width: usize) -> Result<u8, CameraError> {
         self.camera
             .sensor()
-            .get_reg(reg as i32, 0xFF)
+            .get_reg(reg, 0xFF)
             .map(|value| (value & 0xFF) as u8)
             .map_err(|e| {
                 CameraError::StandbyControlFailed(format!(
-                    "SCCBレジスタ読み取り失敗 reg=0x{:02X}: {:?}",
-                    reg, e
+                    "SCCBレジスタ読み取り失敗 reg=0x{:0width$X}: {:?}",
+                    reg,
+                    e,
+                    width = width
                 ))
             })
     }
 
+    fn read_reg_raw8(&self, reg: u8) -> Result<u8, CameraError> {
+        self.read_reg_common(reg as i32, 2)
+    }
+
     fn read_reg_by_16bit_addr(&self, reg: u16) -> Result<u8, CameraError> {
-        self.camera
-            .sensor()
-            .get_reg(reg as i32, 0xFF)
-            .map(|value| (value & 0xFF) as u8)
-            .map_err(|e| {
-                CameraError::StandbyControlFailed(format!(
-                    "SCCBレジスタ読み取り失敗 reg=0x{:04X}: {:?}",
-                    reg, e
-                ))
-            })
+        self.read_reg_common(reg as i32, 4)
     }
 }
 
