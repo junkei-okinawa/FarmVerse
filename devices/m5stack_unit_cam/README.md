@@ -68,11 +68,44 @@ cargo espflash flash --release --monitor --partition-table partitions.csv
 - `frame_size`: カメラ解像度
 - `camera_warmup_frames`: 捨てフレーム数
 - `camera_soft_standby_enabled`: SCCB ソフトスタンバイ有効化
+- `camera_standby_mode`: SCCBスタンバイ方式（`auto`/`off`/`minimal`/`full`）
 - `adc_voltage_min_mv` / `adc_voltage_max_mv`: 電圧換算キャリブレーション
 - `esp_now_chunk_size` / `esp_now_chunk_delay_ms`: 送信チャンク設定
 - `timezone`: タイムゾーン
 
 詳細とコメント付きテンプレートは `cfg.toml.template` を参照してください。
+
+### INA226 A/B測定（`camera_standby_mode`）
+
+`camera_standby_mode` を以下の3条件で比較してください。
+
+- `off`
+- `minimal`
+- `full`
+
+実施手順:
+
+1. `cfg.toml` の `camera_standby_mode` を対象値へ変更
+2. 再ビルド・再書き込み
+3. 同一条件（送信間隔/画質/電源）で 10 分以上測定
+4. 次のモードへ切り替えて同じ手順を繰り返し
+
+補助スクリプト（`devices/m5stack_unit_cam/dist`）:
+
+- `ina226_prepare_csv.py`: CSV整形＋`standby_mode`列付与
+- `ina226_analyze.py`: sleep/active 平均電流と消費エネルギーを集計
+
+例:
+
+```bash
+cd devices/m5stack_unit_cam
+python3 dist/ina226_prepare_csv.py \
+  --input dist/ina226_samples.csv \
+  --output dist/ina226_samples_off.csv \
+  --mode off
+
+python3 dist/ina226_analyze.py --input dist/ina226_samples_off.csv
+```
 
 ## テスト
 
