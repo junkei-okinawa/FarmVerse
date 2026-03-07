@@ -9,6 +9,7 @@ use super::ov2640_sequence::{
 use super::ov3660_sequence::{
     deep_sleep_standby_sequence as ov3660_deep_sleep_standby_sequence,
     resume_sequence as ov3660_resume_sequence, standby_sequence as ov3660_standby_sequence,
+    OV3660_CTRL_RUN, OV3660_CTRL_STANDBY, REG_SYSTEM_CTRL0,
 };
 
 #[derive(Debug, Clone, Copy)] // Added Clone
@@ -505,15 +506,7 @@ impl CameraController {
                 Ok(())
             }
             DetectedSensorModel::Ov3660 => {
-                let ctrl0 = self.read_reg_by_16bit_addr(0x3008)?;
-                if (ctrl0 & 0x40) == 0 {
-                    return Err(CameraError::StandbyControlFailed(format!(
-                        "standby verify failed (minimal/ov3660): reg=0x3008 expected_bit6=1 actual=0x{:02X}",
-                        ctrl0
-                    )));
-                }
-                info!("standby verify ok (minimal/ov3660): CTRL0=0x{:02X}", ctrl0);
-                Ok(())
+                self.verify_ov3660_ctrl0_bit6(true, "standby verify (minimal)")
             }
             DetectedSensorModel::Other(pid) => Err(CameraError::UnsupportedSensor(format!(
                 "standby検証できません: pid=0x{:04X}",
@@ -551,15 +544,7 @@ impl CameraController {
                 Ok(())
             }
             DetectedSensorModel::Ov3660 => {
-                let ctrl0 = self.read_reg_by_16bit_addr(0x3008)?;
-                if (ctrl0 & 0x40) == 0 {
-                    return Err(CameraError::StandbyControlFailed(format!(
-                        "standby verify failed (full/ov3660): reg=0x3008 expected_bit6=1 actual=0x{:02X}",
-                        ctrl0
-                    )));
-                }
-                info!("standby verify ok (full/ov3660): CTRL0=0x{:02X}", ctrl0);
-                Ok(())
+                self.verify_ov3660_ctrl0_bit6(true, "standby verify (full)")
             }
             DetectedSensorModel::Other(pid) => Err(CameraError::UnsupportedSensor(format!(
                 "standby検証できません: pid=0x{:04X}",
@@ -584,15 +569,7 @@ impl CameraController {
                 Ok(())
             }
             DetectedSensorModel::Ov3660 => {
-                let ctrl0 = self.read_reg_by_16bit_addr(0x3008)?;
-                if (ctrl0 & 0x40) != 0 {
-                    return Err(CameraError::StandbyControlFailed(format!(
-                        "resume verify failed (ov3660): reg=0x3008 expected_bit6=0 actual=0x{:02X}",
-                        ctrl0
-                    )));
-                }
-                info!("resume verify ok (ov3660): CTRL0=0x{:02X}", ctrl0);
-                Ok(())
+                self.verify_ov3660_ctrl0_bit6(false, "resume verify")
             }
             DetectedSensorModel::Other(pid) => Err(CameraError::UnsupportedSensor(format!(
                 "resume検証できません: pid=0x{:04X}",
@@ -609,17 +586,17 @@ impl CameraController {
             .map_err(|e| CameraError::InitFailed(format!("BANK_SEL設定失敗 bank=0x{:02X}: {:?}", bank, e)))
     }
 
-    fn read_reg_common(&self, reg: i32, width: usize) -> Result<u8, CameraError> {
+    fn read_reg_common(&self, reg: i32, addr_hex_width: usize) -> Result<u8, CameraError> {
         self.camera
             .sensor()
             .get_reg(reg, 0xFF)
             .map(|value| (value & 0xFF) as u8)
             .map_err(|e| {
                 CameraError::StandbyControlFailed(format!(
-                    "SCCBレジスタ読み取り失敗 reg=0x{:0width$X}: {:?}",
+                    "SCCBレジスタ読み取り失敗 reg=0x{:0addr_hex_width$X}: {:?}",
                     reg,
                     e,
-                    width = width
+                    addr_hex_width = addr_hex_width
                 ))
             })
     }
@@ -630,6 +607,27 @@ impl CameraController {
 
     fn read_reg_by_16bit_addr(&self, reg: u16) -> Result<u8, CameraError> {
         self.read_reg_common(reg as i32, 4)
+    }
+
+    fn verify_ov3660_ctrl0_bit6(&self, expected_set: bool, phase: &str) -> Result<(), CameraError> {
+        let ctrl0 = self.read_reg_by_16bit_addr(REG_SYSTEM_CTRL0 as u16)?;
+        let bit6_set = (ctrl0 & 0x40) != 0;
+        if bit6_set != expected_set {
+            return Err(CameraError::StandbyControlFailed(format!(
+                "{} failed (ov3660): reg=0x{:04X} expected=0x{:02X} actual=0x{:02X}",
+                phase,
+                REG_SYSTEM_CTRL0,
+                if expected_set {
+                    OV3660_CTRL_STANDBY
+                } else {
+                    OV3660_CTRL_RUN
+                },
+                ctrl0
+            )));
+        }
+
+        info!("{} ok (ov3660): CTRL0=0x{:02X}", phase, ctrl0);
+        Ok(())
     }
 }
 
