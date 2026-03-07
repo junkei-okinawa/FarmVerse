@@ -400,7 +400,7 @@ impl CameraController {
         let sensor = self.camera.sensor();
 
         match self.sensor_model {
-            DetectedSensorModel::Ov2640 | DetectedSensorModel::Other(_) => {
+            DetectedSensorModel::Ov2640 => {
                 for write in standby_sequence() {
                     apply_reg_write(&sensor, write)?;
                 }
@@ -411,6 +411,12 @@ impl CameraController {
                 for write in ov3660_standby_sequence() {
                     apply_reg_write(&sensor, write)?;
                 }
+            }
+            DetectedSensorModel::Other(pid) => {
+                return Err(CameraError::InitFailed(format!(
+                    "未対応センサーではSCCBスタンバイできません: pid=0x{:04X}",
+                    pid
+                )));
             }
         }
         self.verify_standby_full()?;
@@ -425,7 +431,7 @@ impl CameraController {
         let sensor = self.camera.sensor();
 
         match self.sensor_model {
-            DetectedSensorModel::Ov2640 | DetectedSensorModel::Other(_) => {
+            DetectedSensorModel::Ov2640 => {
                 for write in deep_sleep_standby_sequence() {
                     apply_reg_write(&sensor, write)?;
                 }
@@ -434,6 +440,12 @@ impl CameraController {
                 for write in ov3660_deep_sleep_standby_sequence() {
                     apply_reg_write(&sensor, write)?;
                 }
+            }
+            DetectedSensorModel::Other(pid) => {
+                return Err(CameraError::InitFailed(format!(
+                    "未対応センサーではDeepSleep向けSCCBスタンバイできません: pid=0x{:04X}",
+                    pid
+                )));
             }
         }
         self.verify_standby_minimal()?;
@@ -450,7 +462,7 @@ impl CameraController {
         let sensor = self.camera.sensor();
 
         match self.sensor_model {
-            DetectedSensorModel::Ov2640 | DetectedSensorModel::Other(_) => {
+            DetectedSensorModel::Ov2640 => {
                 for write in resume_sequence() {
                     apply_reg_write(&sensor, write)?;
                 }
@@ -459,6 +471,12 @@ impl CameraController {
                 for write in ov3660_resume_sequence() {
                     apply_reg_write(&sensor, write)?;
                 }
+            }
+            DetectedSensorModel::Other(pid) => {
+                return Err(CameraError::InitFailed(format!(
+                    "未対応センサーではSCCBスタンバイ解除できません: pid=0x{:04X}",
+                    pid
+                )));
             }
         }
         self.verify_standby_released()?;
@@ -469,7 +487,7 @@ impl CameraController {
 
     fn verify_standby_minimal(&self) -> Result<(), CameraError> {
         match self.sensor_model {
-            DetectedSensorModel::Ov2640 | DetectedSensorModel::Other(_) => {
+            DetectedSensorModel::Ov2640 => {
                 // OV2640 minimalはDSPバンクのDVP停止のみ確認
                 self.select_bank_sensor_api(0x00)?;
                 let dvp = self.read_reg_raw8(0xD3)?;
@@ -493,12 +511,16 @@ impl CameraController {
                 info!("standby verify ok (minimal/ov3660): CTRL0=0x{:02X}", ctrl0);
                 Ok(())
             }
+            DetectedSensorModel::Other(pid) => Err(CameraError::InitFailed(format!(
+                "未対応センサーではstandby検証できません: pid=0x{:04X}",
+                pid
+            ))),
         }
     }
 
     fn verify_standby_full(&self) -> Result<(), CameraError> {
         match self.sensor_model {
-            DetectedSensorModel::Ov2640 | DetectedSensorModel::Other(_) => {
+            DetectedSensorModel::Ov2640 => {
                 // OV2640 fullはDSP DVP停止 + SENSOR CLKRC分周を確認
                 self.select_bank_sensor_api(0x00)?;
                 let dvp = self.read_reg_raw8(0xD3)?;
@@ -535,12 +557,16 @@ impl CameraController {
                 info!("standby verify ok (full/ov3660): CTRL0=0x{:02X}", ctrl0);
                 Ok(())
             }
+            DetectedSensorModel::Other(pid) => Err(CameraError::InitFailed(format!(
+                "未対応センサーではstandby検証できません: pid=0x{:04X}",
+                pid
+            ))),
         }
     }
 
     fn verify_standby_released(&self) -> Result<(), CameraError> {
         match self.sensor_model {
-            DetectedSensorModel::Ov2640 | DetectedSensorModel::Other(_) => {
+            DetectedSensorModel::Ov2640 => {
                 // OV2640復帰はSENSORバンクのCLKRCが戻ったことを確認
                 self.select_bank_sensor_api(0x01)?;
                 let clkrc = self.read_reg_raw8(0x11)?;
@@ -564,6 +590,10 @@ impl CameraController {
                 info!("resume verify ok (ov3660): CTRL0=0x{:02X}", ctrl0);
                 Ok(())
             }
+            DetectedSensorModel::Other(pid) => Err(CameraError::InitFailed(format!(
+                "未対応センサーではresume検証できません: pid=0x{:04X}",
+                pid
+            ))),
         }
     }
 
@@ -576,21 +606,29 @@ impl CameraController {
     }
 
     fn read_reg_raw8(&self, reg: u8) -> Result<u8, CameraError> {
-        read_reg_raw_i2c(
-            Self::SCCB_I2C_PORT,
-            self.sccb_addr,
-            reg,
-            Self::SCCB_TIMEOUT_TICKS,
-        )
+        self.camera
+            .sensor()
+            .get_reg(reg as i32, 0xFF)
+            .map(|value| (value & 0xFF) as u8)
+            .map_err(|e| {
+                CameraError::InitFailed(format!(
+                    "SCCBレジスタ読み取り失敗 reg=0x{:02X}: {:?}",
+                    reg, e
+                ))
+            })
     }
 
     fn read_reg_raw16(&self, reg: u16) -> Result<u8, CameraError> {
-        read_reg_raw_i2c16(
-            Self::SCCB_I2C_PORT,
-            self.sccb_addr,
-            reg,
-            Self::SCCB_TIMEOUT_TICKS,
-        )
+        self.camera
+            .sensor()
+            .get_reg(reg as i32, 0xFF)
+            .map(|value| (value & 0xFF) as u8)
+            .map_err(|e| {
+                CameraError::InitFailed(format!(
+                    "SCCBレジスタ読み取り失敗 reg=0x{:04X}: {:?}",
+                    reg, e
+                ))
+            })
     }
 }
 
@@ -599,7 +637,7 @@ fn apply_reg_write(sensor: &esp_camera_rs::CameraSensor<'_>, write: RegWrite) ->
         .set_reg(write.reg, write.mask, write.value)
         .map_err(|e| {
             CameraError::InitFailed(format!(
-                "SCCBレジスタ設定失敗 reg=0x{:02X} mask=0x{:02X} value=0x{:02X}: {:?}",
+                "SCCBレジスタ設定失敗 reg=0x{:04X} mask=0x{:02X} value=0x{:02X}: {:?}",
                 write.reg, write.mask, write.value, e
             ))
         })
