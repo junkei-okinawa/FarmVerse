@@ -212,7 +212,9 @@ stateDiagram-v2
 
 * `hash_received = true` にする
 * `HashReceived` に遷移する
-* InfluxDB に書き込む
+* `sender_mac + hash_value` をキーに同一サイクル内の重複受信を判定する
+* 当該キーでまだ受信記録が無い場合のみ InfluxDB に書き込む
+* 当該キーで既に受信記録がある場合は再送・重複とみなし、ACK のみ返して InfluxDB への二重書き込みは行わない
 * Phase 3 以降は `HASH_ACK` を返す
 * サイクルが無い状態で `HASH` が来た場合はサイクルを新規作成し、`HASH` が先に来たことを警告として残す
 
@@ -273,6 +275,7 @@ ACK は以下のために使います。
 
 以降は、概念上の ACK を `HASH_ACK`、wire 上の実際のコマンド名を `CMD_HASH_ACK` と呼び分けます。
 本設計書では、`HASH_ACK` は概念、`CMD_HASH_ACK` は USB CDC 上のテキストコマンドを意味します。
+`CMD_HASH_ACK` は、実際に受信した `hash` 値をそのまま返すため、`hash` が通常値か `DUMMY_HASH` かを ACK 側で判別できるようにします。
 
 ### 9.2 ACK の形式
 
@@ -296,7 +299,8 @@ CMD_HASH_ACK:34:ab:95:fb:3f:c4:0123456789abcdef:OK
 終端は既存コマンドと同様に改行 `\n` を付ける前提にします。この改行は payload に含めません。
 受信側は `split(':')` の前に `trim` / `strip` を行い、`status` に改行が残らないようにします。
 `hash` は `:` を含めない固定長の 16 進小文字文字列を前提にします。
-現時点の実装では `devices/m5stack_unit_cam/src/core/data_prep.rs` の `simple_image_hash()` が生成する 16 文字の識別子を使い、`DUMMY_HASH` の 64 文字値はダミー専用として扱います。
+現時点の実装では `devices/m5stack_unit_cam/src/core/data_prep.rs` の `simple_image_hash()` が生成する 16 文字の識別子を通常ケースで使い、`DUMMY_HASH` の 64 文字値はダミー専用として扱います。
+ACK 側の検証・相関ルールは、`simple_image_hash()` 相当の 16 文字値または `DUMMY_HASH` と完全一致する 64 文字値のみを有効とし、それ以外はプロトコル異常として警告対象にします。
 
 ### 9.3 なぜ `hash` を含めるか
 
