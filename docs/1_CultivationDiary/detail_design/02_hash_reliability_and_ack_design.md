@@ -287,9 +287,10 @@ CMD_HASH_ACK:34:ab:95:fb:3f:c4:0123456789abcdef0123456789abcdef0123456789abcdef0
 `status` は将来拡張のため残します。  
 当面は `OK` のみでもよいです。
 `split(':')` 前提で扱う場合は、期待パーツ数は 9 です。
-終端は既存コマンドと同様に改行 `\n` を付ける前提にします。
+終端は既存コマンドと同様に改行 `\n` を付ける前提にします。この改行は payload に含めません。
+受信側は `split(':')` の前に `trim` / `strip` を行い、`status` に改行が残らないようにします。
 `hash` は `:` を含めない固定長の 16 進小文字文字列を前提にします。
-具体的には、`m5stack_unit_cam` の現在の `simple_image_hash` 相当の 64 文字形式、または同等の固定長識別子を使います。
+現時点の実装では `devices/m5stack_unit_cam/src/core/data_prep.rs` の `simple_image_hash()` が生成する 16 文字の識別子を使い、`DUMMY_HASH` の 64 文字値はダミー専用として扱います。
 
 ### 9.3 なぜ `hash` を含めるか
 
