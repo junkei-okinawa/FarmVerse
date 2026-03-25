@@ -272,7 +272,7 @@ ACK は以下のために使います。
 推奨フォーマット:
 
 ```text
-CMD_HASH_ACK:<mac>:<hash>:<status>
+CMD_HASH_ACK:XX:XX:XX:XX:XX:XX:<hash>:<status>\n
 ```
 
 例:
@@ -283,6 +283,8 @@ CMD_HASH_ACK:34:ab:95:fb:3f:c4:abcdef123456:OK
 
 `status` は将来拡張のため残します。  
 当面は `OK` のみでもよいです。
+`split(':')` 前提で扱う場合は、期待パーツ数は 9 です。
+終端は既存コマンドと同様に改行 `\n` を付ける前提にします。
 
 ### 9.3 なぜ `hash` を含めるか
 
@@ -313,7 +315,7 @@ flowchart LR
 
 * `HASH_ACK_TIMEOUT_MS = 1000`
 * `HASH_MAX_RETRIES = 3`
-* `HASH_RETRY_BACKOFF_MS = 250, 500, 1000`
+* `HASH_RETRY_BACKOFF_MS_LIST = [250, 500, 1000]`
 
 ### 10.3 選定理由
 
@@ -432,4 +434,3 @@ sequenceDiagram
 * ACK が無い場合に再送される
 * 再送回数超過でハングしない
 * 本番でログがデータ面に混入しない
-
