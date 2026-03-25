@@ -281,7 +281,7 @@ CMD_HASH_ACK:XX:XX:XX:XX:XX:XX:<hash>:<status>\n
 例:
 
 ```text
-CMD_HASH_ACK:34:ab:95:fb:3f:c4:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:OK
+CMD_HASH_ACK:34:ab:95:fb:3f:c4:0123456789abcdef:OK
 ```
 
 `status` は将来拡張のため残します。  
