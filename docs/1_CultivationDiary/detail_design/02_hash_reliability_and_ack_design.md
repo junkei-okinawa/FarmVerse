@@ -265,6 +265,9 @@ ACK は以下のために使います。
 * `HASH` 再送の根拠にする
 * `EOF` 前に voltage の配送成功を確定する
 
+以降は、概念上の ACK を `HASH_ACK`、wire 上の実際のコマンド名を `CMD_HASH_ACK` と呼び分けます。
+本設計書では、`HASH_ACK` は概念、`CMD_HASH_ACK` は USB CDC 上のテキストコマンドを意味します。
+
 ### 9.2 ACK の形式
 
 既存の `CMD_SEND_ESP_NOW` と同じく、テキストコマンド方式を維持します。
@@ -278,13 +281,15 @@ CMD_HASH_ACK:XX:XX:XX:XX:XX:XX:<hash>:<status>\n
 例:
 
 ```text
-CMD_HASH_ACK:34:ab:95:fb:3f:c4:abcdef123456:OK
+CMD_HASH_ACK:34:ab:95:fb:3f:c4:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:OK
 ```
 
 `status` は将来拡張のため残します。  
 当面は `OK` のみでもよいです。
 `split(':')` 前提で扱う場合は、期待パーツ数は 9 です。
 終端は既存コマンドと同様に改行 `\n` を付ける前提にします。
+`hash` は `:` を含めない固定長の 16 進小文字文字列を前提にします。
+具体的には、`m5stack_unit_cam` の現在の `simple_image_hash` 相当の 64 文字形式、または同等の固定長識別子を使います。
 
 ### 9.3 なぜ `hash` を含めるか
 
