@@ -186,9 +186,12 @@
 stateDiagram-v2
     [*] --> Idle
     Idle --> ReceivingData: first DATA
+    Idle --> HashReceived: HASH arrives first (warn)
+    Idle --> EofReceived: EOF arrives first (warn)
     ReceivingData --> HashReceived: HASH received
     ReceivingData --> EofReceived: EOF received without HASH
     HashReceived --> EofReceived: EOF received
+    HashReceived --> ReceivingData: DATA arrives after HASH (warn)
     ReceivingData --> TimedOut: deadline exceeded
     HashReceived --> TimedOut: deadline exceeded
     EofReceived --> Completed: finalize / cleanup
@@ -203,6 +206,7 @@ stateDiagram-v2
 * サイクルがなければ新規作成する
 * `ReceivingData` に遷移する
 * `last_event_at` を更新する
+* `HASH` より先に DATA が来る通常ケースを想定するが、`HASH` 受信後に DATA が来た場合も警告を出して受け入れる
 
 #### HASH 受信
 
@@ -210,12 +214,14 @@ stateDiagram-v2
 * `HashReceived` に遷移する
 * InfluxDB に書き込む
 * Phase 3 以降は `HASH_ACK` を返す
+* サイクルが無い状態で `HASH` が来た場合はサイクルを新規作成し、`HASH` が先に来たことを警告として残す
 
 #### EOF 受信
 
 * `hash_received == true` なら正常完了扱い
 * `hash_received == false` なら警告を出す
 * サイクルを終了状態へ進める
+* `DATA` も `HASH` も無い状態で `EOF` が来た場合は、プロトコル順序違反として警告し、サイクルを破棄する
 
 #### タイムアウト
 
