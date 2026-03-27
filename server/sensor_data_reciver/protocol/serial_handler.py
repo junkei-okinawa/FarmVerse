@@ -75,6 +75,7 @@ class SerialProtocol(asyncio.Protocol):
 
         # sender単位のサイクル状態トラッカー
         self.cycle_tracker = CycleTracker()
+        self._last_cycle_prune_at = 0.0
         
         logger.info("Serial Protocol initialized.")
         
@@ -108,7 +109,7 @@ class SerialProtocol(asyncio.Protocol):
 
     def process_buffer(self):
         """Process the buffer to find and handle complete frames with enhanced frame format."""
-        self.cycle_tracker.prune_terminal_states()
+        self._prune_cycle_states_if_due()
 
         # デバッグ: バッファ内にEOFマーカーが含まれているかチェック
         if config.DEBUG_FRAME_PARSING and b'EOF' in self.buffer:
@@ -474,6 +475,8 @@ class SerialProtocol(asyncio.Protocol):
     def _send_sleep_command(self, sender_mac: str, voltage: float):
         """スリープコマンドを送信（重複送信防止機能付き）"""
         current_time = time.time()
+
+        self._prune_cycle_states_if_due(current_time)
         
         # 古い送信履歴をクリーンアップ（1時間以上前のものを削除）
         cleanup_threshold = current_time - 3600  # 1時間
@@ -672,6 +675,16 @@ class SerialProtocol(asyncio.Protocol):
         if sender_mac in self.has_image_data_cache:
             del self.has_image_data_cache[sender_mac]
         logger.debug(f"Cleaned up cache for {sender_mac}")
+
+    def _prune_cycle_states_if_due(self, now: float | None = None, min_interval_seconds: float = 60.0) -> int:
+        """CycleTracker の terminal state を低頻度で回収する。"""
+        current_time = now if now is not None else time.time()
+        if current_time - self._last_cycle_prune_at < min_interval_seconds:
+            return 0
+
+        removed = self.cycle_tracker.prune_terminal_states(now=current_time)
+        self._last_cycle_prune_at = current_time
+        return removed
 
     def connection_lost(self, exc):
         log_prefix = f"connection_lost ({id(self)}):"
