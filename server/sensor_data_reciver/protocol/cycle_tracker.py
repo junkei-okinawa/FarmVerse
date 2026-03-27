@@ -14,14 +14,6 @@ logger = logging.getLogger(__name__)
 TERMINAL_STATES = {"Completed", "TimedOut"}
 
 
-def _frame_type_name(frame_type: int) -> str:
-    return {
-        FRAME_TYPE_HASH: "HASH",
-        FRAME_TYPE_DATA: "DATA",
-        FRAME_TYPE_EOF: "EOF",
-    }.get(frame_type, f"UNKNOWN({frame_type})")
-
-
 @dataclass
 class SenderCycleState:
     sender_mac: str
@@ -126,6 +118,26 @@ class CycleTracker:
         state.cycle_state = "Completed"
         state.last_event_at = now if now is not None else time.monotonic()
         return state
+
+    def prune_terminal_states(
+        self, retention_seconds: float = 3600.0, now: Optional[float] = None
+    ) -> int:
+        """Remove terminal cycles that have been retained long enough."""
+        current_time = now if now is not None else time.monotonic()
+        removed = 0
+
+        for sender_mac, state in list(self._states.items()):
+            if state.cycle_state not in TERMINAL_STATES:
+                continue
+
+            if current_time - state.last_event_at < retention_seconds:
+                continue
+
+            del self._states[sender_mac]
+            self._cycle_counters.pop(sender_mac, None)
+            removed += 1
+
+        return removed
 
     def mark_timeout(
         self, sender_mac: str, now: Optional[float] = None
