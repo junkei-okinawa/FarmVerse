@@ -27,7 +27,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -87,7 +87,7 @@ jobs:
           
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-executables
           path: |
@@ -102,7 +102,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -134,7 +134,7 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
