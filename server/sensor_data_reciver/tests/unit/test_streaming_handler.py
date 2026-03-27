@@ -171,5 +171,31 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(self.protocol.cycle_tracker.get_state(sender_mac))
 
+    async def test_buffer_processing_is_serialized(self):
+        """複数の buffer processing task が同時に実行されないことをテスト"""
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
+        entered = []
+
+        async def fake_process_streaming_buffer():
+            entered.append(len(entered) + 1)
+            first_entered.set()
+            if len(entered) == 1:
+                await release_first.wait()
+
+        self.protocol._process_streaming_buffer = fake_process_streaming_buffer
+
+        task1 = asyncio.create_task(self.protocol._process_buffer_async())
+        await first_entered.wait()
+
+        task2 = asyncio.create_task(self.protocol._process_buffer_async())
+        await asyncio.sleep(0)
+
+        self.assertEqual(entered, [1])
+
+        release_first.set()
+        await asyncio.gather(task1, task2)
+        self.assertEqual(entered, [1, 2])
+
 if __name__ == '__main__':
     unittest.main()
