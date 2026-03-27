@@ -474,7 +474,7 @@ class SerialProtocol(asyncio.Protocol):
 
     def _send_sleep_command(self, sender_mac: str, voltage: float):
         """スリープコマンドを送信（重複送信防止機能付き）"""
-        current_time = time.time()
+        current_time = time.monotonic()
 
         self._prune_cycle_states_if_due(current_time)
         
@@ -678,7 +678,7 @@ class SerialProtocol(asyncio.Protocol):
 
     def _prune_cycle_states_if_due(self, now: float | None = None, min_interval_seconds: float = 60.0) -> int:
         """CycleTracker の terminal state を低頻度で回収する。"""
-        current_time = now if now is not None else time.time()
+        current_time = now if now is not None else time.monotonic()
         if current_time - self._last_cycle_prune_at < min_interval_seconds:
             return 0
 

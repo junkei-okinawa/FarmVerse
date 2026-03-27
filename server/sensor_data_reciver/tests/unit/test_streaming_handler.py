@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import sys
 import os
 
@@ -196,6 +196,22 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
         release_first.set()
         await asyncio.gather(task1, task2)
         self.assertEqual(entered, [1, 2])
+
+    async def test_data_received_coalesces_buffer_tasks(self):
+        """data_received が buffer processing task を増殖させないことをテスト"""
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+
+        def fake_create_task(coro):
+            coro.close()
+            return mock_task
+
+        with patch("protocol.streaming_handler.asyncio.create_task", side_effect=fake_create_task) as create_task:
+            self.protocol.data_received(b"abc")
+            self.protocol.data_received(b"def")
+
+        self.assertEqual(create_task.call_count, 1)
+        self.assertEqual(self.protocol.buffer, bytearray(b"abcdef"))
 
 if __name__ == '__main__':
     unittest.main()
