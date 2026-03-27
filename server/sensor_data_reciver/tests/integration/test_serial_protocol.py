@@ -353,3 +353,31 @@ class TestSerialProtocolIntegration:
         protocol.process_buffer()
 
         assert len(prune_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_cycle_pruning_uses_monotonic_time(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_sensor_data, setup_test_environment):
+        mock_transport = MagicMock()
+        mock_protocol = MagicMock()
+        mock_transport.serial = MagicMock(port="test_port")
+        mock_serial_connection.return_value = (mock_transport, mock_protocol)
+
+        loop = asyncio.get_running_loop()
+        connection_lost_future = loop.create_future()
+        image_buffers = {}
+        last_receive_time = {}
+        stats = {"received_images": 0, "total_bytes": 0, "start_time": 0}
+        protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
+        protocol.connection_made(mock_transport)
+
+        prune_calls = []
+
+        def fake_prune_terminal_states(*args, **kwargs):
+            prune_calls.append(kwargs.get("now"))
+            return 0
+
+        protocol.cycle_tracker.prune_terminal_states = fake_prune_terminal_states
+
+        with patch("protocol.serial_handler.time.monotonic", return_value=123.456):
+            protocol._prune_cycle_states_if_due(now=None, min_interval_seconds=0.0)
+
+        assert prune_calls == [123.456]
