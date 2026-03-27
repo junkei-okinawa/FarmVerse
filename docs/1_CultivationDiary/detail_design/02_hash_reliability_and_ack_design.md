@@ -276,6 +276,7 @@ ACK は以下のために使います。
 以降は、概念上の ACK を `HASH_ACK`、wire 上の実際のコマンド名を `CMD_HASH_ACK` と呼び分けます。
 本設計書では、`HASH_ACK` は概念、`CMD_HASH_ACK` は USB CDC 上のテキストコマンドを意味します。
 `CMD_HASH_ACK` は、実際に受信した `hash` 値をそのまま返すため、`hash` が通常値か `DUMMY_HASH` かを ACK 側で判別できるようにします。
+`DUMMY_HASH` のように同一値が繰り返されうるケースでは、`HASH` フレームの `seq_num` を併用してサイクルを一意に識別します。
 
 ### 9.2 ACK の形式
 
@@ -284,29 +285,29 @@ ACK は以下のために使います。
 推奨フォーマット:
 
 ```text
-CMD_HASH_ACK:XX:XX:XX:XX:XX:XX:<hash>:<status>\n
+CMD_HASH_ACK:XX:XX:XX:XX:XX:XX:<seq_num>:<hash>:<status>\n
 ```
 
 例:
 
 ```text
-CMD_HASH_ACK:34:ab:95:fb:3f:c4:0123456789abcdef:OK
+CMD_HASH_ACK:34:ab:95:fb:3f:c4:48:0123456789abcdef:OK
 ```
 
 `status` は将来拡張のため残します。  
 当面は `OK` のみでもよいです。
-`split(':')` 前提で扱う場合は、期待パーツ数は 9 です。
+`split(':')` 前提で扱う場合は、期待パーツ数は 10 です。
 終端は既存コマンドと同様に改行 `\n` を付ける前提にします。この改行は payload に含めません。
 受信側は `split(':')` の前に `trim` / `strip` を行い、`status` に改行が残らないようにします。
 `hash` は `:` を含めない 16 進小文字文字列とし、長さは (a) 16 文字、または (b) `DUMMY_HASH` と完全一致する 64 文字のみを許容します。
 現時点の実装では `devices/m5stack_unit_cam/src/core/data_prep.rs` の `simple_image_hash()` が生成する 16 文字の識別子を通常ケースで使い、`DUMMY_HASH` の 64 文字値はダミー専用として扱います。
-ACK 側の検証・相関ルールは、`simple_image_hash()` 相当の 16 文字値または `DUMMY_HASH` と完全一致する 64 文字値のみを有効とし、それ以外はプロトコル異常として警告対象にします。
+ACK 側の検証・相関ルールは、`sender_mac + seq_num` を主キーとしてサイクルを一意に識別し、その上で `hash` が `simple_image_hash()` 相当の 16 文字値または `DUMMY_HASH` と完全一致する 64 文字値のみを有効とします。それ以外はプロトコル異常として警告対象にします。
 
 ### 9.3 なぜ `hash` を含めるか
 
-* 同じ sender から複数サイクルが続いても識別できる
-* 重複 ACK の判定がしやすい
-* 再送時の整合性確認に使える
+* `seq_num` と合わせて同じ sender の複数サイクルを区別できる
+* `hash` の一致確認で再送時の整合性を検証できる
+* `DUMMY_HASH` のような同値再利用ケースでも、`seq_num` でサイクルを識別できる
 
 ### 9.4 ACK の経路
 
@@ -330,13 +331,13 @@ flowchart LR
 ### 10.2 推奨値
 
 * `HASH_ACK_TIMEOUT_MS = 1000`
-* `HASH_MAX_RETRIES = 3`
-* `HASH_RETRY_BACKOFF_MS_LIST = [250, 500, 1000]`
+* `HASH_MAX_ATTEMPTS = 3`
+* `HASH_RETRY_BACKOFF_MS_LIST = [250, 500]`
 
 ### 10.3 選定理由
 
 * `HASH` は小さいため、1 秒あれば通常は十分
-* 3 回までなら全体遅延を抑えられる
+* 初回送信 + 2 回の再送であれば全体遅延を抑えられる
 * それ以上は異常系と判断してよい
 
 ### 10.4 再送フロー
@@ -347,20 +348,20 @@ sequenceDiagram
     participant G as usb_cdc_receiver
     participant P as sensor_data_reciver
 
-    M->>G: HASH #1
+    M->>G: HASH #1 (attempt 1)
     G->>P: forward HASH #1
     P-->>G: CMD_HASH_ACK
     G-->>M: ACK
 
     alt ACK timeout
-        M->>G: HASH #2
+        M->>G: HASH #2 (attempt 2)
         G->>P: forward HASH #2
         P-->>G: CMD_HASH_ACK
         G-->>M: ACK
     end
 
     alt ACK still missing
-        M->>G: HASH #3
+        M->>G: HASH #3 (attempt 3)
         G->>P: forward HASH #3
         P-->>G: CMD_HASH_ACK
         G-->>M: ACK
@@ -374,7 +375,7 @@ sequenceDiagram
 ### 10.5 再送の終了条件
 
 * ACK を受信したら終了
-* 最大回数に達したら終了
+* 最大試行回数 `HASH_MAX_ATTEMPTS` に達したら終了
 * 送信不能ならサイクル失敗扱いで終了
 
 ### 10.6 ハング防止
