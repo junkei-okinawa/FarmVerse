@@ -155,10 +155,21 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
             await self.protocol._process_streaming_eof_frame(sender_mac, seq_num)
 
         self.assertTrue(
-            any("EOF received but HASH was not received" in message for message in logs.output)
+            any("EOF received before DATA/HASH" in message for message in logs.output)
         )
+        self.assertEqual(len(logs.output), 1)
         self.assertEqual(self.protocol.cycle_tracker.get_state(sender_mac).cycle_state, "Completed")
         self.protocol._send_sleep_command_after_eof.assert_awaited_once_with(sender_mac)
+
+    async def test_invalid_hash_payload_does_not_mark_cycle_received(self):
+        """無効なHASHペイロードでcycle状態が汚染されないことをテスト"""
+        sender_mac = "01:02:03:04:05:06"
+        seq_num = 104
+        chunk_data = b"HASH:broken"
+
+        await self.protocol._process_streaming_hash_frame(sender_mac, chunk_data, seq_num)
+
+        self.assertIsNone(self.protocol.cycle_tracker.get_state(sender_mac))
 
 if __name__ == '__main__':
     unittest.main()

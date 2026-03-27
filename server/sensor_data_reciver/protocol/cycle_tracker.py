@@ -163,6 +163,7 @@ class CycleTracker:
                     state.cycle_seq_num,
                     seq_num,
                 )
+                state.warning_emitted = True
             return state
 
         state.last_event_at = now if now is not None else time.monotonic()
