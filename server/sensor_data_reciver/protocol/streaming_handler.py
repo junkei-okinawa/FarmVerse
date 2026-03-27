@@ -24,6 +24,7 @@ from .constants import (
     HEADER_LENGTH,
     FOOTER_LENGTH,
 )
+from .cycle_tracker import CycleTracker
 from .frame_parser import FrameParser
 
 # 絶対インポートを使用
@@ -84,8 +85,15 @@ class StreamingSerialProtocol(asyncio.Protocol):
         # 最後のデータフレーム受信時間
         self.last_data_frame_time = {}  # {sender_mac: timestamp}
 
+        # sender単位のサイクル状態トラッカー
+        self.cycle_tracker = CycleTracker()
+
         # タイムアウトチェックタスク
         self.timeout_check_task = None
+
+        # バッファ処理の多重実行を防ぐ
+        self._buffer_processing_lock = asyncio.Lock()
+        self._buffer_processing_task = None
 
         logger.info("StreamingSerialProtocol initialized")
 
@@ -113,14 +121,21 @@ class StreamingSerialProtocol(asyncio.Protocol):
             )
 
         self.buffer.extend(data)
-        asyncio.create_task(self._process_buffer_async())
+        if not self._buffer_processing_task or self._buffer_processing_task.done():
+            self._buffer_processing_task = asyncio.create_task(
+                self._process_buffer_async()
+            )
 
     async def _process_buffer_async(self):
         """非同期バッファ処理"""
-        try:
-            await self._process_streaming_buffer()
-        except Exception as e:
-            logger.error(f"Error in async buffer processing: {e}")
+        async with self._buffer_processing_lock:
+            try:
+                self.cycle_tracker.prune_terminal_states()
+                await self._process_streaming_buffer()
+            except Exception as e:
+                logger.error(f"Error in async buffer processing: {e}")
+            finally:
+                self._buffer_processing_task = None
 
     async def _process_streaming_buffer(self):
         """ストリーミング対応バッファ処理"""
@@ -293,19 +308,19 @@ class StreamingSerialProtocol(asyncio.Protocol):
             )
 
         if frame_type == FRAME_TYPE_HASH:
-            await self._process_streaming_hash_frame(sender_mac, chunk_data)
+            await self._process_streaming_hash_frame(sender_mac, chunk_data, seq_num)
 
         elif frame_type == FRAME_TYPE_DATA:
             await self._process_streaming_data_frame(sender_mac, chunk_data, seq_num)
 
         elif frame_type == FRAME_TYPE_EOF:
             logger.info(f"Received EOF frame for {sender_mac}")
-            await self._process_streaming_eof_frame(sender_mac)
+            await self._process_streaming_eof_frame(sender_mac, seq_num)
 
         else:
             logger.warning(f"Unknown frame type {frame_type} from {sender_mac}")
 
-    async def _process_streaming_hash_frame(self, sender_mac: str, chunk_data: bytes):
+    async def _process_streaming_hash_frame(self, sender_mac: str, chunk_data: bytes, seq_num: int):
         """HASHフレーム処理（ストリーミング対応）"""
         try:
             payload_str = chunk_data[5:].decode("ascii")  # 'HASH:' をスキップ
@@ -313,12 +328,17 @@ class StreamingSerialProtocol(asyncio.Protocol):
             logger.warning(f"Could not decode HASH payload from {sender_mac}")
             return
 
-        logger.info(f"Received HASH frame from {sender_mac}: {payload_str}")
         payload_split = payload_str.split(",")
 
         if len(payload_split) < 2:
             logger.warning(f"Invalid HASH payload format: {payload_str}")
             return
+
+        cycle_state = self.cycle_tracker.observe_hash(sender_mac, seq_num)
+
+        logger.info(
+            f"Received HASH frame from {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}): {payload_str}"
+        )
 
         hash_value = payload_split[0]
         volt_log_entry = payload_split[1]
@@ -399,6 +419,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
         self, sender_mac: str, chunk_data: bytes, seq_num: int
     ):
         """DATAフレーム処理（ストリーミング対応）"""
+        self.cycle_tracker.observe_data(sender_mac, seq_num)
 
         # 二重カプセル化（Double Framing）の検出と解除
         # ゲートウェイがSenderのフレームをそのままDATAフレームのペイロードとして
@@ -482,7 +503,9 @@ class StreamingSerialProtocol(asyncio.Protocol):
         else:
             logger.warning(f"Failed to process chunk for {sender_mac}")
 
-    async def _process_streaming_eof_frame(self, sender_mac: str):
+    async def _process_streaming_eof_frame(
+        self, sender_mac: str, seq_num: int | None
+    ):
         """EOFフレーム処理（ストリーミング対応）"""
         current_time = time.time()
 
@@ -496,25 +519,32 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 )
                 return
 
-        logger.info(f"Processing EOF frame for {sender_mac}")
+        cycle_state = self.cycle_tracker.observe_eof(sender_mac, seq_num)
 
-        # EOF処理済みとしてマーク
-        self.eof_processed[sender_mac] = current_time
+        try:
+            logger.info(
+                f"Processing EOF frame for {sender_mac} (cycle_seq={cycle_state.cycle_seq_num})"
+            )
 
-        # ストリーミング画像を完成・保存
-        final_path = await self.streaming_processor.finalize_image_stream(
-            sender_mac, self.stats
-        )
+            # EOF処理済みとしてマーク
+            self.eof_processed[sender_mac] = current_time
 
-        if final_path:
-            # 統計更新
-            self.stats["received_images"] = self.stats.get("received_images", 0) + 1
-            logger.info(f"✓ Streaming image saved: {final_path}")
-        else:
-            logger.error(f"Failed to finalize streaming image for {sender_mac}")
+            # ストリーミング画像を完成・保存
+            final_path = await self.streaming_processor.finalize_image_stream(
+                sender_mac, self.stats
+            )
 
-        # EOFフレーム処理後にスリープコマンド送信
-        await self._send_sleep_command_after_eof(sender_mac)
+            if final_path:
+                # 統計更新
+                self.stats["received_images"] = self.stats.get("received_images", 0) + 1
+                logger.info(f"✓ Streaming image saved: {final_path}")
+            else:
+                logger.error(f"Failed to finalize streaming image for {sender_mac}")
+
+            # EOFフレーム処理後にスリープコマンド送信
+            await self._send_sleep_command_after_eof(sender_mac)
+        finally:
+            self.cycle_tracker.complete_cycle(sender_mac)
 
     async def _chunk_processed_callback(
         self, sender_mac: str, chunk_data: bytes, seq_num: int
@@ -663,6 +693,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
             try:
                 await asyncio.sleep(5.0)  # 5秒間隔でチェック
                 await self.streaming_processor.check_stream_timeouts()
+                self.cycle_tracker.prune_terminal_states()
             except asyncio.CancelledError:
                 logger.info("Timeout check loop cancelled")
                 break
