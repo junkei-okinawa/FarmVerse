@@ -10,6 +10,7 @@ from .constants import (
     MAC_ADDRESS_LENGTH, FRAME_TYPE_LENGTH, SEQUENCE_NUM_LENGTH, LENGTH_FIELD_BYTES,
     CHECKSUM_LENGTH
 )
+from .cycle_tracker import CycleTracker
 from .frame_parser import FrameParser, FrameSyncError
 
 # 修正: 絶対インポートまたは動的インポートを使用
@@ -71,6 +72,10 @@ class SerialProtocol(asyncio.Protocol):
         
         # 最後のデータフレーム受信時間（画像受信中の判定用）
         self.last_data_frame_time = {}  # {sender_mac: timestamp}
+
+        # sender単位のサイクル状態トラッカー
+        self.cycle_tracker = CycleTracker()
+        self._last_cycle_prune_at = 0.0
         
         logger.info("Serial Protocol initialized.")
         
@@ -104,6 +109,8 @@ class SerialProtocol(asyncio.Protocol):
 
     def process_buffer(self):
         """Process the buffer to find and handle complete frames with enhanced frame format."""
+        self._prune_cycle_states_if_due()
+
         # デバッグ: バッファ内にEOFマーカーが含まれているかチェック
         if config.DEBUG_FRAME_PARSING and b'EOF' in self.buffer:
             eof_index = self.buffer.find(b'EOF')
@@ -348,12 +355,12 @@ class SerialProtocol(asyncio.Protocol):
                 frame_type_str = "UNKNOWN"
                 if frame_type == FRAME_TYPE_HASH:
                     frame_type_str = "HASH"
-                    self._process_hash_frame(sender_mac, chunk_data)
+                    self._process_hash_frame(sender_mac, chunk_data, seq_num)
                     
                 elif frame_type == FRAME_TYPE_EOF:
                     frame_type_str = "EOF"
                     logger.info(f"Processing EOF frame from {sender_mac} (seq={seq_num}, data_len={data_len})")
-                    self._process_eof_frame(sender_mac)
+                    self._process_eof_frame(sender_mac, seq_num)
                 
                 elif frame_type == FRAME_TYPE_DATA:
                     frame_type_str = "DATA"
@@ -399,7 +406,7 @@ class SerialProtocol(asyncio.Protocol):
                 
                 self.frame_start_time = None
 
-    def _process_hash_frame(self, sender_mac: str, chunk_data: bytes):
+    def _process_hash_frame(self, sender_mac: str, chunk_data: bytes, seq_num: int):
         """HASH フレームの処理"""
         try:
             payload_str = chunk_data[5:].decode('ascii')  # 'HASH:' をスキップ
@@ -407,12 +414,17 @@ class SerialProtocol(asyncio.Protocol):
             logger.warning(f"Could not decode HASH payload from {sender_mac}")
             return
 
-        logger.info(f"Received HASH frame from {sender_mac}: {payload_str}")
         payload_split = payload_str.split(",")
         
         if len(payload_split) < 2:
             logger.warning(f"Invalid HASH payload format from {sender_mac}: {payload_str}")
             return
+
+        cycle_state = self.cycle_tracker.observe_hash(sender_mac, seq_num)
+
+        logger.info(
+            f"Received HASH frame from {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}): {payload_str}"
+        )
 
         hash_value = payload_split[0]
         volt_log_entry = payload_split[1]
@@ -462,7 +474,9 @@ class SerialProtocol(asyncio.Protocol):
 
     def _send_sleep_command(self, sender_mac: str, voltage: float):
         """スリープコマンドを送信（重複送信防止機能付き）"""
-        current_time = time.time()
+        current_time = time.monotonic()
+
+        self._prune_cycle_states_if_due(current_time)
         
         # 古い送信履歴をクリーンアップ（1時間以上前のものを削除）
         cleanup_threshold = current_time - 3600  # 1時間
@@ -500,7 +514,7 @@ class SerialProtocol(asyncio.Protocol):
         else:
             logger.warning(f"No transport available to send sleep command for {sender_mac}")
 
-    def _process_eof_frame(self, sender_mac: str):
+    def _process_eof_frame(self, sender_mac: str, seq_num: int | None):
         """EOF フレームの処理"""
         current_time = time.time()
         
@@ -510,56 +524,63 @@ class SerialProtocol(asyncio.Protocol):
             if time_since_last_eof < 5:  # 5秒以内の重複はスキップ
                 logger.warning(f"Skipping duplicate EOF for {sender_mac} (last processed {time_since_last_eof:.1f}s ago)")
                 return
-        
-        # EOF処理済みフラグを設定
-        self.eof_processed[sender_mac] = current_time
-        
-        if sender_mac in self.image_buffers:
-            image_data = bytes(self.image_buffers[sender_mac])
-            image_size = len(image_data)
+
+        cycle_state = self.cycle_tracker.observe_eof(sender_mac, seq_num)
+        try:
+            # EOF処理済みフラグを設定
+            self.eof_processed[sender_mac] = current_time
             
-            logger.info(f"EOF frame received for {sender_mac}. Assembling image ({image_size} bytes).")
-            
-            # テスト環境では画像検証をスキップ
-            if not config.IS_TEST_ENV:
-                # 画像データの基本検証
-                if image_size < 1000:  # 1KB未満は明らかに不正
-                    logger.error(f"Image data too small ({image_size} bytes), discarding")
-                    self._cleanup_image_buffers(sender_mac)
-                    # 画像保存をスキップしてもスリープコマンドは送信
-                    self._send_sleep_command_after_eof(sender_mac)
-                    return
-                    
-                # JPEGヘッダーの確認
-                if not image_data.startswith(b'\xff\xd8'):
-                    logger.error(f"Invalid JPEG header detected for {sender_mac}, discarding corrupted image")
-                    self._cleanup_image_buffers(sender_mac)
-                    # 画像保存をスキップしてもスリープコマンドは送信
-                    self._send_sleep_command_after_eof(sender_mac)
-                    return
-                    
-                # JPEGフッターの確認
-                if not image_data.endswith(b'\xff\xd9'):
-                    logger.warning(f"JPEG footer missing or corrupted, data ends with: {image_data[-10:].hex()}")
-                    logger.warning("Attempting to save image anyway")
+            if sender_mac in self.image_buffers:
+                image_data = bytes(self.image_buffers[sender_mac])
+                image_size = len(image_data)
+                
+                logger.info(
+                    f"EOF frame received for {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}). "
+                    f"Assembling image ({image_size} bytes)."
+                )
+                
+                # テスト環境では画像検証をスキップ
+                if not config.IS_TEST_ENV:
+                    # 画像データの基本検証
+                    if image_size < 1000:  # 1KB未満は明らかに不正
+                        logger.error(f"Image data too small ({image_size} bytes), discarding")
+                        self._cleanup_image_buffers(sender_mac)
+                        # 画像保存をスキップしてもスリープコマンドは送信
+                        self._send_sleep_command_after_eof(sender_mac)
+                        return
+                        
+                    # JPEGヘッダーの確認
+                    if not image_data.startswith(b'\xff\xd8'):
+                        logger.error(f"Invalid JPEG header detected for {sender_mac}, discarding corrupted image")
+                        self._cleanup_image_buffers(sender_mac)
+                        # 画像保存をスキップしてもスリープコマンドは送信
+                        self._send_sleep_command_after_eof(sender_mac)
+                        return
+                        
+                    # JPEGフッターの確認
+                    if not image_data.endswith(b'\xff\xd9'):
+                        logger.warning(f"JPEG footer missing or corrupted, data ends with: {image_data[-10:].hex()}")
+                        logger.warning("Attempting to save image anyway")
+                else:
+                    logger.debug("Test environment detected, skipping image validation")
+                
+                # イベントループが実行中かチェックしてからタスクを作成
+                if self._has_running_event_loop():
+                    try:
+                        asyncio.create_task(save_image(sender_mac, image_data, self.stats))
+                    except Exception as e:
+                        logger.error(f"Error creating save_image task for {sender_mac}: {e}")
+                else:
+                    logger.warning(f"No event loop running, cannot create save_image task for {sender_mac}")
+                
+                self._cleanup_image_buffers(sender_mac)
             else:
-                logger.debug("Test environment detected, skipping image validation")
+                logger.warning(f"EOF for {sender_mac} but no buffer found.")
             
-            # イベントループが実行中かチェックしてからタスクを作成
-            if self._has_running_event_loop():
-                try:
-                    asyncio.create_task(save_image(sender_mac, image_data, self.stats))
-                except Exception as e:
-                    logger.error(f"Error creating save_image task for {sender_mac}: {e}")
-            else:
-                logger.warning(f"No event loop running, cannot create save_image task for {sender_mac}")
-            
-            self._cleanup_image_buffers(sender_mac)
-        else:
-            logger.warning(f"EOF for {sender_mac} but no buffer found.")
-        
-        # EOF処理完了後、画像保存の成功/失敗に関わらずスリープコマンドを送信
-        self._send_sleep_command_after_eof(sender_mac)
+            # EOF処理完了後、画像保存の成功/失敗に関わらずスリープコマンドを送信
+            self._send_sleep_command_after_eof(sender_mac)
+        finally:
+            self.cycle_tracker.complete_cycle(sender_mac)
 
     def _send_sleep_command_after_eof(self, sender_mac: str):
         """EOF処理完了後にスリープコマンドを送信（xiaの受信体制が整った後）"""
@@ -612,6 +633,7 @@ class SerialProtocol(asyncio.Protocol):
 
     def _process_data_frame(self, sender_mac: str, chunk_data: bytes, seq_num: int):
         """DATA フレームの処理"""
+        self.cycle_tracker.observe_data(sender_mac, seq_num)
         if sender_mac not in self.image_buffers:
             self.image_buffers[sender_mac] = bytearray()
             self.sequence_tracking[sender_mac] = seq_num
@@ -653,6 +675,16 @@ class SerialProtocol(asyncio.Protocol):
         if sender_mac in self.has_image_data_cache:
             del self.has_image_data_cache[sender_mac]
         logger.debug(f"Cleaned up cache for {sender_mac}")
+
+    def _prune_cycle_states_if_due(self, now: float | None = None, min_interval_seconds: float = 60.0) -> int:
+        """CycleTracker の terminal state を低頻度で回収する。"""
+        current_time = now if now is not None else time.monotonic()
+        if current_time - self._last_cycle_prune_at < min_interval_seconds:
+            return 0
+
+        removed = self.cycle_tracker.prune_terminal_states(now=current_time)
+        self._last_cycle_prune_at = current_time
+        return removed
 
     def connection_lost(self, exc):
         log_prefix = f"connection_lost ({id(self)}):"
@@ -706,7 +738,7 @@ class SerialProtocol(asyncio.Protocol):
                     if sender_mac in self.image_buffers and len(self.image_buffers[sender_mac]) > 0:
                         image_size = len(self.image_buffers[sender_mac])
                         logger.info(f"Raw EOF marker detected for {sender_mac} with {image_size} bytes")
-                        self._process_eof_frame(sender_mac)
+                        self._process_eof_frame(sender_mac, None)
                         processed_eof = True
                         break
                 
@@ -716,9 +748,9 @@ class SerialProtocol(asyncio.Protocol):
                     # 電圧キャッシュから最新のsender_macを特定
                     for sender_mac in list(self.voltage_cache.keys()):
                         logger.info(f"Raw EOF marker detected for {sender_mac} (no image data, voltage-only)")
-                        # 1秒待機
+                        # 3秒待機
                         time.sleep(3)
-                        self._process_eof_frame(sender_mac)  # 画像バッファがなくてもEOF処理を実行
+                        self._process_eof_frame(sender_mac, None)  # 画像バッファがなくてもEOF処理を実行
                         processed_eof = True
                         break
                 
