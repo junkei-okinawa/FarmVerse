@@ -24,6 +24,7 @@ from .constants import (
     HEADER_LENGTH,
     FOOTER_LENGTH,
 )
+from .cycle_tracker import CycleTracker
 from .frame_parser import FrameParser
 
 # 絶対インポートを使用
@@ -83,6 +84,9 @@ class StreamingSerialProtocol(asyncio.Protocol):
 
         # 最後のデータフレーム受信時間
         self.last_data_frame_time = {}  # {sender_mac: timestamp}
+
+        # sender単位のサイクル状態トラッカー
+        self.cycle_tracker = CycleTracker()
 
         # タイムアウトチェックタスク
         self.timeout_check_task = None
@@ -293,27 +297,30 @@ class StreamingSerialProtocol(asyncio.Protocol):
             )
 
         if frame_type == FRAME_TYPE_HASH:
-            await self._process_streaming_hash_frame(sender_mac, chunk_data)
+            await self._process_streaming_hash_frame(sender_mac, chunk_data, seq_num)
 
         elif frame_type == FRAME_TYPE_DATA:
             await self._process_streaming_data_frame(sender_mac, chunk_data, seq_num)
 
         elif frame_type == FRAME_TYPE_EOF:
             logger.info(f"Received EOF frame for {sender_mac}")
-            await self._process_streaming_eof_frame(sender_mac)
+            await self._process_streaming_eof_frame(sender_mac, seq_num)
 
         else:
             logger.warning(f"Unknown frame type {frame_type} from {sender_mac}")
 
-    async def _process_streaming_hash_frame(self, sender_mac: str, chunk_data: bytes):
+    async def _process_streaming_hash_frame(self, sender_mac: str, chunk_data: bytes, seq_num: int):
         """HASHフレーム処理（ストリーミング対応）"""
+        cycle_state = self.cycle_tracker.observe_hash(sender_mac, seq_num)
         try:
             payload_str = chunk_data[5:].decode("ascii")  # 'HASH:' をスキップ
         except UnicodeDecodeError:
             logger.warning(f"Could not decode HASH payload from {sender_mac}")
             return
 
-        logger.info(f"Received HASH frame from {sender_mac}: {payload_str}")
+        logger.info(
+            f"Received HASH frame from {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}): {payload_str}"
+        )
         payload_split = payload_str.split(",")
 
         if len(payload_split) < 2:
@@ -399,6 +406,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
         self, sender_mac: str, chunk_data: bytes, seq_num: int
     ):
         """DATAフレーム処理（ストリーミング対応）"""
+        self.cycle_tracker.observe_data(sender_mac, seq_num)
 
         # 二重カプセル化（Double Framing）の検出と解除
         # ゲートウェイがSenderのフレームをそのままDATAフレームのペイロードとして
@@ -482,7 +490,9 @@ class StreamingSerialProtocol(asyncio.Protocol):
         else:
             logger.warning(f"Failed to process chunk for {sender_mac}")
 
-    async def _process_streaming_eof_frame(self, sender_mac: str):
+    async def _process_streaming_eof_frame(
+        self, sender_mac: str, seq_num: int | None
+    ):
         """EOFフレーム処理（ストリーミング対応）"""
         current_time = time.time()
 
@@ -496,7 +506,11 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 )
                 return
 
-        logger.info(f"Processing EOF frame for {sender_mac}")
+        cycle_state = self.cycle_tracker.observe_eof(sender_mac, seq_num)
+
+        logger.info(
+            f"Processing EOF frame for {sender_mac} (cycle_seq={cycle_state.cycle_seq_num})"
+        )
 
         # EOF処理済みとしてマーク
         self.eof_processed[sender_mac] = current_time
@@ -515,6 +529,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
 
         # EOFフレーム処理後にスリープコマンド送信
         await self._send_sleep_command_after_eof(sender_mac)
+        self.cycle_tracker.complete_cycle(sender_mac)
 
     async def _chunk_processed_callback(
         self, sender_mac: str, chunk_data: bytes, seq_num: int

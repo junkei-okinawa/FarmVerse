@@ -143,5 +143,22 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
         # 2. process_chunk が呼び出される（フォールバック）
         self.protocol.streaming_processor.process_chunk.assert_called_once()
 
+    async def test_eof_without_hash_emits_cycle_warning(self):
+        """HASHなしEOFでサイクル警告が出ることをテスト"""
+        sender_mac = "01:02:03:04:05:06"
+        seq_num = 103
+
+        self.protocol.streaming_processor.finalize_image_stream = AsyncMock(return_value=None)
+        self.protocol._send_sleep_command_after_eof = AsyncMock()
+
+        with self.assertLogs("protocol.cycle_tracker", level="WARNING") as logs:
+            await self.protocol._process_streaming_eof_frame(sender_mac, seq_num)
+
+        self.assertTrue(
+            any("EOF received but HASH was not received" in message for message in logs.output)
+        )
+        self.assertEqual(self.protocol.cycle_tracker.get_state(sender_mac).cycle_state, "Completed")
+        self.protocol._send_sleep_command_after_eof.assert_awaited_once_with(sender_mac)
+
 if __name__ == '__main__':
     unittest.main()
