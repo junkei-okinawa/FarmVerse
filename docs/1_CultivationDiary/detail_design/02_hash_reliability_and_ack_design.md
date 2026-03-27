@@ -213,9 +213,9 @@ stateDiagram-v2
 
 * `hash_received = true` にする
 * `HashReceived` に遷移する
-* `sender_mac + hash_value` をキーに同一サイクル内の重複受信を判定する
-* 当該キーでまだ受信記録が無い場合のみ InfluxDB に書き込む
-* 当該キーで既に受信記録がある場合は再送・重複とみなし、ACK のみ返して InfluxDB への二重書き込みは行わない
+* `sender_mac + seq_num` をキーに同一サイクル内の重複受信を判定する
+* 当該サイクルキーでまだ `HASH` 受信記録が無い場合のみ InfluxDB に書き込む
+* 当該サイクルキーで既に `HASH` 受信記録がある場合は再送・重複とみなし、ACK のみ返して InfluxDB への二重書き込みは行わない
 * Phase 3 以降は `HASH_ACK` を返す
 * サイクルが無い状態で `HASH` が来た場合はサイクルを新規作成し、`HASH` が先に来たことを警告として残す
 
