@@ -136,10 +136,6 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 logger.error(f"Error in async buffer processing: {e}")
             finally:
                 self._buffer_processing_task = None
-                if self.buffer:
-                    self._buffer_processing_task = asyncio.create_task(
-                        self._process_buffer_async()
-                    )
 
     async def _process_streaming_buffer(self):
         """ストリーミング対応バッファ処理"""

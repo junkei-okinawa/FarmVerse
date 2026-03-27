@@ -213,5 +213,16 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create_task.call_count, 1)
         self.assertEqual(self.protocol.buffer, bytearray(b"abcdef"))
 
+    async def test_process_buffer_async_does_not_self_reschedule(self):
+        """_process_buffer_async が自分自身を再スケジュールしないことをテスト"""
+        self.protocol.buffer.extend(b"partial")
+        self.protocol._process_streaming_buffer = AsyncMock()
+
+        with patch("protocol.streaming_handler.asyncio.create_task") as create_task:
+            await self.protocol._process_buffer_async()
+
+        create_task.assert_not_called()
+        self.assertIsNone(self.protocol._buffer_processing_task)
+
 if __name__ == '__main__':
     unittest.main()
