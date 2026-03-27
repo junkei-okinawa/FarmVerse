@@ -510,28 +510,30 @@ class StreamingSerialProtocol(asyncio.Protocol):
 
         cycle_state = self.cycle_tracker.observe_eof(sender_mac, seq_num)
 
-        logger.info(
-            f"Processing EOF frame for {sender_mac} (cycle_seq={cycle_state.cycle_seq_num})"
-        )
+        try:
+            logger.info(
+                f"Processing EOF frame for {sender_mac} (cycle_seq={cycle_state.cycle_seq_num})"
+            )
 
-        # EOF処理済みとしてマーク
-        self.eof_processed[sender_mac] = current_time
+            # EOF処理済みとしてマーク
+            self.eof_processed[sender_mac] = current_time
 
-        # ストリーミング画像を完成・保存
-        final_path = await self.streaming_processor.finalize_image_stream(
-            sender_mac, self.stats
-        )
+            # ストリーミング画像を完成・保存
+            final_path = await self.streaming_processor.finalize_image_stream(
+                sender_mac, self.stats
+            )
 
-        if final_path:
-            # 統計更新
-            self.stats["received_images"] = self.stats.get("received_images", 0) + 1
-            logger.info(f"✓ Streaming image saved: {final_path}")
-        else:
-            logger.error(f"Failed to finalize streaming image for {sender_mac}")
+            if final_path:
+                # 統計更新
+                self.stats["received_images"] = self.stats.get("received_images", 0) + 1
+                logger.info(f"✓ Streaming image saved: {final_path}")
+            else:
+                logger.error(f"Failed to finalize streaming image for {sender_mac}")
 
-        # EOFフレーム処理後にスリープコマンド送信
-        await self._send_sleep_command_after_eof(sender_mac)
-        self.cycle_tracker.complete_cycle(sender_mac)
+            # EOFフレーム処理後にスリープコマンド送信
+            await self._send_sleep_command_after_eof(sender_mac)
+        finally:
+            self.cycle_tracker.complete_cycle(sender_mac)
 
     async def _chunk_processed_callback(
         self, sender_mac: str, chunk_data: bytes, seq_num: int
