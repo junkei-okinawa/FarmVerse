@@ -34,7 +34,7 @@ class TestCycleTracker(unittest.TestCase):
         self.assertIsNotNone(state)
         self.assertEqual(state.cycle_state, "Completed")
 
-    def test_eof_without_hash_emits_warning(self):
+    def test_eof_without_data_emits_single_warning(self):
         tracker = CycleTracker()
         sender_mac = "aa:bb:cc:dd:ee:ff"
 
@@ -42,10 +42,27 @@ class TestCycleTracker(unittest.TestCase):
             state = tracker.observe_eof(sender_mac, 21, now=1.0)
 
         self.assertTrue(
-            any("EOF received but HASH was not received" in message for message in logs.output)
+            any("EOF received before DATA/HASH" in message for message in logs.output)
         )
+        self.assertEqual(len(logs.output), 1)
         self.assertEqual(state.cycle_state, "EofReceived")
         self.assertEqual(state.cycle_seq_num, 21)
+        self.assertTrue(state.warning_emitted)
+
+    def test_eof_after_data_without_hash_emits_missing_hash_warning(self):
+        tracker = CycleTracker()
+        sender_mac = "aa:bb:cc:dd:ee:01"
+
+        tracker.observe_data(sender_mac, 20, now=0.5)
+
+        with self.assertLogs("protocol.cycle_tracker", level="WARNING") as logs:
+            state = tracker.observe_eof(sender_mac, 21, now=1.0)
+
+        self.assertTrue(
+            any("EOF received but HASH was not received" in message for message in logs.output)
+        )
+        self.assertEqual(len(logs.output), 1)
+        self.assertEqual(state.cycle_state, "EofReceived")
         self.assertTrue(state.warning_emitted)
 
     def test_new_cycle_starts_after_completion(self):

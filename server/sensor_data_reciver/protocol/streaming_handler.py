@@ -311,21 +311,23 @@ class StreamingSerialProtocol(asyncio.Protocol):
 
     async def _process_streaming_hash_frame(self, sender_mac: str, chunk_data: bytes, seq_num: int):
         """HASHフレーム処理（ストリーミング対応）"""
-        cycle_state = self.cycle_tracker.observe_hash(sender_mac, seq_num)
         try:
             payload_str = chunk_data[5:].decode("ascii")  # 'HASH:' をスキップ
         except UnicodeDecodeError:
             logger.warning(f"Could not decode HASH payload from {sender_mac}")
             return
 
-        logger.info(
-            f"Received HASH frame from {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}): {payload_str}"
-        )
         payload_split = payload_str.split(",")
 
         if len(payload_split) < 2:
             logger.warning(f"Invalid HASH payload format: {payload_str}")
             return
+
+        cycle_state = self.cycle_tracker.observe_hash(sender_mac, seq_num)
+
+        logger.info(
+            f"Received HASH frame from {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}): {payload_str}"
+        )
 
         hash_value = payload_split[0]
         volt_log_entry = payload_split[1]

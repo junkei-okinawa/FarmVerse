@@ -137,7 +137,42 @@ class TestSerialProtocolIntegration:
         with caplog.at_level(logging.WARNING):
             protocol.data_received(frame_eof)
 
-        assert "EOF received but HASH was not received" in caplog.text
+        assert "EOF received before DATA/HASH" in caplog.text
+        assert caplog.text.count("EOF received before DATA/HASH") == 1
+
+    @pytest.mark.asyncio
+    async def test_invalid_hash_payload_does_not_mark_cycle_received(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_sensor_data, setup_test_environment):
+        mock_transport = MagicMock()
+        mock_protocol = MagicMock()
+        mock_transport.serial = MagicMock(port="test_port")
+        mock_serial_connection.return_value = (mock_transport, mock_protocol)
+
+        mac_bytes = b"\x01\x02\x03\x04\x05\x06"
+        seq_num = 8
+        payload_bytes = b"HASH:broken"
+        frame_bytes = (
+            START_MARKER +
+            mac_bytes +
+            bytes([FRAME_TYPE_HASH]) +
+            seq_num.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+            len(payload_bytes).to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
+            payload_bytes +
+            b'\x00' * CHECKSUM_LENGTH +
+            END_MARKER
+        )
+
+        loop = asyncio.get_running_loop()
+        connection_lost_future = loop.create_future()
+        image_buffers = {}
+        last_receive_time = {}
+        stats = {"received_images": 0, "total_bytes": 0, "start_time": 0}
+        protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
+        protocol.connection_made(mock_transport)
+
+        protocol.data_received(frame_bytes)
+
+        assert protocol.cycle_tracker.get_state("01:02:03:04:05:06") is None
+        mock_write_sensor_data.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_receive_data_and_eof_frames(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_sensor_data, setup_test_environment):

@@ -405,21 +405,23 @@ class SerialProtocol(asyncio.Protocol):
 
     def _process_hash_frame(self, sender_mac: str, chunk_data: bytes, seq_num: int):
         """HASH フレームの処理"""
-        cycle_state = self.cycle_tracker.observe_hash(sender_mac, seq_num)
         try:
             payload_str = chunk_data[5:].decode('ascii')  # 'HASH:' をスキップ
         except UnicodeDecodeError:
             logger.warning(f"Could not decode HASH payload from {sender_mac}")
             return
 
-        logger.info(
-            f"Received HASH frame from {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}): {payload_str}"
-        )
         payload_split = payload_str.split(",")
         
         if len(payload_split) < 2:
             logger.warning(f"Invalid HASH payload format from {sender_mac}: {payload_str}")
             return
+
+        cycle_state = self.cycle_tracker.observe_hash(sender_mac, seq_num)
+
+        logger.info(
+            f"Received HASH frame from {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}): {payload_str}"
+        )
 
         hash_value = payload_split[0]
         volt_log_entry = payload_split[1]
@@ -730,7 +732,7 @@ class SerialProtocol(asyncio.Protocol):
                     # 電圧キャッシュから最新のsender_macを特定
                     for sender_mac in list(self.voltage_cache.keys()):
                         logger.info(f"Raw EOF marker detected for {sender_mac} (no image data, voltage-only)")
-                        # 1秒待機
+                        # 3秒待機
                         time.sleep(3)
                         self._process_eof_frame(sender_mac, None)  # 画像バッファがなくてもEOF処理を実行
                         processed_eof = True
