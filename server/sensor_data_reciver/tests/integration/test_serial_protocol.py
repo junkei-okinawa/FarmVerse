@@ -348,6 +348,7 @@ class TestSerialProtocolIntegration:
             return 0
 
         protocol.cycle_tracker.prune_terminal_states = fake_prune_terminal_states
+        protocol._last_cycle_prune_at = time.monotonic() - 120
 
         protocol.process_buffer()
         protocol.process_buffer()
