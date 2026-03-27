@@ -122,6 +122,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
     async def _process_buffer_async(self):
         """非同期バッファ処理"""
         try:
+            self.cycle_tracker.prune_terminal_states()
             await self._process_streaming_buffer()
         except Exception as e:
             logger.error(f"Error in async buffer processing: {e}")
@@ -129,8 +130,6 @@ class StreamingSerialProtocol(asyncio.Protocol):
     async def _process_streaming_buffer(self):
         """ストリーミング対応バッファ処理"""
         while True:
-            self.cycle_tracker.prune_terminal_states()
-
             # フレームタイムアウトチェック
             await self._check_frame_timeout()
 

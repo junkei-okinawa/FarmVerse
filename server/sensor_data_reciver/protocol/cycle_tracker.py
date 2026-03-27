@@ -7,8 +7,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
-from .constants import FRAME_TYPE_DATA, FRAME_TYPE_EOF, FRAME_TYPE_HASH
-
 logger = logging.getLogger(__name__)
 
 TERMINAL_STATES = {"Completed", "TimedOut"}
@@ -25,8 +23,6 @@ class SenderCycleState:
     hash_received: bool = False
     eof_received: bool = False
     warning_emitted: bool = False
-    last_frame_type: Optional[int] = None
-    last_frame_seq_num: Optional[int] = None
 
 
 class CycleTracker:
@@ -43,8 +39,6 @@ class CycleTracker:
         self, sender_mac: str, seq_num: Optional[int], now: Optional[float] = None
     ) -> SenderCycleState:
         state = self._ensure_active_state(sender_mac, seq_num, "ReceivingData", now)
-        state.last_frame_type = FRAME_TYPE_DATA
-        state.last_frame_seq_num = seq_num
         state.cycle_state = "ReceivingData"
 
         if state.cycle_seq_num is None and seq_num is not None:
@@ -65,8 +59,6 @@ class CycleTracker:
     ) -> SenderCycleState:
         state = self._ensure_active_state(sender_mac, seq_num, "HashReceived", now)
         previous_cycle_seq = state.cycle_seq_num
-        state.last_frame_type = FRAME_TYPE_HASH
-        state.last_frame_seq_num = seq_num
         state.hash_received = True
         state.eof_received = False
         state.cycle_state = "HashReceived"
@@ -87,8 +79,6 @@ class CycleTracker:
         self, sender_mac: str, seq_num: Optional[int], now: Optional[float] = None
     ) -> SenderCycleState:
         state = self._ensure_active_state(sender_mac, seq_num, "EofReceived", now)
-        state.last_frame_type = FRAME_TYPE_EOF
-        state.last_frame_seq_num = seq_num
         state.eof_received = True
         state.cycle_state = "EofReceived"
 
@@ -199,5 +189,4 @@ class CycleTracker:
             cycle_state=initial_state,
             cycle_started_at=created_at,
             last_event_at=created_at,
-            last_frame_seq_num=seq_num,
         )
