@@ -91,6 +91,9 @@ class StreamingSerialProtocol(asyncio.Protocol):
         # タイムアウトチェックタスク
         self.timeout_check_task = None
 
+        # バッファ処理の多重実行を防ぐ
+        self._buffer_processing_lock = asyncio.Lock()
+
         logger.info("StreamingSerialProtocol initialized")
 
     def connection_made(self, transport):
@@ -121,11 +124,12 @@ class StreamingSerialProtocol(asyncio.Protocol):
 
     async def _process_buffer_async(self):
         """非同期バッファ処理"""
-        try:
-            self.cycle_tracker.prune_terminal_states()
-            await self._process_streaming_buffer()
-        except Exception as e:
-            logger.error(f"Error in async buffer processing: {e}")
+        async with self._buffer_processing_lock:
+            try:
+                self.cycle_tracker.prune_terminal_states()
+                await self._process_streaming_buffer()
+            except Exception as e:
+                logger.error(f"Error in async buffer processing: {e}")
 
     async def _process_streaming_buffer(self):
         """ストリーミング対応バッファ処理"""
