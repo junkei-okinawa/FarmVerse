@@ -175,6 +175,58 @@ class TestSerialProtocolIntegration:
         mock_write_sensor_data.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_eof_invalid_image_path_completes_cycle(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_sensor_data, setup_test_environment):
+        original_is_test_env = config.IS_TEST_ENV
+        config.IS_TEST_ENV = False
+        try:
+            mock_transport = MagicMock()
+            mock_protocol = MagicMock()
+            mock_transport.serial = MagicMock(port="test_port")
+            mock_serial_connection.return_value = (mock_transport, mock_protocol)
+
+            sender_mac = "01:02:03:04:05:06"
+            mac_bytes = b"\x01\x02\x03\x04\x05\x06"
+            seq_num_hash = 1
+            seq_num_eof = 2
+
+            hash_payload = b"HASH:abcdef123456,VOLT:12.3,TEMP:25.5,1678886400"
+            hash_frame = (
+                START_MARKER +
+                mac_bytes +
+                bytes([FRAME_TYPE_HASH]) +
+                seq_num_hash.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+                len(hash_payload).to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
+                hash_payload +
+                b'\x00' * CHECKSUM_LENGTH +
+                END_MARKER
+            )
+            eof_frame = (
+                START_MARKER +
+                mac_bytes +
+                bytes([FRAME_TYPE_EOF]) +
+                seq_num_eof.to_bytes(SEQUENCE_NUM_LENGTH, byteorder="little") +
+                (0).to_bytes(LENGTH_FIELD_BYTES, byteorder="little") +
+                b'' +
+                b'\x00' * CHECKSUM_LENGTH +
+                END_MARKER
+            )
+
+            loop = asyncio.get_running_loop()
+            connection_lost_future = loop.create_future()
+            image_buffers = {sender_mac: bytearray(b"abc")}
+            last_receive_time = {}
+            stats = {"received_images": 0, "total_bytes": 0, "start_time": 0}
+            protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
+            protocol.connection_made(mock_transport)
+
+            protocol.data_received(hash_frame)
+            protocol.data_received(eof_frame)
+
+            assert protocol.cycle_tracker.get_state(sender_mac).cycle_state == "Completed"
+        finally:
+            config.IS_TEST_ENV = original_is_test_env
+
+    @pytest.mark.asyncio
     async def test_receive_data_and_eof_frames(self, mock_save_image, mock_image, mock_influx_client, mock_serial_connection, mock_write_sensor_data, setup_test_environment):
         # モックオブジェクトの準備
         mock_transport = MagicMock()

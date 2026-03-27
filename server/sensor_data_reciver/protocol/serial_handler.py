@@ -521,60 +521,61 @@ class SerialProtocol(asyncio.Protocol):
                 return
 
         cycle_state = self.cycle_tracker.observe_eof(sender_mac, seq_num)
-        
-        # EOF処理済みフラグを設定
-        self.eof_processed[sender_mac] = current_time
-        
-        if sender_mac in self.image_buffers:
-            image_data = bytes(self.image_buffers[sender_mac])
-            image_size = len(image_data)
+        try:
+            # EOF処理済みフラグを設定
+            self.eof_processed[sender_mac] = current_time
             
-            logger.info(
-                f"EOF frame received for {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}). "
-                f"Assembling image ({image_size} bytes)."
-            )
-            
-            # テスト環境では画像検証をスキップ
-            if not config.IS_TEST_ENV:
-                # 画像データの基本検証
-                if image_size < 1000:  # 1KB未満は明らかに不正
-                    logger.error(f"Image data too small ({image_size} bytes), discarding")
-                    self._cleanup_image_buffers(sender_mac)
-                    # 画像保存をスキップしてもスリープコマンドは送信
-                    self._send_sleep_command_after_eof(sender_mac)
-                    return
-                    
-                # JPEGヘッダーの確認
-                if not image_data.startswith(b'\xff\xd8'):
-                    logger.error(f"Invalid JPEG header detected for {sender_mac}, discarding corrupted image")
-                    self._cleanup_image_buffers(sender_mac)
-                    # 画像保存をスキップしてもスリープコマンドは送信
-                    self._send_sleep_command_after_eof(sender_mac)
-                    return
-                    
-                # JPEGフッターの確認
-                if not image_data.endswith(b'\xff\xd9'):
-                    logger.warning(f"JPEG footer missing or corrupted, data ends with: {image_data[-10:].hex()}")
-                    logger.warning("Attempting to save image anyway")
+            if sender_mac in self.image_buffers:
+                image_data = bytes(self.image_buffers[sender_mac])
+                image_size = len(image_data)
+                
+                logger.info(
+                    f"EOF frame received for {sender_mac} (cycle_seq={cycle_state.cycle_seq_num}). "
+                    f"Assembling image ({image_size} bytes)."
+                )
+                
+                # テスト環境では画像検証をスキップ
+                if not config.IS_TEST_ENV:
+                    # 画像データの基本検証
+                    if image_size < 1000:  # 1KB未満は明らかに不正
+                        logger.error(f"Image data too small ({image_size} bytes), discarding")
+                        self._cleanup_image_buffers(sender_mac)
+                        # 画像保存をスキップしてもスリープコマンドは送信
+                        self._send_sleep_command_after_eof(sender_mac)
+                        return
+                        
+                    # JPEGヘッダーの確認
+                    if not image_data.startswith(b'\xff\xd8'):
+                        logger.error(f"Invalid JPEG header detected for {sender_mac}, discarding corrupted image")
+                        self._cleanup_image_buffers(sender_mac)
+                        # 画像保存をスキップしてもスリープコマンドは送信
+                        self._send_sleep_command_after_eof(sender_mac)
+                        return
+                        
+                    # JPEGフッターの確認
+                    if not image_data.endswith(b'\xff\xd9'):
+                        logger.warning(f"JPEG footer missing or corrupted, data ends with: {image_data[-10:].hex()}")
+                        logger.warning("Attempting to save image anyway")
+                else:
+                    logger.debug("Test environment detected, skipping image validation")
+                
+                # イベントループが実行中かチェックしてからタスクを作成
+                if self._has_running_event_loop():
+                    try:
+                        asyncio.create_task(save_image(sender_mac, image_data, self.stats))
+                    except Exception as e:
+                        logger.error(f"Error creating save_image task for {sender_mac}: {e}")
+                else:
+                    logger.warning(f"No event loop running, cannot create save_image task for {sender_mac}")
+                
+                self._cleanup_image_buffers(sender_mac)
             else:
-                logger.debug("Test environment detected, skipping image validation")
+                logger.warning(f"EOF for {sender_mac} but no buffer found.")
             
-            # イベントループが実行中かチェックしてからタスクを作成
-            if self._has_running_event_loop():
-                try:
-                    asyncio.create_task(save_image(sender_mac, image_data, self.stats))
-                except Exception as e:
-                    logger.error(f"Error creating save_image task for {sender_mac}: {e}")
-            else:
-                logger.warning(f"No event loop running, cannot create save_image task for {sender_mac}")
-            
-            self._cleanup_image_buffers(sender_mac)
-        else:
-            logger.warning(f"EOF for {sender_mac} but no buffer found.")
-        
-        # EOF処理完了後、画像保存の成功/失敗に関わらずスリープコマンドを送信
-        self._send_sleep_command_after_eof(sender_mac)
-        self.cycle_tracker.complete_cycle(sender_mac)
+            # EOF処理完了後、画像保存の成功/失敗に関わらずスリープコマンドを送信
+            self._send_sleep_command_after_eof(sender_mac)
+        finally:
+            self.cycle_tracker.complete_cycle(sender_mac)
 
     def _send_sleep_command_after_eof(self, sender_mac: str):
         """EOF処理完了後にスリープコマンドを送信（xiaの受信体制が整った後）"""
