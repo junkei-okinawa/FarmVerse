@@ -3,7 +3,6 @@
 # ESP32/Rust build artifacts
 devices/**/.embuild/
 devices/**/target/
-devices/**/.cargo/
 devices/**/build/
 devices/**/.ccache/
 devices/**/*.lock
@@ -27,7 +26,3 @@ __pycache__/
 *.log
 
 data/
-
-# Keep cargo config for INA226 monitor (target/toolchain reproducibility)
-!devices/ina226_power_monitor/.cargo/
-!devices/ina226_power_monitor/.cargo/config.toml
