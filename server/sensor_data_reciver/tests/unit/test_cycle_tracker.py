@@ -78,6 +78,18 @@ class TestCycleTracker(unittest.TestCase):
         self.assertEqual(second.cycle_state, "ReceivingData")
         self.assertEqual(second.cycle_seq_num, 31)
 
+    def test_prune_terminal_states_removes_old_completed_cycles(self):
+        tracker = CycleTracker()
+        sender_mac = "22:33:44:55:66:77"
+
+        tracker.observe_data(sender_mac, 40, now=1.0)
+        tracker.complete_cycle(sender_mac, now=2.0)
+
+        removed = tracker.prune_terminal_states(retention_seconds=1.0, now=4.0)
+
+        self.assertEqual(removed, 1)
+        self.assertIsNone(tracker.get_state(sender_mac))
+
 
 if __name__ == "__main__":
     unittest.main()

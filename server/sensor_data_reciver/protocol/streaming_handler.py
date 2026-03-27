@@ -129,6 +129,8 @@ class StreamingSerialProtocol(asyncio.Protocol):
     async def _process_streaming_buffer(self):
         """ストリーミング対応バッファ処理"""
         while True:
+            self.cycle_tracker.prune_terminal_states()
+
             # フレームタイムアウトチェック
             await self._check_frame_timeout()
 
@@ -682,6 +684,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
             try:
                 await asyncio.sleep(5.0)  # 5秒間隔でチェック
                 await self.streaming_processor.check_stream_timeouts()
+                self.cycle_tracker.prune_terminal_states()
             except asyncio.CancelledError:
                 logger.info("Timeout check loop cancelled")
                 break

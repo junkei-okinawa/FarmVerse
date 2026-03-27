@@ -108,6 +108,8 @@ class SerialProtocol(asyncio.Protocol):
 
     def process_buffer(self):
         """Process the buffer to find and handle complete frames with enhanced frame format."""
+        self.cycle_tracker.prune_terminal_states()
+
         # デバッグ: バッファ内にEOFマーカーが含まれているかチェック
         if config.DEBUG_FRAME_PARSING and b'EOF' in self.buffer:
             eof_index = self.buffer.find(b'EOF')
