@@ -11,17 +11,21 @@ def test_systemd_template_declares_boot_dependencies() -> None:
     )
     content = template_path.read_text(encoding="utf-8")
 
-    assert "After=" in content
-    assert "Wants=" in content
+    after_lines = [
+        line.lstrip()
+        for line in content.splitlines()
+        if line.lstrip().startswith("After=")
+    ]
+    wants_lines = [
+        line.lstrip()
+        for line in content.splitlines()
+        if line.lstrip().startswith("Wants=")
+    ]
 
-    after_line = next(
-        line for line in content.splitlines() if line.startswith("After=")
-    )
-    wants_line = next(
-        line for line in content.splitlines() if line.startswith("Wants=")
-    )
+    after_value = " ".join(line.split("=", 1)[1] for line in after_lines)
+    wants_value = " ".join(line.split("=", 1)[1] for line in wants_lines)
 
-    assert "network-online.target" in after_line
-    assert "influxdb.service" in after_line
-    assert "network-online.target" in wants_line
-    assert "influxdb.service" in wants_line
+    assert "network-online.target" in after_value
+    assert "influxdb.service" in after_value
+    assert "network-online.target" in wants_value
+    assert "influxdb.service" in wants_value

@@ -128,8 +128,8 @@ class InfluxDBClient:
                 self._close_client_resources(write_api=self.write_api)
             if self.client:
                 self._close_client_resources(client=self.client)
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to fully close InfluxDB client resources while disabling client: {e}")
         self.client = None
         self.write_api = None
         self._last_init_failure_at = time.monotonic()
@@ -215,7 +215,8 @@ class InfluxDBClient:
                 
         except asyncio.TimeoutError:
             logger.error(f"Timeout writing to InfluxDB for {sender_mac} (continuing with other operations)")
-            self._disable_client()
+            with self._init_lock:
+                self._last_init_failure_at = time.monotonic()
         except ConnectionError as e:
             logger.error(f"Connection error writing to InfluxDB for {sender_mac}: {e} (continuing with other operations)")
             self._disable_client()

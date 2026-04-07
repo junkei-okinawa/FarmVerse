@@ -1,6 +1,7 @@
 """Unit tests for InfluxDB client async task tracking"""
 
 import asyncio
+import contextlib
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -283,3 +284,33 @@ class TestInfluxDBClientAsyncTasks:
             # Verify the async methods were called with None for TDS voltage
             mock_write_async.assert_called_once_with("aa:bb:cc:dd:ee:ff", 85.5, 22.3, None)
             mock_cleanup.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_timeout_does_not_close_client_resources(self, mock_config, mock_influxdb_client):
+        """Test that a write timeout only records failure and does not close the shared client."""
+        mock_instance, mock_write_api = mock_influxdb_client
+        mock_instance.health.return_value.status = "pass"
+
+        client = InfluxDBClient()
+
+        created_tasks = []
+
+        def fake_to_thread(*args, **kwargs):
+            task = asyncio.create_task(asyncio.sleep(10))
+            created_tasks.append(task)
+            return task
+
+        with patch('storage.influxdb_client.asyncio.to_thread', new=fake_to_thread), \
+             patch('storage.influxdb_client.asyncio.wait_for', side_effect=asyncio.TimeoutError), \
+             patch.object(client, '_disable_client', wraps=client._disable_client) as mock_disable:
+            await client._write_sensor_data_async("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 4.4)
+
+        mock_disable.assert_not_called()
+        mock_write_api.write.assert_not_called()
+        assert client.client is mock_instance
+        assert client.write_api is mock_write_api
+
+        for task in created_tasks:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
