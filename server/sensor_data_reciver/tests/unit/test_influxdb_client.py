@@ -143,6 +143,34 @@ class TestInfluxDBClientAsyncTasks:
         # Verify cleanup was called
         mock_write_api.close.assert_called_once()
         mock_instance.close.assert_called_once()
+
+    def test_initialize_client_recovers_after_initial_failure(self, mock_config):
+        """Test that the client can recover after an initial health-check failure"""
+        with patch('storage.influxdb_client.influxdb_client.InfluxDBClient') as mock_client_cls:
+            first_instance = MagicMock()
+            first_write_api = MagicMock()
+            first_instance.write_api.return_value = first_write_api
+            first_instance.health.return_value.status = "fail"
+
+            second_instance = MagicMock()
+            second_write_api = MagicMock()
+            second_instance.write_api.return_value = second_write_api
+            second_instance.health.return_value.status = "pass"
+
+            mock_client_cls.side_effect = [first_instance, second_instance]
+
+            client = InfluxDBClient()
+
+            assert client.client is None
+            assert client.write_api is None
+
+            client._last_init_failure_at = 0.0
+            ready = client._ensure_client_ready_sync("aa:bb:cc:dd:ee:ff")
+
+            assert ready is True
+            assert client.client is second_instance
+            assert client.write_api is second_write_api
+            assert mock_client_cls.call_count == 2
     
     @pytest.mark.asyncio
     async def test_write_sensor_data_in_test_env_skips_write(self, mock_config, mock_influxdb_client):
@@ -157,6 +185,36 @@ class TestInfluxDBClientAsyncTasks:
         
         # No tasks should be created
         assert len(client._active_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_write_sensor_data_recovers_after_initial_failure(self, mock_config):
+        """Test that write_sensor_data can recover from an initial init failure"""
+        with patch('storage.influxdb_client.influxdb_client.InfluxDBClient') as mock_client_cls:
+            first_instance = MagicMock()
+            first_write_api = MagicMock()
+            first_instance.write_api.return_value = first_write_api
+            first_instance.health.return_value.status = "fail"
+
+            second_instance = MagicMock()
+            second_write_api = MagicMock()
+            second_instance.write_api.return_value = second_write_api
+            second_instance.health.return_value.status = "pass"
+
+            mock_client_cls.side_effect = [first_instance, second_instance]
+
+            client = InfluxDBClient()
+            client._last_init_failure_at = 0.0
+
+            result = client.write_sensor_data("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 4.4)
+
+            assert result is True
+
+            await asyncio.gather(*client._active_tasks, return_exceptions=True)
+            client._active_tasks.clear()
+
+            second_write_api.write.assert_called_once()
+            assert client.client is second_instance
+            assert client.write_api is second_write_api
 
     @pytest.mark.asyncio
     async def test_write_sensor_data_with_tds_voltage(self, mock_config, mock_influxdb_client):
