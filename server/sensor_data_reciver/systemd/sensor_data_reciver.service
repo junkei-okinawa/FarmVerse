@@ -1,6 +1,7 @@
 [Unit]
 Description=Python USB CDC Sensor Data Receiver Service
-After=network.target
+After=network-online.target influxdb.service
+Wants=network-online.target influxdb.service
 
 [Service]
 Type=simple
