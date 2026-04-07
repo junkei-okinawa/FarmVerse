@@ -29,7 +29,6 @@ class InfluxDBClient:
         self.write_api = None
         self._active_tasks = set()  # アクティブタスクの追跡
         self._init_lock = Lock()
-        self._last_init_attempt_at = 0.0
         self._last_init_failure_at = 0.0
         
         self._initialize_client(force=True)
@@ -54,8 +53,6 @@ class InfluxDBClient:
             if self.client and self.write_api and not force:
                 return True
 
-            now = time.monotonic()
-            self._last_init_attempt_at = now
             new_client = None
             new_write_api = None
 
@@ -83,7 +80,7 @@ class InfluxDBClient:
                 if self.client is not new_client:
                     self._close_client_resources(new_client, new_write_api)
 
-            self._disable_client()
+            self._disable_client_locked()
             return False
 
     def _should_retry_initialization(self):
@@ -96,7 +93,16 @@ class InfluxDBClient:
 
     async def _ensure_client_ready_async(self, sender_mac: str = None):
         """必要ならクライアントを再初期化する"""
-        return await asyncio.to_thread(self._ensure_client_ready_sync, sender_mac)
+        if self.client and self.write_api:
+            return True
+
+        if not self._should_retry_initialization():
+            logger.warning(
+                f"InfluxDB client not initialized, retry suppressed for {sender_mac or 'unknown sender'}"
+            )
+            return False
+
+        return await asyncio.to_thread(self._initialize_client, False)
 
     def _ensure_client_ready_sync(self, sender_mac: str = None):
         """同期的にクライアントを再初期化する"""
@@ -114,9 +120,9 @@ class InfluxDBClient:
 
         self._last_init_failure_at = time.monotonic()
         return False
-    
-    def _disable_client(self):
-        """InfluxDBクライアントを無効化"""
+
+    def _disable_client_locked(self):
+        """InfluxDBクライアントを無効化する（ロック保持前提）"""
         try:
             if self.write_api:
                 self._close_client_resources(write_api=self.write_api)
@@ -127,6 +133,11 @@ class InfluxDBClient:
         self.client = None
         self.write_api = None
         self._last_init_failure_at = time.monotonic()
+
+    def _disable_client(self):
+        """InfluxDBクライアントを無効化"""
+        with self._init_lock:
+            self._disable_client_locked()
     
     def write_sensor_data(self, sender_mac: str, voltage: float = None, temperature: float = None, tds_voltage: float = None) -> bool:
         """センサーデータをInfluxDBに書き込み（非同期実行・エラー耐性付き）"""
@@ -168,6 +179,12 @@ class InfluxDBClient:
             if not await self._ensure_client_ready_async(sender_mac):
                 logger.warning(f"InfluxDB client not available for {sender_mac}")
                 return
+
+            # 以降の書き込みはこの呼び出し時点の write_api を使う
+            write_api = self.write_api
+            if not write_api:
+                logger.warning(f"InfluxDB write API not available for {sender_mac}")
+                return
             
             point = Point("data").tag("mac_address", sender_mac)
             
@@ -185,7 +202,7 @@ class InfluxDBClient:
                 # タイムアウトを設定して書き込み実行
                 await asyncio.wait_for(
                     asyncio.to_thread(
-                        self.write_api.write, 
+                        write_api.write,
                         bucket=config.INFLUXDB_BUCKET, 
                         org=config.INFLUXDB_ORG, 
                         record=point
