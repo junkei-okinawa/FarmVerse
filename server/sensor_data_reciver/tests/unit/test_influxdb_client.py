@@ -314,3 +314,24 @@ class TestInfluxDBClientAsyncTasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+    @pytest.mark.asyncio
+    async def test_async_ready_check_skips_duplicate_initialization_attempts(self, mock_config):
+        """Test that the async readiness check does not queue duplicate init work."""
+        with patch('storage.influxdb_client.influxdb_client.InfluxDBClient') as mock_client_cls:
+            first_instance = MagicMock()
+            first_write_api = MagicMock()
+            first_instance.write_api.return_value = first_write_api
+            first_instance.health.return_value.status = "fail"
+
+            mock_client_cls.return_value = first_instance
+
+            client = InfluxDBClient()
+            client._last_init_failure_at = 0.0
+
+            with patch.object(client, '_claim_initialization_slot', return_value=False), \
+                 patch('storage.influxdb_client.asyncio.to_thread') as mock_to_thread:
+                ready = await client._ensure_client_ready_async("aa:bb:cc:dd:ee:ff")
+
+            assert ready is False
+            mock_to_thread.assert_not_called()

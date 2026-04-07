@@ -29,9 +29,24 @@ class InfluxDBClient:
         self.write_api = None
         self._active_tasks = set()  # アクティブタスクの追跡
         self._init_lock = Lock()
+        self._init_state_lock = Lock()
+        self._init_in_progress = False
         self._last_init_failure_at = 0.0
         
         self._initialize_client(force=True)
+
+    def _claim_initialization_slot(self):
+        """初期化の実行 स्लॉटを非再入で確保する"""
+        with self._init_state_lock:
+            if self._init_in_progress:
+                return False
+            self._init_in_progress = True
+            return True
+
+    def _release_initialization_slot(self):
+        """初期化の実行 स्लॉटを解放する"""
+        with self._init_state_lock:
+            self._init_in_progress = False
 
     def _close_client_resources(self, client=None, write_api=None):
         """指定されたクライアント資源を安全に閉じる"""
@@ -102,7 +117,16 @@ class InfluxDBClient:
             )
             return False
 
-        return await asyncio.to_thread(self._initialize_client, False)
+        if not self._claim_initialization_slot():
+            logger.debug(
+                f"InfluxDB initialization already in progress, skipping duplicate attempt for {sender_mac or 'unknown sender'}"
+            )
+            return False
+
+        try:
+            return await asyncio.to_thread(self._initialize_client, False)
+        finally:
+            self._release_initialization_slot()
 
     def _ensure_client_ready_sync(self, sender_mac: str = None):
         """同期的にクライアントを再初期化する"""
@@ -215,8 +239,7 @@ class InfluxDBClient:
                 
         except asyncio.TimeoutError:
             logger.error(f"Timeout writing to InfluxDB for {sender_mac} (continuing with other operations)")
-            with self._init_lock:
-                self._last_init_failure_at = time.monotonic()
+            self._last_init_failure_at = time.monotonic()
         except ConnectionError as e:
             logger.error(f"Connection error writing to InfluxDB for {sender_mac}: {e} (continuing with other operations)")
             self._disable_client()
