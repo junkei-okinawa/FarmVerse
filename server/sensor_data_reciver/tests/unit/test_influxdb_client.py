@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -314,6 +315,24 @@ class TestInfluxDBClientAsyncTasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+    @pytest.mark.asyncio
+    async def test_recent_write_failure_skips_new_write(self, mock_config, mock_influxdb_client):
+        """Test that a recent write failure activates cooldown and suppresses new writes."""
+        mock_instance, mock_write_api = mock_influxdb_client
+        mock_instance.health.return_value.status = "pass"
+
+        client = InfluxDBClient()
+        client._last_write_failure_at = time.monotonic()
+
+        with patch.object(client, '_ensure_client_ready_async', new_callable=AsyncMock) as mock_ready, \
+             patch('storage.influxdb_client.asyncio.wait_for') as mock_wait_for:
+            mock_ready.return_value = True
+            await client._write_sensor_data_async("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 4.4)
+
+        mock_wait_for.assert_not_called()
+        mock_write_api.write.assert_not_called()
+        mock_ready.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_ready_check_skips_duplicate_initialization_attempts(self, mock_config):

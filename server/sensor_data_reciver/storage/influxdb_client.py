@@ -32,11 +32,12 @@ class InfluxDBClient:
         self._init_state_lock = Lock()
         self._init_in_progress = False
         self._last_init_failure_at = 0.0
+        self._last_write_failure_at = 0.0
         
         self._initialize_client(force=True)
 
     def _claim_initialization_slot(self):
-        """初期化の実行 स्लॉटを非再入で確保する"""
+        """初期化の実行スロットを非再入で確保する"""
         with self._init_state_lock:
             if self._init_in_progress:
                 return False
@@ -44,9 +45,15 @@ class InfluxDBClient:
             return True
 
     def _release_initialization_slot(self):
-        """初期化の実行 स्लॉटを解放する"""
+        """初期化の実行スロットを解放する"""
         with self._init_state_lock:
             self._init_in_progress = False
+
+    def _should_throttle_writes(self):
+        """最近の書き込み失敗により、新規書き込みを抑制すべきか判定する"""
+        if self._last_write_failure_at == 0.0:
+            return False
+        return (time.monotonic() - self._last_write_failure_at) < config.INFLUXDB_TIMEOUT_SECONDS
 
     def _close_client_resources(self, client=None, write_api=None):
         """指定されたクライアント資源を安全に閉じる"""
@@ -204,6 +211,10 @@ class InfluxDBClient:
                 logger.warning(f"InfluxDB client not available for {sender_mac}")
                 return
 
+            if self._should_throttle_writes():
+                logger.warning(f"InfluxDB write cooldown active for {sender_mac}, skipping write")
+                return
+
             # 以降の書き込みはこの呼び出し時点の write_api を使う
             write_api = self.write_api
             if not write_api:
@@ -230,22 +241,23 @@ class InfluxDBClient:
                         bucket=config.INFLUXDB_BUCKET, 
                         org=config.INFLUXDB_ORG, 
                         record=point
-                ),
-                    timeout=3.0  # 3秒でタイムアウト（10→3秒に短縮）
+                    ),
+                    timeout=config.INFLUXDB_TIMEOUT_SECONDS
                 )
                 logger.info(f"Successfully wrote data to InfluxDB for {sender_mac}")
+                self._last_write_failure_at = 0.0
             else:
                 logger.warning(f"No valid data to write for {sender_mac}")
                 
         except asyncio.TimeoutError:
             logger.error(f"Timeout writing to InfluxDB for {sender_mac} (continuing with other operations)")
-            self._last_init_failure_at = time.monotonic()
+            self._last_write_failure_at = time.monotonic()
         except ConnectionError as e:
             logger.error(f"Connection error writing to InfluxDB for {sender_mac}: {e} (continuing with other operations)")
-            self._disable_client()
+            self._last_write_failure_at = time.monotonic()
         except Exception as e:
             logger.error(f"Unexpected error writing to InfluxDB for {sender_mac}: {e}")
-            self._disable_client()
+            self._last_write_failure_at = time.monotonic()
             
     async def _cleanup_completed_tasks(self):
         """バックグラウンドで完了したタスクをクリーンアップ"""
