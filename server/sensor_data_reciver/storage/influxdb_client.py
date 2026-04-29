@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import os
+import time
+from threading import Lock
 
 import influxdb_client
 from influxdb_client import Point
@@ -18,49 +20,155 @@ logger = logging.getLogger(__name__)
 
 class InfluxDBClient:
     """InfluxDB クライアント管理クラス"""
+
+    _INIT_RETRY_INTERVAL_SECONDS = 30.0
     
     def __init__(self):
         self.token = os.environ.get("INFLUXDB_TOKEN")
         self.client = None
         self.write_api = None
         self._active_tasks = set()  # アクティブタスクの追跡
+        self._init_lock = Lock()
+        self._init_state_lock = Lock()
+        self._init_in_progress = False
+        self._last_init_failure_at = 0.0
+        self._last_write_failure_at = 0.0
         
+        self._initialize_client(force=True)
+
+    def _claim_initialization_slot(self):
+        """初期化の実行スロットを非再入で確保する"""
+        with self._init_state_lock:
+            if self._init_in_progress:
+                return False
+            self._init_in_progress = True
+            return True
+
+    def _release_initialization_slot(self):
+        """初期化の実行スロットを解放する"""
+        with self._init_state_lock:
+            self._init_in_progress = False
+
+    def _should_throttle_writes(self):
+        """最近の書き込み失敗により、新規書き込みを抑制すべきか判定する"""
+        if self._last_write_failure_at == 0.0:
+            return False
+        return (time.monotonic() - self._last_write_failure_at) < config.INFLUXDB_TIMEOUT_SECONDS
+
+    def _close_client_resources(self, client=None, write_api=None):
+        """指定されたクライアント資源を安全に閉じる"""
         try:
-            self.client = influxdb_client.InfluxDBClient(
-                url=config.INFLUXDB_URL, 
-                token=self.token, 
-                org=config.INFLUXDB_ORG
-            )
-            self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
-            
-            # 接続テスト
-            try:
-                # シンプルな ping クエリで接続を確認
-                health = self.client.health()
-                if health.status == "pass":
-                    logger.info(f"InfluxDB client initialized successfully: {config.INFLUXDB_URL}")
-                else:
-                    logger.warning(f"InfluxDB health check failed: {health.status}")
-                    self._disable_client()
-            except Exception as e:
-                logger.warning(f"InfluxDB connection test failed: {e} - InfluxDB writes will be disabled")
-                self._disable_client()
-                
+            if write_api:
+                write_api.close()
         except Exception as e:
-            logger.error(f"Failed to initialize InfluxDB client: {e} - InfluxDB writes will be disabled")
-            self._disable_client()
-    
-    def _disable_client(self):
-        """InfluxDBクライアントを無効化"""
+            logger.debug(f"Error closing InfluxDB write API: {e}")
+
+        try:
+            if client:
+                client.close()
+        except Exception as e:
+            logger.debug(f"Error closing InfluxDB client: {e}")
+
+    def _initialize_client(self, force=False):
+        """InfluxDBクライアントを初期化する"""
+        with self._init_lock:
+            if self.client and self.write_api and not force:
+                return True
+
+            new_client = None
+            new_write_api = None
+
+            try:
+                new_client = influxdb_client.InfluxDBClient(
+                    url=config.INFLUXDB_URL,
+                    token=self.token,
+                    org=config.INFLUXDB_ORG,
+                )
+                new_write_api = new_client.write_api(write_options=SYNCHRONOUS)
+
+                health = new_client.health()
+                if health.status == "pass":
+                    self._close_client_resources(self.client, self.write_api)
+                    self.client = new_client
+                    self.write_api = new_write_api
+                    self._last_init_failure_at = 0.0
+                    logger.info(f"InfluxDB client initialized successfully: {config.INFLUXDB_URL}")
+                    return True
+
+                logger.warning(f"InfluxDB health check failed: {health.status}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize InfluxDB client: {e} - will retry later")
+            finally:
+                if self.client is not new_client:
+                    self._close_client_resources(new_client, new_write_api)
+
+            self._disable_client_locked()
+            return False
+
+    def _should_retry_initialization(self):
+        """再初期化を試すべきタイミングか判定する"""
+        if self.client and self.write_api:
+            return True
+        if self._last_init_failure_at == 0.0:
+            return True
+        return (time.monotonic() - self._last_init_failure_at) >= self._INIT_RETRY_INTERVAL_SECONDS
+
+    async def _ensure_client_ready_async(self, sender_mac: str = None):
+        """必要ならクライアントを再初期化する"""
+        if self.client and self.write_api:
+            return True
+
+        if not self._should_retry_initialization():
+            logger.warning(
+                f"InfluxDB client not initialized, retry suppressed for {sender_mac or 'unknown sender'}"
+            )
+            return False
+
+        if not self._claim_initialization_slot():
+            logger.debug(
+                f"InfluxDB initialization already in progress, skipping duplicate attempt for {sender_mac or 'unknown sender'}"
+            )
+            return False
+
+        try:
+            return await asyncio.to_thread(self._initialize_client, False)
+        finally:
+            self._release_initialization_slot()
+
+    def _ensure_client_ready_sync(self, sender_mac: str = None):
+        """同期的にクライアントを再初期化する"""
+        if self.client and self.write_api:
+            return True
+
+        if not self._should_retry_initialization():
+            logger.warning(
+                f"InfluxDB client not initialized, retry suppressed for {sender_mac or 'unknown sender'}"
+            )
+            return False
+
+        if self._initialize_client(force=False):
+            return True
+
+        self._last_init_failure_at = time.monotonic()
+        return False
+
+    def _disable_client_locked(self):
+        """InfluxDBクライアントを無効化する（ロック保持前提）"""
         try:
             if self.write_api:
-                self.write_api.close()
+                self._close_client_resources(write_api=self.write_api)
             if self.client:
-                self.client.close()
-        except:
-            pass
+                self._close_client_resources(client=self.client)
+        except Exception as e:
+            logger.debug(f"Failed to fully close InfluxDB client resources while disabling client: {e}")
         self.client = None
         self.write_api = None
+        self._last_init_failure_at = time.monotonic()
+
+    def _disable_client(self):
+        """InfluxDBクライアントを無効化"""
+        with self._init_lock:
+            self._disable_client_locked()
     
     def write_sensor_data(self, sender_mac: str, voltage: float = None, temperature: float = None, tds_voltage: float = None) -> bool:
         """センサーデータをInfluxDBに書き込み（非同期実行・エラー耐性付き）"""
@@ -69,11 +177,6 @@ class InfluxDBClient:
             logger.info(f"Test environment detected, skipping InfluxDB write for {sender_mac}")
             return False
             
-        # InfluxDBクライアントが初期化されていない場合はスキップ
-        if not self.client or not self.write_api:
-            logger.warning(f"InfluxDB client not initialized, skipping write for {sender_mac}")
-            return False
-        
         # イベントループが実行されているかチェック
         try:
             asyncio.get_running_loop()  # イベントループの存在確認のみ
@@ -103,11 +206,21 @@ class InfluxDBClient:
     async def _write_sensor_data_async(self, sender_mac: str, voltage: float = None, temperature: float = None, tds_voltage: float = None):
         """非同期でInfluxDBにデータを書き込み"""
         try:
-            # クライアントが初期化されていない場合はスキップ
-            if not self.client or not self.write_api:
+            # 必要であればクライアントを再初期化する
+            if not await self._ensure_client_ready_async(sender_mac):
                 logger.warning(f"InfluxDB client not available for {sender_mac}")
                 return
-                
+
+            if self._should_throttle_writes():
+                logger.warning(f"InfluxDB write cooldown active for {sender_mac}, skipping write")
+                return
+
+            # 以降の書き込みはこの呼び出し時点の write_api を使う
+            write_api = self.write_api
+            if not write_api:
+                logger.warning(f"InfluxDB write API not available for {sender_mac}")
+                return
+            
             point = Point("data").tag("mac_address", sender_mac)
             
             if voltage is not None:
@@ -124,23 +237,27 @@ class InfluxDBClient:
                 # タイムアウトを設定して書き込み実行
                 await asyncio.wait_for(
                     asyncio.to_thread(
-                        self.write_api.write, 
+                        write_api.write,
                         bucket=config.INFLUXDB_BUCKET, 
                         org=config.INFLUXDB_ORG, 
                         record=point
                     ),
-                    timeout=3.0  # 3秒でタイムアウト（10→3秒に短縮）
+                    timeout=config.INFLUXDB_TIMEOUT_SECONDS
                 )
                 logger.info(f"Successfully wrote data to InfluxDB for {sender_mac}")
+                self._last_write_failure_at = 0.0
             else:
                 logger.warning(f"No valid data to write for {sender_mac}")
                 
         except asyncio.TimeoutError:
             logger.error(f"Timeout writing to InfluxDB for {sender_mac} (continuing with other operations)")
+            self._last_write_failure_at = time.monotonic()
         except ConnectionError as e:
             logger.error(f"Connection error writing to InfluxDB for {sender_mac}: {e} (continuing with other operations)")
+            self._last_write_failure_at = time.monotonic()
         except Exception as e:
             logger.error(f"Unexpected error writing to InfluxDB for {sender_mac}: {e}")
+            self._last_write_failure_at = time.monotonic()
             
     async def _cleanup_completed_tasks(self):
         """バックグラウンドで完了したタスクをクリーンアップ"""
