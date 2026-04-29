@@ -52,15 +52,18 @@ This is the core server component of the FarmVerse ecosystem, providing the foll
 ├── 📡 protocol/               # Communication protocol
 │   ├── frame_parser.py       # Frame parsing & validation
 │   ├── serial_handler.py     # Serial communication & sleep control
-│   └── constants.py          # Protocol constants
+│   ├── constants.py          # Protocol constants
+│   ├── cycle_tracker.py      # Communication cycle tracking
+│   └── streaming_handler.py  # Streaming protocol handler
 ├── 🔧 processors/             # Data processing
 │   ├── image_processor.py    # Image data processing & storage
 │   ├── voltage_processor.py  # Voltage data analysis
-│   └── sleep_controller.py   # Sleep duration control
+│   ├── sleep_controller.py   # Sleep duration control
+│   └── streaming_image_processor.py  # Streaming image processing
 ├── 💾 storage/                # Data storage
 │   └── influxdb_client.py    # InfluxDB integration & async processing
 ├── 🔍 utils/                  # Utilities
-│   └── logging_config.py     # Logging configuration
+│   └── logging_setup.py      # Logging configuration
 └── 📝 tests/                  # Testing
     ├── unit/                 # Unit tests
     └── integration/          # Integration tests
