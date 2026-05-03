@@ -586,8 +586,17 @@ class StreamingSerialProtocol(asyncio.Protocol):
         command_to_gateway = format_sleep_command_to_gateway(
             sender_mac, sleep_duration_s
         )
-        command_bytes = command_to_gateway.encode("utf-8")
 
+        # DRY_RUN モードではスリープコマンドをスキップしてログ出力のみ
+        if config.DRY_RUN:
+            logger.info(
+                f"[DRY_RUN] Would send sleep command — {command_to_gateway.strip()} "
+                f"(voltage={voltage}%, duration={sleep_duration_s}s)"
+            )
+            self.sleep_command_sent[sender_mac] = current_time
+            return
+
+        command_bytes = command_to_gateway.encode("utf-8")
         logger.info(
             f"Sending sleep command for {sender_mac} with voltage {voltage}% -> {sleep_duration_s}s sleep"
         )
