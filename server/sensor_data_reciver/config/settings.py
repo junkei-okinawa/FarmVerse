@@ -35,6 +35,10 @@ class Config:
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "DEBUG")  # DEBUG, INFO, WARNING, ERROR, CRITICAL
     SUPPRESS_SYNC_ERRORS: bool = os.environ.get("SUPPRESS_SYNC_ERRORS", "false").lower() == "true"
     SUPPRESS_DISCARD_LOGS: bool = os.environ.get("SUPPRESS_DISCARD_LOGS", "false").lower() == "true"
+
+    # Dry-run mode: InfluxDB 書き込み・スリープコマンド送信・画像保存をスキップしてログ出力のみ
+    # Phase2 検証など DB 不要な動作確認に使用する
+    DRY_RUN: bool = os.environ.get("DRY_RUN", "false").lower() == "true"
     
     # Sleep duration configuration
     DEFAULT_SLEEP_DURATION_S: int = 60  # Default sleep duration for ESP32-CAM in seconds

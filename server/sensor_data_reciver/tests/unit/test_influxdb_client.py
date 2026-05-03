@@ -26,6 +26,7 @@ class TestInfluxDBClientAsyncTasks:
             mock_config.INFLUXDB_BUCKET = "test-bucket"
             mock_config.INFLUXDB_TIMEOUT_SECONDS = 3
             mock_config.IS_TEST_ENV = False
+            mock_config.DRY_RUN = False
             yield mock_config
     
     @pytest.fixture
