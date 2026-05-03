@@ -162,6 +162,13 @@ class TestDataParser:
     def test_extract_tds_voltage_with_validation_invalid_format(self):
         """Test TDS voltage extraction with validation - invalid format."""
         payload = "TDS_VOLT:invalid"
-        
+
+        result = DataParser.extract_tds_voltage_with_validation(payload, "test:mac")
+        assert result is None
+
+    def test_extract_tds_voltage_with_validation_sentinel_minus999(self):
+        """Test TDS voltage extraction with validation - sentinel -999.0 treated as None."""
+        payload = "TDS_VOLT:-999.0"
+
         result = DataParser.extract_tds_voltage_with_validation(payload, "test:mac")
         assert result is None

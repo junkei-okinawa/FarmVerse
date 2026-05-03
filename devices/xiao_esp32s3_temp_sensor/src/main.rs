@@ -97,7 +97,7 @@ fn init_esp_now(
     };
 
     let peer_mac = parse_mac(CONFIG.receiver_mac)
-        .expect("cfg.toml の receiver_mac が不正 (形式: XX:XX:XX:XX:XX:XX)");
+        .ok_or_else(|| anyhow::anyhow!("cfg.toml の receiver_mac が不正 (形式: XX:XX:XX:XX:XX:XX)"))?;
 
     let sysloop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
@@ -126,11 +126,17 @@ fn init_esp_now(
 
     unsafe {
         // ESP-NOW の安定性向上のため WiFi Power Save を無効化
-        esp_idf_svc::sys::esp_wifi_set_ps(esp_idf_svc::sys::wifi_ps_type_t_WIFI_PS_NONE);
+        let ps_ret = esp_idf_svc::sys::esp_wifi_set_ps(esp_idf_svc::sys::wifi_ps_type_t_WIFI_PS_NONE);
+        if ps_ret != esp_idf_svc::sys::ESP_OK {
+            log::warn!("esp_wifi_set_ps failed: {}", ps_ret);
+        }
         // ESP-NOW のバッファを RAM に設定 (Flash 書き込みを回避)
-        esp_idf_svc::sys::esp_wifi_set_storage(
+        let st_ret = esp_idf_svc::sys::esp_wifi_set_storage(
             esp_idf_svc::sys::wifi_storage_t_WIFI_STORAGE_RAM,
         );
+        if st_ret != esp_idf_svc::sys::ESP_OK {
+            log::warn!("esp_wifi_set_storage failed: {}", st_ret);
+        }
     }
 
     // wifi を Box::leak で 'static 昇格させ EspNow の生存期間を保証
