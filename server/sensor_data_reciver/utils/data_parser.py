@@ -159,6 +159,9 @@ class DataParser:
         if tds_volt_str is not None:
             try:
                 tds_voltage_value = float(tds_volt_str)
+                if tds_voltage_value == -999.0:
+                    logger.debug(f"TDS_VOLT sentinel -999 from {sender_mac}, treating as no sensor")
+                    return None
                 return tds_voltage_value
             except ValueError:
                 logger.warning(f"Invalid TDS_VOLT value from {sender_mac}: {tds_volt_str}")

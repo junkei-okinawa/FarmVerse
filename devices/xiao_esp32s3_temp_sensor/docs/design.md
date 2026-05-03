@@ -55,7 +55,7 @@ XIAO ESP32-S3         DS18B20
 ### ディレクトリ構成
 
 ```
-xiao_esp32s3_get_temperature/
+devices/xiao_esp32s3_temp_sensor/
 ├── src/main.rs          # メインロジック
 ├── docs/design.md       # 本設計書
 ├── Cargo.toml           # 依存関係 / wifi feature 定義
@@ -153,7 +153,7 @@ cargo install espflash
 ### Phase 1 (ログのみ)
 
 ```bash
-cd sensors/esp-temp-sensor/examples/xiao_esp32s3_get_temperature
+cd devices/xiao_esp32s3_temp_sensor
 
 # フラッシュ & モニタ起動
 cargo run
@@ -165,6 +165,8 @@ cargo run --release
 ### Phase 2 (ESP-NOW 送信)
 
 ```bash
+cd devices/xiao_esp32s3_temp_sensor
+
 # 1. cfg.toml を作成
 cp cfg.toml.template cfg.toml
 
@@ -226,7 +228,7 @@ ESP32-S3                    sensor_data_reciver
 | `HASH:` | 64桁ゼロ | 画像なし (ダミーハッシュ) |
 | `VOLT:` | `100` | 電圧センサなし (プレースホルダ) |
 | `TEMP:` | `25.5` (小数1桁) | 温度 (℃) |
-| `TDS_VOLT:` | `-999.0` | TDS センサなし (サーバー側で無視) |
+| `TDS_VOLT:` | `-999.0` | TDS センサなしのセンチネル値 (サーバー側で None として扱われ InfluxDB には書き込まれない) |
 
 ### ESP-NOW ペイロードサイズ検証
 

@@ -180,12 +180,26 @@ class TestInfluxDBClientAsyncTasks:
         """Test that write operations are skipped in test environment"""
         mock_config.IS_TEST_ENV = True
         client = InfluxDBClient()
-        
+
         result = client.write_sensor_data("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 2.1)
-        
+
         # Should return False when skipping in test env
         assert result is False
-        
+
+        # No tasks should be created
+        assert len(client._active_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_write_sensor_data_in_dry_run_skips_write(self, mock_config, mock_influxdb_client):
+        """Test that write operations are skipped in DRY_RUN mode"""
+        mock_config.DRY_RUN = True
+        client = InfluxDBClient()
+
+        result = client.write_sensor_data("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 2.1)
+
+        # Should return False when DRY_RUN is enabled
+        assert result is False
+
         # No tasks should be created
         assert len(client._active_tasks) == 0
 

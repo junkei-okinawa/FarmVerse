@@ -73,7 +73,7 @@ fn sleep_or_delay(interval_s: u32) {
         }
         // esp_deep_sleep() は戻らない
     } else {
-        FreeRtos::delay_ms(interval_s * 1_000);
+        FreeRtos::delay_ms(interval_s.saturating_mul(1_000));
     }
 }
 
@@ -174,15 +174,18 @@ fn send_temperature(
 
     // 送信元 MAC を取得してフレームヘッダに埋め込む
     let mut sender_mac = [0u8; 6];
-    unsafe {
+    let ret = unsafe {
         esp_idf_svc::sys::esp_wifi_get_mac(
             esp_idf_svc::sys::wifi_interface_t_WIFI_IF_STA,
             sender_mac.as_mut_ptr(),
-        );
+        )
+    };
+    if ret != esp_idf_svc::sys::ESP_OK {
+        return Err(anyhow::anyhow!("esp_wifi_get_mac failed: {}", ret));
     }
 
     // VOLT:100 = 電圧センサなしのプレースホルダ
-    // TDS_VOLT:-999.0 = TDS センサなし (サーバー側で無視される)
+    // TDS_VOLT:-999.0 = TDS センサなしのセンチネル値 (サーバー側で None として扱われ InfluxDB には書き込まれない)
     let hash_payload = format!(
         "HASH:{},VOLT:100,TEMP:{:.1},TDS_VOLT:-999.0,2000/01/01 00:00:00.000",
         DUMMY_HASH, temp

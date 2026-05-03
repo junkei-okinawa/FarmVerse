@@ -22,7 +22,6 @@ log = "0.4"
 anyhow = "1.0"
 simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor" }
 esp-idf-svc = "0.51.0"
-esp-idf-hal = "0.45.2"
 toml-cfg = "=0.2"
 
 [build-dependencies]
