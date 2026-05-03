@@ -34,12 +34,16 @@ fn main() -> Result<()> {
     );
 
     let peripherals = Peripherals::take().unwrap();
+    // 必要なフィールドを先に分解して所有権を確定させる
+    let rmt_channel0 = peripherals.rmt.channel0;
+    #[cfg(feature = "wifi")]
+    let modem = peripherals.modem;
 
     // Phase 2: WiFi + ESP-NOW 初期化 (wifi feature のみコンパイル)
     #[cfg(feature = "wifi")]
-    let (esp_now, peer_mac) = init_esp_now(peripherals.modem)?;
+    let (esp_now, peer_mac) = init_esp_now(modem)?;
 
-    let mut sensor = TempSensor::new(POWER_PIN, DATA_PIN, peripherals.rmt.channel0)?;
+    let mut sensor = TempSensor::new(POWER_PIN, DATA_PIN, rmt_channel0)?;
 
     loop {
         match sensor.read_temperature() {
