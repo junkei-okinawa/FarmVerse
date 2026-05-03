@@ -529,17 +529,21 @@ class StreamingSerialProtocol(asyncio.Protocol):
             # EOF処理済みとしてマーク
             self.eof_processed[sender_mac] = current_time
 
-            # ストリーミング画像を完成・保存
-            final_path = await self.streaming_processor.finalize_image_stream(
-                sender_mac, self.stats
-            )
-
-            if final_path:
-                # 統計更新
-                self.stats["received_images"] = self.stats.get("received_images", 0) + 1
-                logger.info(f"✓ Streaming image saved: {final_path}")
+            # DRY_RUN モードでは画像保存をスキップしてログ出力のみ
+            if config.DRY_RUN:
+                logger.info(f"[DRY_RUN] Would finalize/save streaming image for {sender_mac}")
             else:
-                logger.error(f"Failed to finalize streaming image for {sender_mac}")
+                # ストリーミング画像を完成・保存
+                final_path = await self.streaming_processor.finalize_image_stream(
+                    sender_mac, self.stats
+                )
+
+                if final_path:
+                    # 統計更新
+                    self.stats["received_images"] = self.stats.get("received_images", 0) + 1
+                    logger.info(f"✓ Streaming image saved: {final_path}")
+                else:
+                    logger.error(f"Failed to finalize streaming image for {sender_mac}")
 
             # EOFフレーム処理後にスリープコマンド送信
             await self._send_sleep_command_after_eof(sender_mac)
