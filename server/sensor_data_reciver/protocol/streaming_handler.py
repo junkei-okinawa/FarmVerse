@@ -529,9 +529,14 @@ class StreamingSerialProtocol(asyncio.Protocol):
             # EOF処理済みとしてマーク
             self.eof_processed[sender_mac] = current_time
 
+            has_image = self.has_image_data_cache.get(sender_mac, True)
+
             # DRY_RUN モードでは画像保存をスキップしてログ出力のみ
             if config.DRY_RUN:
                 logger.info(f"[DRY_RUN] Would finalize/save streaming image for {sender_mac}")
+            elif not has_image:
+                # 画像データなし (温度センサー等) はスキップしてエラーログを抑制
+                logger.debug(f"No image data expected for {sender_mac}, skipping finalize")
             else:
                 # ストリーミング画像を完成・保存
                 final_path = await self.streaming_processor.finalize_image_stream(
