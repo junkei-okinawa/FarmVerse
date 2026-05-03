@@ -172,7 +172,8 @@ fn init_esp_now(
 ///   HASH frame (type=1) → EOF frame (type=3)
 ///
 /// HASH ペイロード形式 (sender.rs send_hash_frame と同一):
-///   HASH:{64桁ゼロ},VOLT:100,TEMP:{temp:.1},TDS_VOLT:-999.0,{timestamp}
+///   HASH:{64桁ゼロ},VOLT:100,TEMP:{temp:.1},TDS_VOLT:-999.0,2000/01/01 00:00:00.000
+///   ※ timestamp は固定プレースホルダー (リアルタイムクロック非搭載のため)
 #[cfg(feature = "wifi")]
 fn send_temperature(
     esp_now: &esp_idf_svc::espnow::EspNow<'static>,
