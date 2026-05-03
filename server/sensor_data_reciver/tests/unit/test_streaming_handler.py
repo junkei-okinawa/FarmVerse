@@ -171,6 +171,46 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(self.protocol.cycle_tracker.get_state(sender_mac))
 
+    async def test_dry_run_skips_finalize_image_stream(self):
+        """DRY_RUN モードでは finalize_image_stream が呼ばれないことをテスト"""
+        sender_mac = "01:02:03:04:05:06"
+        seq_num = 110
+
+        self.protocol.streaming_processor.finalize_image_stream = AsyncMock(return_value="/tmp/img.jpg")
+        self.protocol._send_sleep_command_after_eof = AsyncMock()
+
+        with patch('protocol.streaming_handler.config') as mock_config:
+            mock_config.DRY_RUN = True
+            mock_config.DEBUG_FRAME_PARSING = False
+            mock_config.SUPPRESS_SYNC_ERRORS = False
+            mock_config.SUPPRESS_DISCARD_LOGS = False
+            mock_config.MAX_DATA_LEN = 250 * 1024
+
+            await self.protocol._process_streaming_eof_frame(sender_mac, seq_num)
+
+        # DRY_RUN なので finalize_image_stream は呼ばれない
+        self.protocol.streaming_processor.finalize_image_stream.assert_not_called()
+        # スリープコマンド処理は呼ばれる
+        self.protocol._send_sleep_command_after_eof.assert_awaited_once_with(sender_mac)
+
+    async def test_dry_run_send_sleep_command_skips_write(self):
+        """DRY_RUN モードでは _send_sleep_command が transport.write を呼ばないことをテスト"""
+        sender_mac = "01:02:03:04:05:06"
+
+        mock_transport = MagicMock()
+        self.protocol.transport = mock_transport
+
+        with patch('protocol.streaming_handler.config') as mock_config:
+            mock_config.DRY_RUN = True
+            mock_config.DEBUG_FRAME_PARSING = False
+
+            await self.protocol._send_sleep_command(sender_mac, 85.0)
+
+        # DRY_RUN なので transport.write は呼ばれない
+        mock_transport.write.assert_not_called()
+        # 重複送信抑止の内部状態は更新される
+        self.assertIn(sender_mac, self.protocol.sleep_command_sent)
+
     async def test_buffer_processing_is_serialized(self):
         """複数の buffer processing task が同時に実行されないことをテスト"""
         first_entered = asyncio.Event()
