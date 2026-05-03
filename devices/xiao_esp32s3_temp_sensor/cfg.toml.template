@@ -1,0 +1,13 @@
+# cfg.toml.template → cfg.toml にコピーして使用 (cfg.toml は .gitignore 済み)
+[xiao-esp32s3-get-temperature]
+
+# 計測間隔 (秒)  デフォルト: 600 = 10分
+measure_interval_s = 600
+
+# Deep Sleep 使用フラグ
+#   false: FreeRTOS delay でループ (USB モニタリング可)
+#   true : Deep Sleep で待機 → ウェイクアップ後 main() から再実行 (省電力)
+use_deep_sleep = false
+
+# ESP-NOW 送信先 MAC アドレス (wifi feature 使用時のみ必要)
+receiver_mac = "11:22:33:44:55:66"

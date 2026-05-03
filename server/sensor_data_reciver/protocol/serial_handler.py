@@ -500,7 +500,16 @@ class SerialProtocol(asyncio.Protocol):
         sleep_duration_s = determine_sleep_duration(voltage)
         command_to_gateway = format_sleep_command_to_gateway(sender_mac, sleep_duration_s)
         command_bytes = command_to_gateway.encode('utf-8')
-        
+
+        # DRY_RUN モードではスリープコマンドをスキップしてログ出力のみ
+        if config.DRY_RUN:
+            logger.info(
+                f"[DRY_RUN] Would send sleep command — {command_to_gateway.strip()} "
+                f"(voltage={voltage}%, duration={sleep_duration_s}s)"
+            )
+            self.sleep_command_sent[sender_mac] = current_time
+            return
+
         logger.info(f"Sending sleep command for {sender_mac} with voltage {voltage}% -> {sleep_duration_s}s sleep")
 
         if self.transport:
@@ -564,8 +573,13 @@ class SerialProtocol(asyncio.Protocol):
                 else:
                     logger.debug("Test environment detected, skipping image validation")
                 
+                # DRY_RUN モードでは画像保存をスキップしてログ出力のみ
+                if config.DRY_RUN:
+                    logger.info(
+                        f"[DRY_RUN] Would save image — mac={sender_mac}, size={len(image_data)} bytes"
+                    )
                 # イベントループが実行中かチェックしてからタスクを作成
-                if self._has_running_event_loop():
+                elif self._has_running_event_loop():
                     try:
                         asyncio.create_task(save_image(sender_mac, image_data, self.stats))
                     except Exception as e:
