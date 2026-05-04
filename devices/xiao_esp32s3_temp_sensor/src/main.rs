@@ -2,6 +2,8 @@ use anyhow::Result;
 use esp_idf_svc::hal::{delay::FreeRtos, peripherals::Peripherals};
 use log::info;
 use simple_ds18b20_temp_sensor::TempSensor;
+#[cfg(feature = "wifi")]
+use temp_sensor_core::{format_hash_payload, needs_recalibration, parse_mac};
 
 #[toml_cfg::toml_config]
 struct Config {
@@ -180,7 +182,7 @@ fn should_force_recalibrate() -> bool {
         }
     };
 
-    let force = cycle % CONFIG.recalibration_interval == 0;
+    let force = needs_recalibration(cycle, CONFIG.recalibration_interval);
     if force {
         info!("Cycle {}: PHY recalibration scheduled", cycle);
     } else {
@@ -324,15 +326,9 @@ fn send_temperature(
     peer_mac: [u8; 6],
     temp: f32,
 ) -> Result<()> {
-    const DUMMY_HASH: &str =
-        "0000000000000000000000000000000000000000000000000000000000000000";
-
     // VOLT:100 = 電圧センサなしのプレースホルダ
     // TDS_VOLT:-999.0 = TDS センサなしのセンチネル値 (サーバー側で None として扱われる)
-    let hash_payload = format!(
-        "HASH:{},VOLT:100,TEMP:{:.1},TDS_VOLT:-999.0,2000/01/01 00:00:00.000",
-        DUMMY_HASH, temp
-    );
+    let hash_payload = format_hash_payload(temp);
 
     info!("Sending HASH payload ({} bytes)", hash_payload.len());
     esp_now.send(peer_mac, hash_payload.as_bytes())?;
@@ -346,16 +342,3 @@ fn send_temperature(
     Ok(())
 }
 
-/// "XX:XX:XX:XX:XX:XX" 形式の文字列を [u8; 6] に変換
-#[cfg(feature = "wifi")]
-fn parse_mac(s: &str) -> Option<[u8; 6]> {
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 6 {
-        return None;
-    }
-    let mut mac = [0u8; 6];
-    for (i, p) in parts.iter().enumerate() {
-        mac[i] = u8::from_str_radix(p, 16).ok()?;
-    }
-    Some(mac)
-}

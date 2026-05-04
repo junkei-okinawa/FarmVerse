@@ -1,0 +1,8 @@
+[package]
+name = "temp-sensor-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "temp_sensor_core"
+path = "src/lib.rs"
