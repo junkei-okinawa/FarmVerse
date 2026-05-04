@@ -361,5 +361,71 @@ async def test_low_voltage_sleep_commands(mock_transport):
         assert written_commands[0] == expected_command
 
 
+@pytest.mark.asyncio
+async def test_dry_run_skips_transport_write(mock_transport):
+    """DRY_RUN モードでは transport.write が呼ばれないことをテスト"""
+    test_mac = "aa:bb:cc:dd:ee:ff"
+    test_voltage = 85
+    test_temperature = 25.5
+    test_timestamp = "2024/01/01 12:00:00.000"
+
+    connection_lost_future = asyncio.Future()
+    image_buffers = {}
+    last_receive_time = {}
+    stats = {}
+    protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
+    protocol.transport = mock_transport
+
+    hash_frame = create_hash_frame(test_mac, test_voltage, test_temperature, test_timestamp)
+
+    with patch.object(config, 'DRY_RUN', True):
+        protocol.data_received(hash_frame)
+
+        async def fast_delayed_send(sender_mac, voltage):
+            protocol._send_sleep_command(sender_mac, voltage)
+            protocol._cleanup_device_cache(sender_mac)
+
+        with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send):
+            eof_frame = create_eof_frame(test_mac)
+            protocol.data_received(eof_frame)
+            await asyncio.sleep(0.1)
+
+    # DRY_RUN なので transport.write は呼ばれない
+    assert len(mock_transport.written_data) == 0
+
+
+@pytest.mark.asyncio
+async def test_dry_run_updates_sleep_command_sent_state(mock_transport):
+    """DRY_RUN モードでも重複送信抑止の内部状態が更新されることをテスト"""
+    test_mac = "aa:bb:cc:dd:ee:ff"
+    test_voltage = 85
+    test_temperature = 25.5
+    test_timestamp = "2024/01/01 12:00:00.000"
+
+    connection_lost_future = asyncio.Future()
+    image_buffers = {}
+    last_receive_time = {}
+    stats = {}
+    protocol = SerialProtocol(connection_lost_future, image_buffers, last_receive_time, stats)
+    protocol.transport = mock_transport
+
+    hash_frame = create_hash_frame(test_mac, test_voltage, test_temperature, test_timestamp)
+
+    with patch.object(config, 'DRY_RUN', True):
+        protocol.data_received(hash_frame)
+
+        async def fast_delayed_send(sender_mac, voltage):
+            protocol._send_sleep_command(sender_mac, voltage)
+            protocol._cleanup_device_cache(sender_mac)
+
+        with patch.object(SerialProtocol, '_delayed_sleep_command_send', side_effect=fast_delayed_send):
+            eof_frame = create_eof_frame(test_mac)
+            protocol.data_received(eof_frame)
+            await asyncio.sleep(0.1)
+
+    # DRY_RUN でも sleep_command_sent に記録され、重複送信が抑止される
+    assert test_mac in protocol.sleep_command_sent
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
