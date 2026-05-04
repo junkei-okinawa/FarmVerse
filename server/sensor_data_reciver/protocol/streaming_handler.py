@@ -532,8 +532,17 @@ class StreamingSerialProtocol(asyncio.Protocol):
             has_image = self.has_image_data_cache.get(sender_mac, True)
 
             if not has_image:
-                # 画像データなし (温度センサー等): active_streams に残留がなければ何もしない
-                logger.debug(f"No image data expected for {sender_mac}, skipping finalize")
+                # 画像データなし (温度センサー等): 保存はスキップするが、
+                # DATA フレームの順序乱れ等で active_streams に残留がある場合はクリーンアップ
+                if sender_mac in self.streaming_processor.active_streams:
+                    logger.warning(
+                        f"Unexpected active stream for no-image sender {sender_mac}, aborting"
+                    )
+                    await self.streaming_processor.abort_stream(
+                        sender_mac, "no image expected"
+                    )
+                else:
+                    logger.debug(f"No image data expected for {sender_mac}, skipping finalize")
             elif config.DRY_RUN:
                 # DRY_RUN: 保存はスキップするが active_streams と一時ファイルをクリーンアップ
                 logger.info(f"[DRY_RUN] Would save streaming image for {sender_mac}, aborting stream for cleanup")
