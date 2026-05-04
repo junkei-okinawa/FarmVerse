@@ -168,10 +168,15 @@ fn init_esp_now(
 
 /// 温度を ESP-NOW で送信する
 ///
-/// sensor_data_reciver のフレームプロトコルに準拠:
-///   HASH frame (type=1) → EOF frame (type=3)
+/// usb_cdc_receiver (ESP32-C3 ゲートウェイ) の detect_frame_type は
+/// ESP-NOW ペイロードの先頭テキストでフレーム種別を判定する:
+///   - "HASH:" で始まる → Hash フレームとして USB CDC に中継
+///   - "EOF!" (4バイト) → Eof フレームとして USB CDC に中継
 ///
-/// HASH ペイロード形式 (sender.rs send_hash_frame と同一):
+/// そのため ESP-NOW では生テキストを直接送信し、バイナリフレームには包まない。
+/// 送信元 MAC は ESP-NOW メタデータから ESP32-C3 が自動取得する。
+///
+/// HASH ペイロード形式 (sensor_data_reciver HASH 解析と互換):
 ///   HASH:{64桁ゼロ},VOLT:100,TEMP:{temp:.1},TDS_VOLT:-999.0,2000/01/01 00:00:00.000
 ///   ※ timestamp は固定プレースホルダー (リアルタイムクロック非搭載のため)
 #[cfg(feature = "wifi")]
@@ -183,18 +188,6 @@ fn send_temperature(
     const DUMMY_HASH: &str =
         "0000000000000000000000000000000000000000000000000000000000000000";
 
-    // 送信元 MAC を取得してフレームヘッダに埋め込む
-    let mut sender_mac = [0u8; 6];
-    let ret = unsafe {
-        esp_idf_svc::sys::esp_wifi_get_mac(
-            esp_idf_svc::sys::wifi_interface_t_WIFI_IF_STA,
-            sender_mac.as_mut_ptr(),
-        )
-    };
-    if ret != esp_idf_svc::sys::ESP_OK {
-        return Err(anyhow::anyhow!("esp_wifi_get_mac failed: {}", ret));
-    }
-
     // VOLT:100 = 電圧センサなしのプレースホルダ
     // TDS_VOLT:-999.0 = TDS センサなしのセンチネル値 (サーバー側で None として扱われ InfluxDB には書き込まれない)
     let hash_payload = format!(
@@ -202,56 +195,16 @@ fn send_temperature(
         DUMMY_HASH, temp
     );
 
-    let hash_frame = build_frame(&sender_mac, 1, 0, hash_payload.as_bytes());
-    let eof_frame = build_frame(&sender_mac, 3, 1, b"EOF");
-
-    info!("Sending HASH frame ({} bytes)", hash_frame.len());
-    esp_now.send(peer_mac, &hash_frame)?;
+    info!("Sending HASH payload ({} bytes)", hash_payload.len());
+    esp_now.send(peer_mac, hash_payload.as_bytes())?;
 
     FreeRtos::delay_ms(50);
 
-    info!("Sending EOF frame ({} bytes)", eof_frame.len());
-    esp_now.send(peer_mac, &eof_frame)?;
+    info!("Sending EOF");
+    esp_now.send(peer_mac, b"EOF!")?;
 
     info!("ESP-NOW send complete");
     Ok(())
-}
-
-/// sensor_data_reciver 準拠のバイナリフレームを構築する
-///
-/// フレーム構造 (sender.rs create_sensor_data_frame と同一):
-///   [START(4B)][MAC(6B)][TYPE(1B)][SEQ(4B LE)][LEN(4B LE)][DATA][CHECKSUM(4B LE)][END(4B)]
-#[cfg(feature = "wifi")]
-fn build_frame(sender_mac: &[u8; 6], frame_type: u8, seq: u32, data: &[u8]) -> Vec<u8> {
-    const START: [u8; 4] = [0xFA, 0xCE, 0xAA, 0xBB];
-    const END: [u8; 4] = [0xCD, 0xEF, 0x56, 0x78];
-
-    let mut f = Vec::with_capacity(27 + data.len());
-    f.extend_from_slice(&START);
-    f.extend_from_slice(sender_mac);
-    f.push(frame_type);
-    f.extend_from_slice(&seq.to_le_bytes());
-    f.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    f.extend_from_slice(data);
-    f.extend_from_slice(&xor_checksum(data).to_le_bytes());
-    f.extend_from_slice(&END);
-    f
-}
-
-/// XOR チェックサム (sender.rs calculate_xor_checksum と同一アルゴリズム)
-///
-/// DATA を 4 バイト単位のリトルエンディアン u32 としてXOR
-#[cfg(feature = "wifi")]
-fn xor_checksum(data: &[u8]) -> u32 {
-    let mut cs: u32 = 0;
-    for chunk in data.chunks(4) {
-        let mut val = 0u32;
-        for (i, &b) in chunk.iter().enumerate() {
-            val |= (b as u32) << (i * 8);
-        }
-        cs ^= val;
-    }
-    cs
 }
 
 /// "XX:XX:XX:XX:XX:XX" 形式の文字列を [u8; 6] に変換
