@@ -23,6 +23,7 @@ anyhow = "1.0"
 simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor", rev = "74c87a2ee5933c9bc3ac2c6d58c730d909a36356" }
 esp-idf-svc = "0.51.0"
 toml-cfg = "=0.2"
+temp-sensor-core = { path = "crates/temp_sensor_core" }
 
 [build-dependencies]
 embuild = { version = "0.33", features = ["espidf"] }
