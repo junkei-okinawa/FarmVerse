@@ -10,30 +10,22 @@ XIAO ESP32-S3 + DS18B20 で 10 分ごとに温度を計測し、ESP-NOW で `usb
 
 ## ハードウェア
 
-| 部品 | 型番 |
-|------|------|
+| 役割 | 製品 / 仕様 |
+|------|------------|
 | MCU | Seeed Studio XIAO ESP32-S3 |
 | 温度センサー | DS18B20 (防水タイプ推奨) |
-| プルアップ抵抗 | 4.7 kΩ (DATA ライン用) |
+| プルアップ抵抗 | 1 kΩ (DATA ライン用) |
 
 ## 配線
 
-```
-DS18B20               XIAO ESP32-S3
-─────────────────────────────────────
-VCC  ────────────────  D1 (GPIO2)   ← 電源制御 (計測時 HIGH / スリープ前 LOW)
-DATA ─── 4.7kΩ ─── ── D3 (GPIO4)   ← 1-Wire データ
-GND  ────────────────  GND
-```
-
-> **注意**: 4.7 kΩ プルアップ抵抗は DATA と VCC (GPIO2) の間に接続する。
+> **注意**: 1 kΩ プルアップ抵抗は DATA と VCC (GPIO2) の間に接続する。
 > スリープ前に GPIO2 を LOW に落とすことで、プルアップ経由の電流リークを防ぐ。
 
 ```mermaid
 graph LR
     subgraph "XIAO ESP32-S3"
-        G2["GPIO2 (D1)\n電源制御"]
-        G4["GPIO4 (D3)\n1-Wire DATA"]
+        G2["GPIO2 (D1)<br>電源制御"]
+        G4["GPIO4 (D3)<br>1-Wire DATA"]
         GND["GND"]
     end
 
@@ -43,7 +35,7 @@ graph LR
         DS_GND["GND"]
     end
 
-    R["4.7kΩ"]
+    R["1kΩ"]
 
     G2 --- VCC
     G2 --- R --- DATA
@@ -51,26 +43,34 @@ graph LR
     GND --- DS_GND
 ```
 
-## ソフトウェア構成
+## ファイル構成
 
 ```
 devices/xiao_esp32s3_temp_sensor/
+├── .cargo/
+│   └── config.toml        # クロスコンパイルターゲット (xtensa-esp32s3-espidf)・
+│                          #   リンカ (ldproxy)・ESP-IDF バージョン (v5.3.2) の指定
 ├── src/
-│   ├── lib.rs                     # ライブラリルート (pub mod utils)
-│   ├── main.rs                    # バイナリエントリポイント・WiFi/ESP-NOW 初期化
-│   └── utils/                     # ハードウェア非依存ロジック（ホストテスト対象）
+│   ├── lib.rs             # ライブラリルート (pub mod utils)
+│   ├── main.rs            # バイナリエントリポイント・WiFi/ESP-NOW 初期化
+│   └── utils/             # ハードウェア非依存ロジック（ホストテスト対象）
 │       ├── mod.rs
-│       ├── mac_utils.rs           # parse_mac + テスト
-│       ├── payload.rs             # format_hash_payload + テスト
-│       └── recalibration.rs      # needs_recalibration + テスト
-├── Cargo.toml
-├── cfg.toml.template              # 設定テンプレート
-├── sdkconfig.defaults             # ESP-IDF Kconfig
-└── docs/
-    ├── design.md                  # 設計詳細・プロトコル仕様
-    ├── ina226_samples_esp32s3_tempsensor.csv    # 電力計測データ (最適化前)
-    └── ina226_samples_esp32s3_tempsensor_2.csv  # 電力計測データ (最適化後)
+│       ├── mac_utils.rs   # parse_mac + テスト
+│       ├── payload.rs     # format_hash_payload + テスト
+│       └── recalibration.rs  # needs_recalibration + テスト
+├── docs/
+│   ├── design.md          # 設計詳細・プロトコル仕様
+│   ├── ina226_samples_esp32s3_tempsensor.csv    # 電力計測データ (最適化前)
+│   └── ina226_samples_esp32s3_tempsensor_2.csv  # 電力計測データ (最適化後)
+├── build.rs               # embuild で ESP-IDF ビルド設定を cargo へ出力
+├── Cargo.toml             # クレート定義・依存関係
+├── cfg.toml.template      # ユーザー設定テンプレート (cfg.toml にコピーして使用)
+├── rust-toolchain.toml    # esp ツールチェーン (Xtensa 対応 Rust) を固定
+└── sdkconfig.defaults     # ESP-IDF Kconfig のデフォルト値
+                           #   (スタックサイズ・ログ出力先・PHY キャリブレーション保存)
 ```
+
+## ソフトウェア構成
 
 ### 主要な機能 (src/main.rs)
 
@@ -127,13 +127,13 @@ cd devices/xiao_esp32s3_temp_sensor
 . ~/.espressif/esp-idf/v5.3.2/export.sh
 . ~/export-esp.sh
 
-# Phase 1: ログのみ (WiFi なし)
-cargo espflash flash --release --monitor --port /dev/cu.usbmodem101
+# WiFi なし (ログのみ確認)
+cargo espflash flash --release --monitor --port <ターゲットポート>
 
-# Phase 2: ESP-NOW 送信あり
+# ESP-NOW 送信あり
 cp cfg.toml.template cfg.toml
 # cfg.toml の receiver_mac をゲートウェイ MAC に設定してから:
-cargo espflash flash --features wifi --release --monitor --port /dev/cu.usbmodem101
+cargo espflash flash --features wifi --release --monitor --port <ターゲットポート>
 ```
 
 ## テスト
@@ -142,8 +142,13 @@ cargo espflash flash --features wifi --release --monitor --port /dev/cu.usbmodem
 
 ```bash
 cd devices/xiao_esp32s3_temp_sensor
-cargo test --lib --target aarch64-apple-darwin
+cargo test --lib --target <ホストターゲット>
 ```
+
+> `<ホストターゲット>` は実行環境に合わせて指定する。
+> - macOS (Apple Silicon): `aarch64-apple-darwin`
+> - macOS (Intel): `x86_64-apple-darwin`
+> - Linux (x86_64): `x86_64-unknown-linux-gnu`
 
 カバレッジ対象:
 
@@ -155,8 +160,8 @@ cargo test --lib --target aarch64-apple-darwin
 
 ### 実機テスト
 
-1. **Phase 1 (WiFi なし)**: シリアルモニタで 10 分ごとに `Temperature: xx.xx°C` が出力される
-2. **Phase 2 (WiFi あり)**: `sensor_data_reciver` 側の InfluxDB に温度データが書き込まれる
+1. **WiFi なし**: シリアルモニタで 10 分ごとに `Temperature: xx.xx°C` が出力される
+2. **ESP-NOW 送信あり**: `sensor_data_reciver` 側の InfluxDB に温度データが書き込まれる
 3. **Deep Sleep 動作**: スリープ中の電流が ≤ 0.5 mA であることを INA226 で確認
 
 ---
