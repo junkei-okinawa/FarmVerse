@@ -529,17 +529,36 @@ class StreamingSerialProtocol(asyncio.Protocol):
             # EOF処理済みとしてマーク
             self.eof_processed[sender_mac] = current_time
 
-            # ストリーミング画像を完成・保存
-            final_path = await self.streaming_processor.finalize_image_stream(
-                sender_mac, self.stats
-            )
+            has_image = self.has_image_data_cache.get(sender_mac, True)
 
-            if final_path:
-                # 統計更新
-                self.stats["received_images"] = self.stats.get("received_images", 0) + 1
-                logger.info(f"✓ Streaming image saved: {final_path}")
+            if not has_image:
+                # 画像データなし (温度センサー等): 保存はスキップするが、
+                # DATA フレームの順序乱れ等で active_streams に残留がある場合はクリーンアップ
+                if sender_mac in self.streaming_processor.active_streams:
+                    logger.warning(
+                        f"Unexpected active stream for no-image sender {sender_mac}, aborting"
+                    )
+                    await self.streaming_processor.abort_stream(
+                        sender_mac, "no image expected"
+                    )
+                else:
+                    logger.debug(f"No image data expected for {sender_mac}, skipping finalize")
+            elif config.DRY_RUN:
+                # DRY_RUN: 保存はスキップするが active_streams と一時ファイルをクリーンアップ
+                logger.info(f"[DRY_RUN] Would save streaming image for {sender_mac}, aborting stream for cleanup")
+                await self.streaming_processor.abort_stream(sender_mac, "DRY_RUN mode")
             else:
-                logger.error(f"Failed to finalize streaming image for {sender_mac}")
+                # ストリーミング画像を完成・保存
+                final_path = await self.streaming_processor.finalize_image_stream(
+                    sender_mac, self.stats
+                )
+
+                if final_path:
+                    # 統計更新
+                    self.stats["received_images"] = self.stats.get("received_images", 0) + 1
+                    logger.info(f"✓ Streaming image saved: {final_path}")
+                else:
+                    logger.error(f"Failed to finalize streaming image for {sender_mac}")
 
             # EOFフレーム処理後にスリープコマンド送信
             await self._send_sleep_command_after_eof(sender_mac)
@@ -586,8 +605,17 @@ class StreamingSerialProtocol(asyncio.Protocol):
         command_to_gateway = format_sleep_command_to_gateway(
             sender_mac, sleep_duration_s
         )
-        command_bytes = command_to_gateway.encode("utf-8")
 
+        # DRY_RUN モードではスリープコマンドをスキップしてログ出力のみ
+        if config.DRY_RUN:
+            logger.info(
+                f"[DRY_RUN] Would send sleep command — {command_to_gateway.strip()} "
+                f"(voltage={voltage}%, duration={sleep_duration_s}s)"
+            )
+            self.sleep_command_sent[sender_mac] = current_time
+            return
+
+        command_bytes = command_to_gateway.encode("utf-8")
         logger.info(
             f"Sending sleep command for {sender_mac} with voltage {voltage}% -> {sleep_duration_s}s sleep"
         )

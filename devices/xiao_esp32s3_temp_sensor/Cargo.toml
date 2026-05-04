@@ -1,0 +1,32 @@
+[package]
+name = "xiao-esp32s3-get-temperature"
+version = "0.1.0"
+authors = ["junkei_okinawa <ceazy.x2.okinawan@gmail.com>"]
+edition = "2021"
+resolver = "2"
+rust-version = "1.77"
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[features]
+default = []
+wifi = []
+
+[dependencies]
+log = "0.4"
+anyhow = "1.0"
+simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor", rev = "74c87a2ee5933c9bc3ac2c6d58c730d909a36356" }
+esp-idf-svc = "0.51.0"
+toml-cfg = "=0.2"
+
+[build-dependencies]
+embuild = { version = "0.33", features = ["espidf"] }
+toml-cfg = "=0.2"
+
+[target.'cfg(any(target_arch = "riscv32", target_arch = "xtensa"))'.dependencies]
+esp-idf-sys = "0.36"

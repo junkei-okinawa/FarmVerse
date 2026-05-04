@@ -176,6 +176,14 @@ class InfluxDBClient:
         if config.IS_TEST_ENV:
             logger.info(f"Test environment detected, skipping InfluxDB write for {sender_mac}")
             return False
+
+        # DRY_RUN モードでは書き込みをスキップしてログ出力のみ
+        if config.DRY_RUN:
+            logger.info(
+                f"[DRY_RUN] Would write to InfluxDB — mac={sender_mac}, "
+                f"voltage={voltage}, temperature={temperature}, tds_voltage={tds_voltage}"
+            )
+            return False
             
         # イベントループが実行されているかチェック
         try:
