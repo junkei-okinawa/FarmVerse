@@ -2,8 +2,10 @@ use anyhow::Result;
 use esp_idf_svc::hal::{delay::FreeRtos, peripherals::Peripherals};
 use log::info;
 use simple_ds18b20_temp_sensor::TempSensor;
+
+mod utils;
 #[cfg(feature = "wifi")]
-use temp_sensor_core::{format_hash_payload, needs_recalibration, parse_mac};
+use utils::{format_hash_payload, needs_recalibration, parse_mac};
 
 #[toml_cfg::toml_config]
 struct Config {

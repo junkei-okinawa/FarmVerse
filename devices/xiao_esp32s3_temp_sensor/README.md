@@ -55,9 +55,14 @@ graph LR
 
 ```
 devices/xiao_esp32s3_temp_sensor/
-├── src/main.rs                    # メインロジック・WiFi/ESP-NOW 初期化
-├── crates/temp_sensor_core/       # ハードウェア非依存ロジック（ホストテスト対象）
-│   └── src/lib.rs                 # parse_mac / needs_recalibration / format_hash_payload
+├── src/
+│   ├── lib.rs                     # ライブラリルート (pub mod utils)
+│   ├── main.rs                    # バイナリエントリポイント・WiFi/ESP-NOW 初期化
+│   └── utils/                     # ハードウェア非依存ロジック（ホストテスト対象）
+│       ├── mod.rs
+│       ├── mac_utils.rs           # parse_mac + テスト
+│       ├── payload.rs             # format_hash_payload + テスト
+│       └── recalibration.rs      # needs_recalibration + テスト
 ├── Cargo.toml
 ├── cfg.toml.template              # 設定テンプレート
 ├── sdkconfig.defaults             # ESP-IDF Kconfig
@@ -78,7 +83,7 @@ devices/xiao_esp32s3_temp_sensor/
 | `should_force_recalibrate()` | RTC メモリのサイクルカウンタで再キャリブレーションタイミングを判定 |
 | `erase_phy_calibration()` | `esp_phy_erase_cal_data_in_nvs()` で NVS のキャリブレーションデータを消去 |
 
-### ハードウェア非依存コア (crates/temp_sensor_core)
+### ハードウェア非依存コア (src/utils/)
 
 ホスト (macOS/Linux) で単体テストできる純粋関数群。
 
@@ -137,7 +142,7 @@ cargo espflash flash --features wifi --release --monitor --port /dev/cu.usbmodem
 
 ```bash
 cd devices/xiao_esp32s3_temp_sensor
-cargo test --manifest-path crates/temp_sensor_core/Cargo.toml --target aarch64-apple-darwin
+cargo test --lib --target aarch64-apple-darwin
 ```
 
 カバレッジ対象:
