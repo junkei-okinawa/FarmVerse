@@ -1,3 +1,7 @@
+/// ESP-NOW EOF フレームのペイロード
+/// usb_cdc_receiver の detect_frame_type がこのバイト列で EOF を検出する
+pub const EOF_MARKER: &[u8] = b"EOF!";
+
 /// ESP-NOW 送信用の HASH テキストペイロードを生成する
 ///
 /// usb_cdc_receiver の detect_frame_type が先頭テキストでフレーム種別を識別するため、
@@ -69,6 +73,7 @@ mod tests {
     #[test]
     fn test_eof_marker_literal() {
         // usb_cdc_receiver の detect_frame_type が "EOF!" で EOF を検出する
-        assert_eq!(b"EOF!", b"EOF!");
+        // send_temperature() が EOF_MARKER を使うため、定数変更は必ずテスト失敗につながる
+        assert_eq!(EOF_MARKER, b"EOF!");
     }
 }

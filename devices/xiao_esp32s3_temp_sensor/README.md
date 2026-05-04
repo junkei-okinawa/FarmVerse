@@ -109,8 +109,9 @@ use_deep_sleep = false
 # ESP-NOW 送信先 MAC アドレス (wifi feature 使用時のみ必要)
 receiver_mac = "11:22:33:44:55:66"
 
-# WiFi チャンネル (0=自動スキャン / 1-13=固定)
-# ゲートウェイ起動ログ "WiFiチャンネル: Primary: N" で確認し固定すると省電力
+# WiFi チャンネル (0=現在の STA チャンネルを使用 / 1-13=固定)
+# ゲートウェイ起動ログ "WiFiチャンネル: Primary: N" で確認して一致させると
+# ゲートウェイと同一チャンネルで送信でき、配信ミスを防げる
 wifi_channel = 0
 
 # PHY 再キャリブレーション周期 (deep_sleep=true 時のみ有効)
@@ -180,7 +181,7 @@ cargo test --lib --target <ホストターゲット>
 
 ### 計測 1: 最適化前
 
-**設定**: `wifi_channel = 0` (自動スキャン) / `use_deep_sleep = true` / PHY キャリブレーション NVS 保存なし
+**設定**: `wifi_channel = 0` (STA チャンネル使用) / `use_deep_sleep = true` / PHY キャリブレーション NVS 保存なし
 
 | 状態 | 平均電流 | 最大電流 | サンプル数 |
 |------|----------|----------|----------|
@@ -190,7 +191,7 @@ cargo test --lib --target <ホストターゲット>
 生データ: [docs/ina226_samples_esp32s3_tempsensor.csv](docs/ina226_samples_esp32s3_tempsensor.csv)
 
 アクティブ時の主な電流要因:
-- WiFi チャンネルスキャン (0 = 自動): 全チャンネルをスキャンするため時間・電力を消費
+- チャンネル不一致のリスク (`wifi_channel = 0`): PeerInfo.channel = 0 はゲートウェイと異なるチャンネルで送信される場合があり、配信失敗・再送が電力を消費
 - PHY フルキャリブレーション: 毎起動実行 (NVS 保存なし)
 - ESP-NOW TX: ピーク ~350 mA / 約 4 ms → 1 秒平均では ~90 mA に収束
 
@@ -206,7 +207,7 @@ cargo test --lib --target <ホストターゲット>
 生データ: [docs/ina226_samples_esp32s3_tempsensor_2.csv](docs/ina226_samples_esp32s3_tempsensor_2.csv)
 
 改善の内訳:
-- チャンネルスキャン廃止 (`wifi_channel = 1`): 約 100 ms・数十 mAs を削減 → **最大の改善要因**
+- ゲートウェイチャンネルを固定 (`wifi_channel = 1`): PeerInfo.channel をゲートウェイと一致させることで配信成功率が向上し、再送による消費電力を大幅に削減 → **最大の改善要因**
 - PHY キャリブレーション NVS キャッシュ: 約 100 ms・35 mAs を削減
 - 温度計測を WiFi 起動前に実施: 計測失敗時は WiFi をスキップして省電力
 

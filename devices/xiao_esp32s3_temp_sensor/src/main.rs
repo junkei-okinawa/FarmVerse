@@ -5,7 +5,7 @@ use simple_ds18b20_temp_sensor::TempSensor;
 
 mod utils;
 #[cfg(feature = "wifi")]
-use utils::{format_hash_payload, needs_recalibration, parse_mac};
+use utils::{format_hash_payload, needs_recalibration, parse_mac, EOF_MARKER};
 
 #[toml_cfg::toml_config]
 struct Config {
@@ -354,7 +354,7 @@ fn send_temperature(
     FreeRtos::delay_ms(50);
 
     info!("Sending EOF");
-    esp_now.send(peer_mac, b"EOF!")?;
+    esp_now.send(peer_mac, EOF_MARKER)?;
 
     info!("ESP-NOW send complete");
     Ok(())
