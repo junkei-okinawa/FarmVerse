@@ -172,12 +172,15 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.protocol.cycle_tracker.get_state(sender_mac))
 
     async def test_dry_run_skips_finalize_image_stream(self):
-        """DRY_RUN モードでは finalize_image_stream が呼ばれないことをテスト"""
+        """DRY_RUN モードでは finalize_image_stream が呼ばれず abort_stream でクリーンアップされることをテスト"""
         sender_mac = "01:02:03:04:05:06"
         seq_num = 110
 
         self.protocol.streaming_processor.finalize_image_stream = AsyncMock(return_value="/tmp/img.jpg")
+        self.protocol.streaming_processor.abort_stream = AsyncMock()
         self.protocol._send_sleep_command_after_eof = AsyncMock()
+        # 画像ありデバイスとして扱う
+        self.protocol.has_image_data_cache[sender_mac] = True
 
         with patch('protocol.streaming_handler.config') as mock_config:
             mock_config.DRY_RUN = True
@@ -190,6 +193,8 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
 
         # DRY_RUN なので finalize_image_stream は呼ばれない
         self.protocol.streaming_processor.finalize_image_stream.assert_not_called()
+        # クリーンアップのために abort_stream が呼ばれる
+        self.protocol.streaming_processor.abort_stream.assert_awaited_once_with(sender_mac, "DRY_RUN mode")
         # スリープコマンド処理は呼ばれる
         self.protocol._send_sleep_command_after_eof.assert_awaited_once_with(sender_mac)
 
