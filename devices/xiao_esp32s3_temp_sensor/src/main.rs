@@ -142,7 +142,7 @@ fn sleep_or_delay(interval_s: u32) {
         info!("Deep sleep for {}s (restart after wakeup)", interval_s);
         unsafe {
             // DS18B20 電源ピン (GPIO2) を明示的に LOW にしてからスリープ。
-            // TempSensor が計測後に HIGH を残す可能性があり、4.7kΩ プルアップ経由で
+            // TempSensor が計測後に HIGH を残す可能性があり、1kΩ プルアップ経由で
             // 電流が流れ続けることを防ぐ。
             esp_idf_svc::sys::gpio_set_level(POWER_PIN, 0);
             esp_idf_svc::sys::esp_deep_sleep((interval_s as u64) * 1_000_000);
