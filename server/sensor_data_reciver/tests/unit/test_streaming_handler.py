@@ -198,6 +198,28 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
         # スリープコマンド処理は呼ばれる
         self.protocol._send_sleep_command_after_eof.assert_awaited_once_with(sender_mac)
 
+    async def test_no_image_sender_with_stale_active_stream_calls_abort(self):
+        """has_image=False でも active_streams に残留がある場合は abort_stream を呼ぶことをテスト"""
+        sender_mac = "01:02:03:04:05:06"
+        seq_num = 111
+
+        # active_streams に残留を模擬
+        self.protocol.streaming_processor.active_streams = {sender_mac: MagicMock()}
+        self.protocol.streaming_processor.abort_stream = AsyncMock()
+        self.protocol.streaming_processor.finalize_image_stream = AsyncMock()
+        self.protocol._send_sleep_command_after_eof = AsyncMock()
+        # 画像なしデバイスとして扱う
+        self.protocol.has_image_data_cache[sender_mac] = False
+
+        await self.protocol._process_streaming_eof_frame(sender_mac, seq_num)
+
+        # 残留ストリームのクリーンアップが行われる
+        self.protocol.streaming_processor.abort_stream.assert_awaited_once_with(
+            sender_mac, "no image expected"
+        )
+        # finalize は呼ばれない
+        self.protocol.streaming_processor.finalize_image_stream.assert_not_called()
+
     async def test_dry_run_send_sleep_command_skips_write(self):
         """DRY_RUN モードでは _send_sleep_command が transport.write を呼ばないことをテスト"""
         sender_mac = "01:02:03:04:05:06"
