@@ -11,3 +11,17 @@ use_deep_sleep = false
 
 # ESP-NOW 送信先 MAC アドレス (wifi feature 使用時のみ必要)
 receiver_mac = "11:22:33:44:55:66"
+
+# ESP-NOW チャンネル番号 (wifi feature 使用時のみ参照)
+#   0  : 自動 (ESP32-C3 が使用中のチャンネルに自動追従)
+#   1-13: 固定チャンネル (ゲートウェイ起動ログ "WiFiチャンネル: Primary: N" で確認)
+#         チャンネル固定により WiFi 起動時のチャンネルスキャンをスキップし
+#         約 100ms・数十 mAs の消費を削減できる
+wifi_channel = 0
+
+# PHY 強制再キャリブレーション周期 (wifi feature + use_deep_sleep=true の時のみ有効)
+#   N  : N サイクルごとに NVS のキャリブレーションデータを消去し再キャリブレーションを実施
+#   0  : 定期再キャリブレーションを無効化
+# 温度変化・経時変化による RF 性能低下を防ぐため 100 サイクル程度が推奨
+# WiFi 初期化エラー発生時も自動的に再キャリブレーションを試みる
+recalibration_interval = 100

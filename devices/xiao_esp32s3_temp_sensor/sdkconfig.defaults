@@ -4,3 +4,8 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16000
 # XIAO ESP32-S3 は USB Serial/JTAG 経由でログ出力 (UART チップ非搭載)
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# PHY キャリブレーション結果を NVS に保存し Deep Sleep 復帰時のフルキャリブレーションをスキップ
+# → 起動時間を約 100ms 短縮、消費電流を約 35 mAs 削減
+# 定期的な強制再キャリブレーションは recalibration_interval (cfg.toml) で制御
+CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE=y
