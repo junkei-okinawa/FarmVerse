@@ -56,6 +56,12 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
+    // Deep Sleep 復帰時: 前回スリープ前に設定した gpio_hold を解除する。
+    // hold が残ったままだと gpio_set_level 等の操作が無効になる。
+    if CONFIG.use_deep_sleep {
+        unsafe { esp_idf_svc::sys::gpio_hold_dis(POWER_PIN) };
+    }
+
     info!(
         "XIAO ESP32-S3 DS18B20 starting \
          (power=GPIO{}, data=GPIO{}, interval={}s, deep_sleep={})",
@@ -144,7 +150,9 @@ fn sleep_or_delay(interval_s: u32) {
             // DS18B20 電源ピン (GPIO2) を明示的に LOW にしてからスリープ。
             // TempSensor が計測後に HIGH を残す可能性があり、1kΩ プルアップ経由で
             // 電流が流れ続けることを防ぐ。
+            // gpio_hold_en でスリープ中も LOW を保持する (xiao_esp32s3_sense と同パターン)。
             esp_idf_svc::sys::gpio_set_level(POWER_PIN, 0);
+            esp_idf_svc::sys::gpio_hold_en(POWER_PIN);
             esp_idf_svc::sys::esp_deep_sleep((interval_s as u64) * 1_000_000);
         }
         // esp_deep_sleep() は戻らない
