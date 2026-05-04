@@ -34,10 +34,10 @@ XIAO ESP32-S3         DS18B20
 │             │   │   │          │
 │ GND ────────┼───┼───┤ GND      │
 └─────────────┘   │   └──────────┘
-                  ├── 4.7kΩ ── 3.3V   ← プルアップ抵抗 (必須)
+                  ├── 1kΩ ── 3.3V   ← プルアップ抵抗 (必須)
 ```
 
-> **注意**: DATA ライン (GPIO4) と 3.3V の間に **4.7kΩ のプルアップ抵抗**が必要。
+> **注意**: DATA ライン (GPIO4) と 3.3V の間に **1kΩ のプルアップ抵抗**が必要。
 
 ### GPIO 割り当て
 
@@ -188,7 +188,8 @@ XIAO ESP32-S3        XIAO ESP32-C3 (usb_cdc_receiver)      PC (sensor_data_reciv
      │                          │                                      │
      │── ESP-NOW (生テキスト) ──>│                                      │
      │                          │── USB CDC (バイナリフレーム) ────────>│
-     │                          │   [START][MAC][TYPE][LEN][DATA]...   │
+     │                          │   [START][MAC][TYPE][SEQ][LEN]       │
+     │                          │   [DATA][CHECKSUM][END]              │
      │                          │                                      │ InfluxDB 書き込み
 ```
 

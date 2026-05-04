@@ -30,7 +30,7 @@ struct Config {
 
 // GPIO アサイン (XIAO ESP32-S3)
 //   D1 = GPIO2 : DS18B20 電源制御
-//   D3 = GPIO4 : DS18B20 1-Wire データ (4.7kΩ プルアップ必要)
+//   D3 = GPIO4 : DS18B20 1-Wire データ (1kΩ プルアップ必要)
 const POWER_PIN: i32 = 2;
 const DATA_PIN: i32 = 4;
 
@@ -61,6 +61,14 @@ fn main() -> Result<()> {
          (power=GPIO{}, data=GPIO{}, interval={}s, deep_sleep={})",
         POWER_PIN, DATA_PIN, CONFIG.measure_interval_s, CONFIG.use_deep_sleep
     );
+
+    #[cfg(feature = "wifi")]
+    if CONFIG.wifi_channel > 13 {
+        return Err(anyhow::anyhow!(
+            "cfg.toml: wifi_channel は 0..=13 の範囲で設定してください (got {})",
+            CONFIG.wifi_channel
+        ));
+    }
 
     let peripherals = Peripherals::take().unwrap();
     let rmt_channel0 = peripherals.rmt.channel0;
