@@ -270,6 +270,19 @@ fn init_esp_now(
         }
     };
 
+    // esp_wifi_set_storage は esp_wifi_start() 前に呼ぶ必要がある (ESP-IDF 推奨順序)。
+    // start() 後に呼ぶと NVS から読み込んだチャンネル情報が破棄され、
+    // deep sleep モードで毎サイクル再初期化する際に RF チャンネルが不定になる。
+    // ゲートウェイ (usb_cdc_receiver/initialize_wifi) と同じ順序に統一する。
+    unsafe {
+        let st_ret = esp_idf_svc::sys::esp_wifi_set_storage(
+            esp_idf_svc::sys::wifi_storage_t_WIFI_STORAGE_RAM,
+        );
+        if st_ret != esp_idf_svc::sys::ESP_OK {
+            log::warn!("esp_wifi_set_storage failed: {}", st_ret);
+        }
+    }
+
     let mut wifi = BlockingWifi::wrap(esp_wifi, sysloop)?;
 
     wifi.set_configuration(&Configuration::Client(ClientConfiguration {
@@ -297,12 +310,6 @@ fn init_esp_now(
             esp_idf_svc::sys::esp_wifi_set_ps(esp_idf_svc::sys::wifi_ps_type_t_WIFI_PS_NONE);
         if ps_ret != esp_idf_svc::sys::ESP_OK {
             log::warn!("esp_wifi_set_ps failed: {}", ps_ret);
-        }
-        let st_ret = esp_idf_svc::sys::esp_wifi_set_storage(
-            esp_idf_svc::sys::wifi_storage_t_WIFI_STORAGE_RAM,
-        );
-        if st_ret != esp_idf_svc::sys::ESP_OK {
-            log::warn!("esp_wifi_set_storage failed: {}", st_ret);
         }
     }
 
@@ -348,6 +355,12 @@ fn send_temperature(
     // TDS_VOLT:-999.0 = TDS センサなしのセンチネル値 (サーバー側で None として扱われる)
     let hash_payload = format_hash_payload(temp);
 
+    // Deep Sleep モード: 温度計測を WiFi 起動前に行うため、送信時点でのラジオ安定待ち時間がない。
+    // non-deep-sleep モードでは温度計測 (~1.4s) がラジオ安定待ちを兼ねている。
+    // esp_now.send() はパケットをキューに入れるだけ (非同期) であるため、
+    // deep sleep 直前の esp_now_deinit() でキューが破棄されないよう十分な待機が必要。
+    FreeRtos::delay_ms(300);
+
     info!("Sending HASH payload ({} bytes)", hash_payload.len());
     esp_now.send(peer_mac, hash_payload.as_bytes())?;
 
@@ -355,6 +368,10 @@ fn send_temperature(
 
     info!("Sending EOF");
     esp_now.send(peer_mac, EOF_MARKER)?;
+
+    // esp_now がドロップされると esp_now_deinit() が呼ばれ未送信パケットが破棄される。
+    // EOF の実際の送信 (~4ms) を完了させてからドロップ・deep sleep に進む。
+    FreeRtos::delay_ms(100);
 
     info!("ESP-NOW send complete");
     Ok(())
