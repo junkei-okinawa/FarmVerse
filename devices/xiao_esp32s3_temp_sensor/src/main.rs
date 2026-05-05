@@ -18,7 +18,7 @@ struct Config {
     /// ESP-NOW 送信先 MAC アドレス (wifi feature 使用時のみ参照)
     #[default("11:22:33:44:55:66")]
     receiver_mac: &'static str,
-    /// ESP-NOW チャンネル番号 (0 = 自動、1-13 = 固定)
+    /// ESP-NOW チャンネル番号 (0 = 現在の STA チャンネル、1-13 = 固定)
     /// ゲートウェイ (usb_cdc_receiver) の起動ログ "WiFiチャンネル: Primary: N" で確認
     #[default(0)]
     wifi_channel: u8,
@@ -227,7 +227,7 @@ extern "C" {
 fn erase_phy_calibration() {
     let ret = unsafe { esp_phy_erase_cal_data_in_nvs() };
     if ret == esp_idf_svc::sys::ESP_OK {
-        info!("PHY calibration data erased (full recalibration on next boot)");
+        info!("PHY calibration data erased (full recalibration on next WiFi init)");
     } else {
         log::warn!("esp_phy_erase_cal_data_in_nvs failed: {}", ret);
     }
@@ -312,7 +312,7 @@ fn init_esp_now(
 
     let peer_info = esp_idf_svc::espnow::PeerInfo {
         peer_addr: peer_mac,
-        channel: CONFIG.wifi_channel, // cfg.toml で設定 (0 = 自動、1-13 = 固定)
+        channel: CONFIG.wifi_channel, // cfg.toml で設定 (0 = 現在の STA チャンネル、1-13 = 固定)
         ifidx: esp_idf_svc::wifi::WifiDeviceId::Sta.into(),
         encrypt: false,
         lmk: [0u8; 16],
@@ -321,7 +321,7 @@ fn init_esp_now(
     esp_now.add_peer(peer_info)?;
 
     let ch_str = if CONFIG.wifi_channel == 0 {
-        "auto".to_string()
+        "sta-channel".to_string()
     } else {
         CONFIG.wifi_channel.to_string()
     };
