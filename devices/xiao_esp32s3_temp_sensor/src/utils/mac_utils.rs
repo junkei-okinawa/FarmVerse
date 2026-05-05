@@ -6,6 +6,9 @@ pub fn parse_mac(s: &str) -> Option<[u8; 6]> {
     }
     let mut mac = [0u8; 6];
     for (i, p) in parts.iter().enumerate() {
+        if p.len() != 2 {
+            return None;
+        }
         mac[i] = u8::from_str_radix(p, 16).ok()?;
     }
     Some(mac)
@@ -64,5 +67,16 @@ mod tests {
     #[test]
     fn test_parse_mac_wrong_delimiter() {
         assert_eq!(parse_mac("11-22-33-44-55-66"), None);
+    }
+
+    #[test]
+    fn test_parse_mac_single_digit_segments() {
+        // 各セグメントは必ず 2 桁の hex でなければならない
+        assert_eq!(parse_mac("1:2:3:4:5:6"), None);
+    }
+
+    #[test]
+    fn test_parse_mac_three_digit_segment() {
+        assert_eq!(parse_mac("111:22:33:44:55:66"), None);
     }
 }
