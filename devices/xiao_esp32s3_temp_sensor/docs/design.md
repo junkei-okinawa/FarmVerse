@@ -26,18 +26,18 @@ XIAO ESP32-S3 で DS18B20 温度センサーを使い、定期的に温度を計
 ```
 XIAO ESP32-S3         DS18B20
 ┌─────────────┐       ┌──────────┐
-│ 3.3V ───────┼───┬───┤ VCC      │
-│             │   │   │          │
-│ D1 (GPIO2) ─┼───┘   │          │  ← 電源制御ピン (計測時のみ HIGH)
+│ D1 (GPIO2) ─┼──┬────┤ VCC      │  ← 電源制御ピン (計測時のみ HIGH)
+│             │  │    │          │
+│             │ [1kΩ]  │          │  ← プルアップ (GPIO2 を基準)
+│             │  │    │          │
+│ D3 (GPIO4) ─┼──┴────┤ DATA     │  ← 1-Wire データ (RMT channel0)
 │             │       │          │
-│ D3 (GPIO4) ─┼───┬───┤ DATA     │  ← 1-Wire データ (RMT channel0)
-│             │   │   │          │
-│ GND ────────┼───┼───┤ GND      │
-└─────────────┘   │   └──────────┘
-                  ├── 4.7kΩ ── 3.3V   ← プルアップ抵抗 (必須)
+│ GND ────────┼───────┤ GND      │
+└─────────────┘       └──────────┘
 ```
 
-> **注意**: DATA ライン (GPIO4) と 3.3V の間に **4.7kΩ のプルアップ抵抗**が必要。
+> **注意**: プルアップ抵抗 (1kΩ) は DATA (GPIO4) と **GPIO2 (電源制御ピン)** の間に接続する。
+> 3.3V に接続すると、スリープ前に GPIO2 を LOW にしても DATA 経由でリーク電流が流れ続ける。
 
 ### GPIO 割り当て
 
@@ -181,44 +181,41 @@ cargo run --features wifi
 
 ## Phase 2: ESP-NOW プロトコル仕様
 
-`sensor_data_reciver` の USB CDC フレームプロトコルに準拠  
-(`devices/xiao_esp32s3_sense/src/communication/esp_now/sender.rs` と同一実装)
-
-### フレーム構造
+### アーキテクチャ概要
 
 ```
-[START(4B)][MAC(6B)][TYPE(1B)][SEQ(4B LE)][LEN(4B LE)][DATA][CHECKSUM(4B LE)][END(4B)]
+XIAO ESP32-S3        XIAO ESP32-C3 (usb_cdc_receiver)      PC (sensor_data_reciver)
+     │                          │                                      │
+     │── ESP-NOW (生テキスト) ──>│                                      │
+     │                          │── USB CDC (バイナリフレーム) ────────>│
+     │                          │   [START][MAC][TYPE][SEQ][LEN]       │
+     │                          │   [DATA][CHECKSUM][END]              │
+     │                          │                                      │ InfluxDB 書き込み
 ```
 
-| フィールド | サイズ | 値 |
-|-----------|--------|-----|
-| START_MARKER | 4B | `0xFA 0xCE 0xAA 0xBB` |
-| MAC | 6B | 送信元 WiFi STA MAC |
-| TYPE | 1B | 1=HASH, 2=DATA, 3=EOF |
-| SEQ | 4B LE | シーケンス番号 |
-| LEN | 4B LE | DATA バイト数 |
-| DATA | 可変 | ペイロード |
-| CHECKSUM | 4B LE | XOR チェックサム |
-| END_MARKER | 4B | `0xCD 0xEF 0x56 0x78` |
+**ESP-NOW ペイロードは生テキスト**で送信する。バイナリフレームへのラップは
+ESP32-C3 (`usb_cdc_receiver`) が USB CDC 送信時に自動的に行う。
 
-### チェックサムアルゴリズム
-
-DATA を 4 バイト単位のリトルエンディアン u32 として XOR をとる (末尾は 0 パディング)。
+ESP32-C3 の `detect_frame_type` は ESP-NOW ペイロードの先頭テキストで種別を判定:
+- `"HASH:"` で始まる → Hash フレームとして中継
+- `"EOF!"` (4 バイト) → Eof フレームとして中継
+- その他 → Data フレームとして中継 (温度センサでは使用しない)
 
 ### 温度送信シーケンス
 
 ```
-ESP32-S3                    sensor_data_reciver
-    │                               │
-    │── HASH frame (type=1) ───────>│
-    │   payload: "HASH:000...0,VOLT:100,TEMP:25.5,TDS_VOLT:-999.0,..."
-    │                               │
-    │  (50ms 待機)                  │
-    │                               │
-    │── EOF frame (type=3) ────────>│
-    │   payload: "EOF"              │
-    │                               │
-    │                               │ InfluxDB に temperature 書き込み
+XIAO ESP32-S3          ESP32-C3 (usb_cdc_receiver)   sensor_data_reciver
+    │                           │                            │
+    │── ESP-NOW ──────────────>│                            │
+    │  "HASH:000...0,VOLT:100, │                            │
+    │   TEMP:25.5,TDS_VOLT:    │                            │
+    │   -999.0,..."            │── USB CDC フレーム ────────>│
+    │                           │  (バイナリラップ済み)       │
+    │  (50ms 待機)              │                            │
+    │                           │                            │
+    │── ESP-NOW ──────────────>│                            │
+    │  "EOF!" (4バイト)         │── USB CDC フレーム ────────>│
+    │                           │                            │ InfluxDB に temperature 書き込み
 ```
 
 ### HASH ペイロード仕様
@@ -233,11 +230,24 @@ ESP32-S3                    sensor_data_reciver
 ### ESP-NOW ペイロードサイズ検証
 
 ```
-フレームオーバーヘッド: 4 + 6 + 1 + 4 + 4 + 4 + 4 = 27 バイト
-HASH ペイロード最大: ~92 バイト
-合計 HASH フレーム: ~119 バイト  ← ESP-NOW 上限 250 バイト以内 ✓
-EOF フレーム: 30 バイト          ← ESP-NOW 上限 250 バイト以内 ✓
+HASH ペイロード: ~128 バイト  ← ESP-NOW 上限 250 バイト以内 ✓
+EOF ペイロード:    4 バイト   ← ESP-NOW 上限 250 バイト以内 ✓
 ```
+
+### USB CDC フレーム構造 (ESP32-C3 が付与)
+
+ESP32-C3 が USB CDC 送信時に付与するバイナリフレームの参考情報:
+
+```
+[START(4B)][MAC(6B)][TYPE(1B)][SEQ(4B LE)][LEN(4B LE)][DATA][CHECKSUM(4B LE)][END(4B)]
+```
+
+| フィールド | 値 |
+|-----------|-----|
+| START_MARKER | `0xFA 0xCE 0xAA 0xBB` |
+| MAC | ESP-NOW 送信元 MAC (ESP32-S3 の STA MAC) |
+| TYPE | 1=HASH, 3=EOF |
+| DATA | ESP-NOW ペイロード (生テキスト) |
 
 ---
 
