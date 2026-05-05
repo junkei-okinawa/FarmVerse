@@ -355,11 +355,13 @@ fn send_temperature(
     // TDS_VOLT:-999.0 = TDS センサなしのセンチネル値 (サーバー側で None として扱われる)
     let hash_payload = format_hash_payload(temp);
 
-    // Deep Sleep モード: 温度計測を WiFi 起動前に行うため、送信時点でのラジオ安定待ち時間がない。
-    // non-deep-sleep モードでは温度計測 (~1.4s) がラジオ安定待ちを兼ねている。
-    // esp_now.send() はパケットをキューに入れるだけ (非同期) であるため、
-    // deep sleep 直前の esp_now_deinit() でキューが破棄されないよう十分な待機が必要。
-    FreeRtos::delay_ms(300);
+    // Deep Sleep モード限定の待機:
+    // - 送信前 300ms: WiFi を毎サイクル初期化するため温度計測がラジオ安定待ちを兼ねられない。
+    // - 送信後 100ms: esp_now ドロップ時の esp_now_deinit() でキュー破棄を防ぐ。
+    // FreeRTOS モード: WiFi は起動時に一度だけ初期化されラジオは既に安定しているため不要。
+    if CONFIG.use_deep_sleep {
+        FreeRtos::delay_ms(300);
+    }
 
     info!("Sending HASH payload ({} bytes)", hash_payload.len());
     esp_now.send(peer_mac, hash_payload.as_bytes())?;
@@ -369,9 +371,11 @@ fn send_temperature(
     info!("Sending EOF");
     esp_now.send(peer_mac, EOF_MARKER)?;
 
-    // esp_now がドロップされると esp_now_deinit() が呼ばれ未送信パケットが破棄される。
-    // EOF の実際の送信 (~4ms) を完了させてからドロップ・deep sleep に進む。
-    FreeRtos::delay_ms(100);
+    if CONFIG.use_deep_sleep {
+        // esp_now がドロップされると esp_now_deinit() が呼ばれ未送信パケットが破棄される。
+        // EOF の実際の送信 (~4ms) を完了させてからドロップ・deep sleep に進む。
+        FreeRtos::delay_ms(100);
+    }
 
     info!("ESP-NOW send complete");
     Ok(())
