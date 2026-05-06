@@ -2,7 +2,6 @@
 /// 
 /// ESP-NOWの競合を回避するため、スリープコマンドを順序化して送信します。
 
-use esp_idf_svc::hal::delay::FreeRtos;
 use heapless::Deque;
 use log::{info, warn, error};
 use crate::esp_now::sender::EspNowSender;

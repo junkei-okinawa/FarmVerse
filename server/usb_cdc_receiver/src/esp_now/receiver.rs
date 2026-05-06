@@ -1,4 +1,4 @@
-use crate::esp_now::frame::{create_frame, detect_frame_type};
+use crate::esp_now::frame::{create_frame, detect_frame_type, is_preframed};
 use crate::esp_now::FrameType;
 use crate::mac_address::format_mac_address;
 use crate::queue::ReceivedData;
@@ -89,33 +89,45 @@ where
     // データスライスの取得
     let data_slice = unsafe { slice::from_raw_parts(data, data_len as usize) };
 
-    // フレームタイプの検出
-    let frame_type = detect_frame_type(data_slice);
-    let is_eof = frame_type == FrameType::Eof;
-    let is_hash = frame_type == FrameType::Hash;
+    // フレーム化 or パススルー判定
+    //
+    // ESP-NOW ペイロードが既に START_MARKER (0xFACEAABB) で始まるバイナリフレームの場合
+    // (例: m5stack_unit_cam が自前でフレーム化して送信)、再ラップせずそのまま USB CDC に転送する。
+    // 再ラップすると外側フレームの DATA ペイロードにフレーム構造体が入り込み、
+    // サーバー側で生 JPEG データとして解釈されて画像が破損する。
+    //
+    // テキスト形式 ("HASH:...", "EOF!") は従来どおりバイナリフレームに包んで転送する。
+    let (framed_data, drop_label, is_critical_eof) = if is_preframed(data_slice) {
+        debug!(
+            "ESP-NOW CB [{}]: Pre-framed binary payload ({} bytes), forwarding without re-wrapping.",
+            mac_str, data_len
+        );
+        (data_slice.to_vec(), "preframed", false)
+    } else {
+        let frame_type = detect_frame_type(data_slice);
+        let is_eof = frame_type == FrameType::Eof;
+        let is_hash = frame_type == FrameType::Hash;
 
-    // 特殊フレーム（EOFやHASH）のログ出力
-    if is_eof {
-        warn!("ESP-NOW CB [{}]: Received EOF marker (b\"EOF!\").", mac_str);
-    } else if is_hash {
-        warn!("ESP-NOW CB [{}]: Received HASH marker.", mac_str);
-    }
+        if is_eof {
+            warn!("ESP-NOW CB [{}]: Received EOF marker (b\"EOF!\").", mac_str);
+        } else if is_hash {
+            warn!("ESP-NOW CB [{}]: Received HASH marker.", mac_str);
+        }
 
-    // シーケンス番号の取得（EOFまたはHASHでリセット）
-    let seq_num = get_sequence_number(mac_array, is_eof || is_hash);
+        let seq_num = get_sequence_number(mac_array, is_eof || is_hash);
+        let framed = create_frame(mac_array, data_slice, frame_type, seq_num);
 
-    // データをフレーム化
-    let framed_data = create_frame(mac_array, data_slice, frame_type, seq_num);
+        debug!(
+            "ESP-NOW CB [{}]: Received chunk ({} bytes, type={}, seq={}). Framed: {} bytes.",
+            mac_str,
+            data_len,
+            frame_type.as_str(),
+            seq_num,
+            framed.len()
+        );
 
-    // デバッグログ
-    debug!(
-        "ESP-NOW CB [{}]: Received chunk ({} bytes, type={}, seq={}). Framed: {} bytes.",
-        mac_str,
-        data_len,
-        frame_type.as_str(),
-        seq_num,
-        framed_data.len()
-    );
+        (framed, frame_type.as_str(), is_eof)
+    };
 
     // フレーム化されたデータをキューに追加
     let received_data = ReceivedData {
@@ -127,16 +139,11 @@ where
     let success = producer(received_data);
 
     if !success {
-        // キューへの追加が失敗した場合
         warn!(
-            "ESP-NOW CB [{}]: Data queue full! Dropping {} frame (seq={}).",
-            mac_str,
-            frame_type.as_str(),
-            seq_num
+            "ESP-NOW CB [{}]: Data queue full! Dropping {} frame.",
+            mac_str, drop_label
         );
-
-        // EOFフレームが落とされた場合は特に重要なので強調
-        if is_eof {
+        if is_critical_eof {
             error!(
                 "ESP-NOW CB [{}]: CRITICAL! EOF frame dropped due to queue full!",
                 mac_str
