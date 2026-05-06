@@ -24,6 +24,7 @@ use log::{debug, error, info, warn};
 use mac_address::format_mac_address;
 use sleep_command_queue::{init_sleep_command_queue, enqueue_sleep_command, process_sleep_command_queue};
 use usb::cdc::UsbCdc;
+use usb::UsbInterface;
 
 // PythonからのコマンドやESP-NOWのデータを橋渡しするグローバルコントローラー
 // NOTE: A global `STREAMING_CONTROLLER` was previously defined here to bridge
