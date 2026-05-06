@@ -299,14 +299,22 @@ pub fn detect_frame_type(data: &[u8]) -> FrameType {
     if data.len() == 4 && data == b"EOF!" {
         return FrameType::Eof;
     }
-    
+
     // HASH判定: "HASH:"で始まる場合
     if data.len() > 5 && data.starts_with(b"HASH:") {
         return FrameType::Hash;
     }
-    
+
     // それ以外はデータフレーム
     FrameType::Data
+}
+
+/// ESP-NOW ペイロードが既にバイナリフレーム形式かどうかを判定する
+///
+/// START_MARKER (`0xFACEAABB`) で始まる場合、m5stack_unit_cam 等が
+/// 自前でフレーム化したペイロードと判断し、再ラップせずそのまま転送する。
+pub fn is_preframed(data: &[u8]) -> bool {
+    data.len() >= MARKER_LEN && data[..MARKER_LEN] == START_MARKER.to_be_bytes()
 }
 
 #[cfg(test)]
@@ -352,5 +360,33 @@ mod tests {
         assert_eq!(detect_frame_type(b"EOF!"), FrameType::Eof);
         assert_eq!(detect_frame_type(b"HASH:12345"), FrameType::Hash);
         assert_eq!(detect_frame_type(b"normal data"), FrameType::Data);
+    }
+
+    #[test]
+    fn test_is_preframed_with_start_marker() {
+        // START_MARKER (0xFACEAABB) で始まるペイロードは preframed と判定される
+        let mut data = vec![0xFA, 0xCE, 0xAA, 0xBB];
+        data.extend_from_slice(b"rest of frame");
+        assert!(is_preframed(&data));
+    }
+
+    #[test]
+    fn test_is_preframed_with_text_payload() {
+        // テキストペイロードは preframed でない
+        assert!(!is_preframed(b"HASH:0000,VOLT:100,TEMP:25.0"));
+        assert!(!is_preframed(b"EOF!"));
+    }
+
+    #[test]
+    fn test_is_preframed_too_short() {
+        // 4 バイト未満は preframed でない
+        assert!(!is_preframed(&[0xFA, 0xCE, 0xAA]));
+        assert!(!is_preframed(&[]));
+    }
+
+    #[test]
+    fn test_is_preframed_exact_marker_only() {
+        // マーカーちょうど 4 バイトでも判定できる
+        assert!(is_preframed(&[0xFA, 0xCE, 0xAA, 0xBB]));
     }
 }
