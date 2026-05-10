@@ -32,7 +32,7 @@ anyhow = "1.0"
 
 # ESP32 ターゲット専用の依存 (ホストテスト時はコンパイル対象外)
 [target.'cfg(any(target_arch = "riscv32", target_arch = "xtensa"))'.dependencies]
-simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor", rev = "74c87a2ee5933c9bc3ac2c6d58c730d909a36356" }
+simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor", rev = "be8e7e2eb090835f15d99a1d035208c01c267dbc" }
 esp-idf-svc = "0.51.0"
 esp-idf-sys = "0.36"
 toml-cfg = "=0.2"
