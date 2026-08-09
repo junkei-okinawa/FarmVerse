@@ -260,15 +260,21 @@ fn init_esp_now(
     };
 
     // Deep Sleep モード: 周期的 PHY 再キャリブレーション
-    if CONFIG.use_deep_sleep && should_force_recalibrate() {
-        erase_phy_calibration();
-    }
+    // should_force_recalibrate() は RTC メモリのみアクセスするため NVS 初期化前でも安全。
+    // ただし erase_phy_calibration() は NVS に書き込むため、take() 後まで遅延させる。
+    let should_recal = CONFIG.use_deep_sleep && should_force_recalibrate();
 
     let peer_mac = parse_mac(CONFIG.receiver_mac)
         .ok_or_else(|| anyhow::anyhow!("cfg.toml の receiver_mac が不正 (形式: XX:XX:XX:XX:XX:XX)"))?;
 
     let sysloop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
+
+    // NVS 初期化後に PHY キャリブレーションデータを消去する。
+    // (以前は take() 前に呼んでいたため ESP_ERR_NVS_PART_NOT_FOUND で常に失敗していた)
+    if should_recal {
+        erase_phy_calibration();
+    }
 
     // EspWifi 初期化: 失敗時は PHY キャリブレーションデータを消去して次回起動でリカバリ
     let esp_wifi = match EspWifi::new(modem, sysloop.clone(), Some(nvs)) {
@@ -326,6 +332,15 @@ fn init_esp_now(
     Box::leak(Box::new(wifi));
 
     let esp_now = EspNow::take()?;
+
+    // 送信結果コールバック: 受信側が MAC ACK を返したか確認する診断ログ
+    // FAIL が出る場合は受信機がチャンネル不一致・電源 OFF または範囲外
+    esp_now.register_send_cb(|mac, status| {
+        info!(
+            "ESP-NOW TX: {:?} → {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+            status, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        );
+    })?;
 
     let peer_info = esp_idf_svc::espnow::PeerInfo {
         peer_addr: peer_mac,
