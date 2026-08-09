@@ -22,7 +22,7 @@ debug = true
 opt-level = "z"
 
 [features]
-default = []
+default = ["wifi"]
 wifi = []
 
 # ホスト (テスト用) で必要な依存のみ
@@ -32,7 +32,7 @@ anyhow = "1.0"
 
 # ESP32 ターゲット専用の依存 (ホストテスト時はコンパイル対象外)
 [target.'cfg(any(target_arch = "riscv32", target_arch = "xtensa"))'.dependencies]
-simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor", rev = "be8e7e2eb090835f15d99a1d035208c01c267dbc" }
+simple_ds18b20_temp_sensor = { git = "https://github.com/junkei-okinawa/esp-temp-sensor", rev = "7ea2403c0f4cbff38d4f18f2db5c8a9495aa436a" }
 esp-idf-svc = "0.51.0"
 esp-idf-sys = "0.36"
 toml-cfg = "=0.2"

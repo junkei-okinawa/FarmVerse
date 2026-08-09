@@ -106,7 +106,12 @@ measure_interval_s = 600
 # Deep Sleep: true = 省電力, false = FreeRTOS delay (USB モニタリング可)
 use_deep_sleep = false
 
-# ESP-NOW 送信先 MAC アドレス (wifi feature 使用時のみ必要)
+# WiFi/ESP-NOW 送信有効フラグ (デフォルト: true)
+# false にするとコンパイルはされるが WiFi 初期化・送信をスキップ (デバッグ用)
+# バイナリから WiFi コードを完全に除外したい場合は --no-default-features でビルドする
+# enable_wifi = true
+
+# ESP-NOW 送信先 MAC アドレス
 receiver_mac = "11:22:33:44:55:66"
 
 # WiFi チャンネル (0=現在の STA チャンネルを使用 / 1-13=固定)
@@ -128,13 +133,16 @@ cd devices/xiao_esp32s3_temp_sensor
 . ~/.espressif/esp-idf/v5.3.2/export.sh
 . ~/export-esp.sh
 
-# WiFi なし (ログのみ確認)
-cargo espflash flash --release --monitor --port <ターゲットポート>
-
-# ESP-NOW 送信あり
+# 通常ビルド (WiFi/ESP-NOW 送信あり, デフォルト)
 cp cfg.toml.template cfg.toml
 # cfg.toml の receiver_mac をゲートウェイ MAC に設定してから:
-cargo espflash flash --features wifi --release --monitor --port <ターゲットポート>
+cargo espflash flash --release --monitor --port <ターゲットポート>
+
+# WiFi なし・温度計測のみ確認したい場合は、cfg.toml で enable_wifi = false に設定してから
+# 上記と同じコマンドでビルドする (ビルドコマンド自体は変わらない)
+
+# WiFi コードをバイナリから完全除外 (最小バイナリ)
+cargo espflash flash --no-default-features --release --monitor --port <ターゲットポート>
 ```
 
 ## テスト
