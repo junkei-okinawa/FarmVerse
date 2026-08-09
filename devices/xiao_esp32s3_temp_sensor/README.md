@@ -138,8 +138,8 @@ cp cfg.toml.template cfg.toml
 # cfg.toml の receiver_mac をゲートウェイ MAC に設定してから:
 cargo espflash flash --release --monitor --port <ターゲットポート>
 
-# WiFi なし (ログのみ確認・cfg.toml で enable_wifi = false を設定)
-cargo espflash flash --release --monitor --port <ターゲットポート>
+# WiFi なし・温度計測のみ確認したい場合は、cfg.toml で enable_wifi = false に設定してから
+# 上記と同じコマンドでビルドする (ビルドコマンド自体は変わらない)
 
 # WiFi コードをバイナリから完全除外 (最小バイナリ)
 cargo espflash flash --no-default-features --release --monitor --port <ターゲットポート>
