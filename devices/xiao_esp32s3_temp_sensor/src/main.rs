@@ -15,6 +15,11 @@ struct Config {
     /// Deep Sleep 使用フラグ (true: 省電力, false: FreeRTOS delay)
     #[default(false)]
     use_deep_sleep: bool,
+    /// WiFi/ESP-NOW 送信を有効にするフラグ
+    /// false にするとコンパイルはされるが WiFi 初期化・送信をスキップ (デバッグ用)
+    /// 完全にバイナリから除外したい場合は --no-default-features でビルドする
+    #[default(true)]
+    enable_wifi: bool,
     /// ESP-NOW 送信先 MAC アドレス (wifi feature 使用時のみ参照)
     #[default("11:22:33:44:55:66")]
     receiver_mac: &'static str,
@@ -83,11 +88,16 @@ fn main() -> Result<()> {
 
     // FreeRTOS モード: WiFi をループ前に一度だけ初期化してループ全体で再利用する。
     // Deep Sleep モード: ループ内で温度計測後に初期化する (計測失敗時は WiFi をスキップして省電力)。
+    // enable_wifi = false の場合: WiFi を一切初期化せず温度計測のみ実行する。
     #[cfg(feature = "wifi")]
     let (freertos_wifi, mut sleep_modem): (
         Option<(esp_idf_svc::espnow::EspNow<'static>, [u8; 6])>,
         Option<esp_idf_svc::hal::modem::Modem>,
-    ) = if !CONFIG.use_deep_sleep {
+    ) = if !CONFIG.enable_wifi {
+        info!("WiFi disabled (enable_wifi = false in cfg.toml)");
+        drop(modem);
+        (None, None)
+    } else if !CONFIG.use_deep_sleep {
         (Some(init_esp_now(modem)?), None)
     } else {
         (None, Some(modem))
