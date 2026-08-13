@@ -49,6 +49,10 @@ class Config:
     MEDIUM_SLEEP_DURATION_S: int = 3600  # 1 hour for low voltage (12:00未満)
     NORMAL_SLEEP_DURATION_S: int = 600  # 10 minutes for normal voltage
 
+    # Liveness monitoring: サーバー指示のスリープを使わないデバイス（温度センサー等）の想定送信間隔
+    # xiao_esp32s3_temp_sensor の measure_interval_s デフォルト値に合わせる
+    SENSOR_ASSUMED_INTERVAL_S: int = 600
+
 
 # Global configuration instance
 config = Config()

@@ -117,6 +117,34 @@ class TestDataParser:
         result = DataParser.extract_temperature_with_validation(payload, "test:mac")
         assert result is None
 
+    def test_is_temperature_sensor_error_true_for_sentinel(self):
+        """Test sensor error detection - -999 sentinel is flagged as sensor error."""
+        payload = "TEMP:-999"
+
+        result = DataParser.is_temperature_sensor_error(payload)
+        assert result is True
+
+    def test_is_temperature_sensor_error_true_for_partial_sentinel(self):
+        """Test sensor error detection - values containing -999 are flagged."""
+        payload = "TEMP:-999.5"
+
+        result = DataParser.is_temperature_sensor_error(payload)
+        assert result is True
+
+    def test_is_temperature_sensor_error_false_for_normal_value(self):
+        """Test sensor error detection - normal temperature is not flagged."""
+        payload = "TEMP:23.5"
+
+        result = DataParser.is_temperature_sensor_error(payload)
+        assert result is False
+
+    def test_is_temperature_sensor_error_false_when_temp_missing(self):
+        """Test sensor error detection - missing TEMP is not flagged as an error."""
+        payload = "VOLT:75"
+
+        result = DataParser.is_temperature_sensor_error(payload)
+        assert result is False
+
     def test_parse_tds_voltage_data_valid(self):
         """Test TDS voltage parsing with valid data."""
         payload = "HASH:abc123,VOLT:75,TEMP:23.5,TDS_VOLT:0.5"

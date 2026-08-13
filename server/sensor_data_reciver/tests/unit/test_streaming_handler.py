@@ -16,10 +16,11 @@ if sensor_data_receiver_path not in sys.path:
 
 from protocol.streaming_handler import StreamingSerialProtocol
 from protocol.constants import (
-    START_MARKER, SEQUENCE_NUM_LENGTH, 
+    START_MARKER, SEQUENCE_NUM_LENGTH,
     LENGTH_FIELD_BYTES, CHECKSUM_LENGTH, END_MARKER,
     FRAME_TYPE_HASH
 )
+from config import config as app_config
 
 class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
     
@@ -170,6 +171,59 @@ class TestStreamingHandler(unittest.IsolatedAsyncioTestCase):
         await self.protocol._process_streaming_hash_frame(sender_mac, chunk_data, seq_num)
 
         self.assertIsNone(self.protocol.cycle_tracker.get_state(sender_mac))
+
+    async def test_hash_frame_with_image_uses_dynamic_sleep_duration(self):
+        """カメラ系(画像データあり)は determine_sleep_duration の結果を expected_silence_s として使う"""
+        sender_mac = "01:02:03:04:05:06"
+        seq_num = 120
+        chunk_data = b"HASH:realimagehash,VOLT:75,TEMP:23.5"
+        self.protocol.streaming_processor.start_image_stream = AsyncMock()
+
+        with patch(
+            'protocol.streaming_handler.determine_sleep_duration', return_value=12345
+        ) as mock_determine:
+            await self.protocol._process_streaming_hash_frame(sender_mac, chunk_data, seq_num)
+
+        mock_determine.assert_called_once_with(75.0)
+        from protocol import streaming_handler as sh
+        sh.influx_client.write_sensor_data.assert_called_once_with(
+            sender_mac, 75.0, 23.5, None,
+            expected_silence_s=12345,
+            sensor_error_temp=False,
+        )
+
+    async def test_hash_frame_without_image_uses_fixed_sensor_interval(self):
+        """センサー系(ダミーハッシュ、画像データなし)は SENSOR_ASSUMED_INTERVAL_S を expected_silence_s として使う"""
+        sender_mac = "01:02:03:04:05:06"
+        seq_num = 121
+        dummy_hash = "0000000000000000000000000000000000000000000000000000000000000000"
+        chunk_data = f"HASH:{dummy_hash},VOLT:75,TEMP:23.5".encode()
+
+        with patch('protocol.streaming_handler.determine_sleep_duration') as mock_determine:
+            await self.protocol._process_streaming_hash_frame(sender_mac, chunk_data, seq_num)
+
+        mock_determine.assert_not_called()
+        from protocol import streaming_handler as sh
+        sh.influx_client.write_sensor_data.assert_called_once_with(
+            sender_mac, 75.0, 23.5, None,
+            expected_silence_s=app_config.SENSOR_ASSUMED_INTERVAL_S,
+            sensor_error_temp=False,
+        )
+
+    async def test_hash_frame_flags_sensor_error_temp_on_sentinel(self):
+        """TEMP:-999 受信時に sensor_error_temp=True が渡され、temperature 自体は無効値のままであることをテスト"""
+        sender_mac = "01:02:03:04:05:06"
+        seq_num = 122
+        chunk_data = b"HASH:realhash,VOLT:75,TEMP:-999"
+        self.protocol.streaming_processor.start_image_stream = AsyncMock()
+
+        await self.protocol._process_streaming_hash_frame(sender_mac, chunk_data, seq_num)
+
+        from protocol import streaming_handler as sh
+        sh.influx_client.write_sensor_data.assert_called_once()
+        call = sh.influx_client.write_sensor_data.call_args
+        self.assertIsNone(call.args[2])  # temperature は -999 のため None のまま
+        self.assertTrue(call.kwargs['sensor_error_temp'])
 
     async def test_dry_run_skips_finalize_image_stream(self):
         """DRY_RUN モードでは finalize_image_stream が呼ばれず abort_stream でクリーンアップされることをテスト"""

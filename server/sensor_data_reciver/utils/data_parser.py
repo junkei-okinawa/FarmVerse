@@ -144,6 +144,20 @@ class DataParser:
         return None
 
     @staticmethod
+    def is_temperature_sensor_error(payload: str) -> bool:
+        """
+        TEMP:-999 センチネル（センサー読み取り失敗）を検出
+
+        Args:
+            payload: 解析対象のペイロード文字列
+
+        Returns:
+            センサーエラー（-999）を検出した場合True
+        """
+        temp_str = DataParser.extract_value_from_payload(payload, "TEMP:")
+        return temp_str is not None and "-999" in temp_str
+
+    @staticmethod
     def extract_tds_voltage_with_validation(payload: str, sender_mac: str) -> Optional[float]:
         """
         TDS電圧情報を抽出（バリデーション付き）
