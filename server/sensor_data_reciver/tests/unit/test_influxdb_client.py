@@ -77,9 +77,12 @@ class TestInfluxDBClientAsyncTasks:
             client._active_tasks.clear()
             
             # Verify the async methods were called with TDS voltage
-            mock_write_async.assert_called_once_with("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 1.5)
+            mock_write_async.assert_called_once_with(
+                "aa:bb:cc:dd:ee:ff", 85.5, 22.3, 1.5,
+                expected_silence_s=None, sensor_error_temp=False,
+            )
             mock_cleanup.assert_called_once()
-    
+
     @pytest.mark.asyncio
     async def test_cleanup_completed_tasks_removes_done_tasks(self, mock_config, mock_influxdb_client):
         """Test that cleanup removes completed tasks from the active set"""
@@ -264,7 +267,10 @@ class TestInfluxDBClientAsyncTasks:
             client._active_tasks.clear()
             
             # Verify the async methods were called with TDS voltage
-            mock_write_async.assert_called_once_with("aa:bb:cc:dd:ee:ff", 85.5, 22.3, 3.2)
+            mock_write_async.assert_called_once_with(
+                "aa:bb:cc:dd:ee:ff", 85.5, 22.3, 3.2,
+                expected_silence_s=None, sensor_error_temp=False,
+            )
             mock_cleanup.assert_called_once()
 
     @pytest.mark.asyncio
@@ -298,8 +304,51 @@ class TestInfluxDBClientAsyncTasks:
             client._active_tasks.clear()
             
             # Verify the async methods were called with None for TDS voltage
-            mock_write_async.assert_called_once_with("aa:bb:cc:dd:ee:ff", 85.5, 22.3, None)
+            mock_write_async.assert_called_once_with(
+                "aa:bb:cc:dd:ee:ff", 85.5, 22.3, None,
+                expected_silence_s=None, sensor_error_temp=False,
+            )
             mock_cleanup.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_write_sensor_data_async_includes_liveness_fields(self, mock_config, mock_influxdb_client):
+        """Test that expected_silence_s and sensor_error_temp are written as InfluxDB fields"""
+        mock_instance, mock_write_api = mock_influxdb_client
+        mock_instance.health.return_value.status = "pass"
+
+        client = InfluxDBClient()
+
+        await client._write_sensor_data_async(
+            "aa:bb:cc:dd:ee:ff", 85.5, 22.3, 4.4,
+            expected_silence_s=600, sensor_error_temp=False,
+        )
+
+        mock_write_api.write.assert_called_once()
+        written_point = mock_write_api.write.call_args.kwargs["record"]
+        line = written_point.to_line_protocol()
+        assert "expected_silence_s=600i" in line
+        assert "sensor_error_temp=false" in line
+
+    @pytest.mark.asyncio
+    async def test_write_sensor_data_async_flags_sensor_error_without_temperature(
+        self, mock_config, mock_influxdb_client
+    ):
+        """Test that sensor_error_temp=True is written even when temperature itself is None"""
+        mock_instance, mock_write_api = mock_influxdb_client
+        mock_instance.health.return_value.status = "pass"
+
+        client = InfluxDBClient()
+
+        await client._write_sensor_data_async(
+            "aa:bb:cc:dd:ee:ff", 85.5, None, None,
+            expected_silence_s=600, sensor_error_temp=True,
+        )
+
+        mock_write_api.write.assert_called_once()
+        written_point = mock_write_api.write.call_args.kwargs["record"]
+        line = written_point.to_line_protocol()
+        assert "temperature=" not in line
+        assert "sensor_error_temp=true" in line
 
     @pytest.mark.asyncio
     async def test_timeout_does_not_close_client_resources(self, mock_config, mock_influxdb_client):

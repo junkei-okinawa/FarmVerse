@@ -353,6 +353,7 @@ class StreamingSerialProtocol(asyncio.Protocol):
         tds_voltage = DataParser.extract_tds_voltage_with_validation(
             tds_log_entry, sender_mac
         )
+        sensor_error_temp = DataParser.is_temperature_sensor_error(temp_log_entry)
 
         logger.info(
             f"Extracted voltage for {sender_mac}: {voltage}% from '{volt_log_entry}'"
@@ -381,10 +382,25 @@ class StreamingSerialProtocol(asyncio.Protocol):
                 f"No image data expected for {sender_mac} (dummy hash detected)"
             )
 
+        # 生存監視用: 次回通信までに想定される無通信時間を算出
+        # カメラ系(has_image_data=True)はサーバーがEOF後に動的スリープを指示するため、
+        # その計算ロジック(determine_sleep_duration)をそのまま流用する。
+        # センサー系(温度センサー等)はサーバー指示のスリープを使わず固定間隔で動作するため、
+        # 想定される送信間隔の設定値を使う。
+        if has_image_data:
+            expected_silence_s = determine_sleep_duration(voltage)
+        else:
+            expected_silence_s = config.SENSOR_ASSUMED_INTERVAL_S
+
         # InfluxDBに書き込み
         try:
             influx_client.write_sensor_data(
-                sender_mac, voltage, temperature, tds_voltage
+                sender_mac,
+                voltage,
+                temperature,
+                tds_voltage,
+                expected_silence_s=expected_silence_s,
+                sensor_error_temp=sensor_error_temp,
             )
             logger.info(f"Initiated InfluxDB write for {sender_mac}")
         except Exception as e:
