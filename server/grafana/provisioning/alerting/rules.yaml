@@ -1,0 +1,113 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: farmverse-liveness
+    folder: FarmVerse Alerts
+    interval: 5m
+    rules:
+      - uid: farmverse-liveness-silence-exceeded
+        title: "Device liveness: silence exceeded"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 86400
+              to: 0
+            datasourceUid: delv604pnzxmoc
+            model:
+              refId: A
+              intervalMs: 60000
+              maxDataPoints: 43200
+              query: |
+                // expected_silence_s (前回EOF時にサーバーが算出した想定サイレンス秒数) を
+                // 実際の経過時間と比較し、指示したスリープ秒数 + 5分マージンを超えて
+                // 無通信のデバイスだけを返す。カメラ系(サーバー指示の動的スリープ)・
+                // センサー系(固定間隔)いずれも expected_silence_s に正しい値が入っている前提。
+                from(bucket: "balcony")
+                  |> range(start: -1d)
+                  |> filter(fn: (r) => r._measurement == "data" and r._field == "expected_silence_s")
+                  |> filter(fn: (r) => r.mac_address !~ /aa:bb:cc:dd:ee:.*/)
+                  |> group(columns: ["mac_address"])
+                  |> last()
+                  |> map(fn: (r) => ({ r with
+                        seconds_since_contact: int(v: (uint(v: now()) - uint(v: r._time)) / uint(v: 1000000000)),
+                     }))
+                  |> map(fn: (r) => ({ r with
+                        _value: r.seconds_since_contact - (int(v: r._value) + 300),
+                     }))
+                  |> filter(fn: (r) => r._value > 0)
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              refId: C
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.mac_address }} が想定スリープ時間+5分を超えて無通信です"
+
+      - uid: farmverse-sensor-error-temp
+        title: "Sensor error: TEMP sentinel detected"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1200
+              to: 0
+            datasourceUid: delv604pnzxmoc
+            model:
+              refId: A
+              intervalMs: 60000
+              maxDataPoints: 43200
+              query: |
+                // TEMP:-999 センチネル(センサー読み取り失敗)が直近の送信で検出されたデバイスを返す
+                from(bucket: "balcony")
+                  |> range(start: -20m)
+                  |> filter(fn: (r) => r._measurement == "data" and r._field == "sensor_error_temp")
+                  |> filter(fn: (r) => r.mac_address !~ /aa:bb:cc:dd:ee:.*/)
+                  |> group(columns: ["mac_address"])
+                  |> last()
+                  |> map(fn: (r) => ({ r with _value: if r._value then 1 else 0 }))
+                  |> filter(fn: (r) => r._value == 1)
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              refId: C
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+        noDataState: OK
+        execErrState: Alerting
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.mac_address }} の温度センサーがエラー(TEMP:-999)を報告しています"
