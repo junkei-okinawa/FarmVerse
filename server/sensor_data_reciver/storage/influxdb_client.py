@@ -275,6 +275,7 @@ class InfluxDBClient:
                 or temperature is not None
                 or tds_voltage is not None
                 or expected_silence_s is not None
+                or sensor_error_temp
             ):
                 logger.info(
                     f"Writing data to InfluxDB for {sender_mac}: voltage={voltage}, temperature={temperature}, "
