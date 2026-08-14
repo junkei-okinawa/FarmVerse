@@ -435,7 +435,8 @@ class SerialProtocol(asyncio.Protocol):
         voltage = DataParser.extract_voltage_with_validation(volt_log_entry, sender_mac)
         temperature = DataParser.extract_temperature_with_validation(temp_log_entry, sender_mac)
         tds_voltage = DataParser.extract_tds_voltage_with_validation(tds_log_entry, sender_mac)
-        
+        sensor_error_temp = DataParser.is_temperature_sensor_error(temp_log_entry)
+
         logger.info(f"Extracted voltage for {sender_mac}: {voltage}% from '{volt_log_entry}'")
         if tds_voltage is not None:
             logger.info(f"Extracted TDS voltage for {sender_mac}: {tds_voltage}V")
@@ -448,19 +449,32 @@ class SerialProtocol(asyncio.Protocol):
         # ダミーハッシュを検出して画像データの有無を判定
         DUMMY_HASH = "0000000000000000000000000000000000000000000000000000000000000000"
         has_image_data = hash_value != DUMMY_HASH
-        
+
         # 画像データの有無をキャッシュに記録（EOF時の判定用）
         self.has_image_data_cache[sender_mac] = has_image_data
-        
+
         if has_image_data:
             logger.info(f"Image data expected for {sender_mac} (hash: {hash_value[:16]}...)")
         else:
             logger.info(f"No image data expected for {sender_mac} (dummy hash detected)")
 
+        # 生存監視用: 次回通信までに想定される無通信時間を算出（streaming_handler.pyと同じロジック）
+        if has_image_data:
+            expected_silence_s = determine_sleep_duration(voltage)
+        else:
+            expected_silence_s = config.SENSOR_ASSUMED_INTERVAL_S
+
         # InfluxDBに書き込み（非同期・エラー耐性付き）
         # デバイス検証案件のため、100%電圧も含めて全ての電圧データを記録
         try:
-            influx_client.write_sensor_data(sender_mac, voltage, temperature, tds_voltage)
+            influx_client.write_sensor_data(
+                sender_mac,
+                voltage,
+                temperature,
+                tds_voltage,
+                expected_silence_s=expected_silence_s,
+                sensor_error_temp=sensor_error_temp,
+            )
             logger.info(f"Initiated InfluxDB write for {sender_mac}")
         except Exception as e:
             logger.error(f"Error initiating InfluxDB write for {sender_mac}: {e} (continuing with other operations)")

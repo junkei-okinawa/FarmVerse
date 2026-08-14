@@ -80,3 +80,13 @@ git pull
   を見ながら微調整が必要になる可能性がある。
 - `/etc/grafana/provisioning/alerting/` は `root:grafana` 所有のため、デプロイには `sudo` が必要
   (デプロイスクリプト内で都度 `sudo` を要求される)。
+- `rules.yaml` の `datasourceUid`(例: `delv604pnzxmoc`)は InfluxDB データソースの UID を直接指定しており、
+  **Grafanaインスタンスごとに異なる値**。データソースを作り直したり(sqlite `grafana.db` を初期化した場合など)、
+  新しい Pi にゼロからセットアップする場合は、以下の手順で UID を取得して `rules.yaml` 内の全ての
+  `datasourceUid` を更新すること。値が一致しないと provisioning がエラーになるか、ルールが発火しない。
+  1. Grafana UI → Connections → Data sources → 対象の InfluxDB データソースを開く。
+  2. ブラウザの URL 末尾(`/connections/datasources/edit/<uid>`)に表示される `<uid>` をコピーする。
+  3. `server/grafana/provisioning/alerting/rules.yaml` 内の `datasourceUid: delv604pnzxmoc` を
+     全て新しい UID に置換する(`__expr__` は Grafana 組み込みの Expression データソースを指す固定値なので
+     変更不要)。
+  4. デプロイスクリプトを再実行して反映する。
