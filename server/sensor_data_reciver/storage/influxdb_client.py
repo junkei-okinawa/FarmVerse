@@ -170,7 +170,15 @@ class InfluxDBClient:
         with self._init_lock:
             self._disable_client_locked()
     
-    def write_sensor_data(self, sender_mac: str, voltage: float = None, temperature: float = None, tds_voltage: float = None) -> bool:
+    def write_sensor_data(
+        self,
+        sender_mac: str,
+        voltage: float = None,
+        temperature: float = None,
+        tds_voltage: float = None,
+        expected_silence_s: int = None,
+        sensor_error_temp: bool = False,
+    ) -> bool:
         """センサーデータをInfluxDBに書き込み（非同期実行・エラー耐性付き）"""
         # テスト環境ではInfluxDB書き込みをスキップ
         if config.IS_TEST_ENV:
@@ -181,20 +189,28 @@ class InfluxDBClient:
         if config.DRY_RUN:
             logger.info(
                 f"[DRY_RUN] Would write to InfluxDB — mac={sender_mac}, "
-                f"voltage={voltage}, temperature={temperature}, tds_voltage={tds_voltage}"
+                f"voltage={voltage}, temperature={temperature}, tds_voltage={tds_voltage}, "
+                f"expected_silence_s={expected_silence_s}, sensor_error_temp={sensor_error_temp}"
             )
             return False
-            
+
         # イベントループが実行されているかチェック
         try:
             asyncio.get_running_loop()  # イベントループの存在確認のみ
         except RuntimeError:
             logger.warning(f"No running event loop for InfluxDB write for {sender_mac}, skipping")
             return False
-            
+
         # InfluxDBへの書き込みを非同期で実行し、エラーが発生しても処理を継続する
         # asyncio.gatherを使用した構造化タスク管理
-        write_task = self._write_sensor_data_async(sender_mac, voltage, temperature, tds_voltage)
+        write_task = self._write_sensor_data_async(
+            sender_mac,
+            voltage,
+            temperature,
+            tds_voltage,
+            expected_silence_s=expected_silence_s,
+            sensor_error_temp=sensor_error_temp,
+        )
         cleanup_task = self._cleanup_completed_tasks()
         
         # 両方のタスクを同時実行し、例外を適切に処理
@@ -211,7 +227,15 @@ class InfluxDBClient:
             logger.error(f"Error creating InfluxDB write task for {sender_mac}: {e}")
             return False
     
-    async def _write_sensor_data_async(self, sender_mac: str, voltage: float = None, temperature: float = None, tds_voltage: float = None):
+    async def _write_sensor_data_async(
+        self,
+        sender_mac: str,
+        voltage: float = None,
+        temperature: float = None,
+        tds_voltage: float = None,
+        expected_silence_s: int = None,
+        sensor_error_temp: bool = False,
+    ):
         """非同期でInfluxDBにデータを書き込み"""
         try:
             # 必要であればクライアントを再初期化する
@@ -239,9 +263,24 @@ class InfluxDBClient:
             
             if tds_voltage is not None:
                 point.field("tds_voltage", float(tds_voltage))
-            
-            if voltage is not None or temperature is not None or tds_voltage is not None:
-                logger.info(f"Writing data to InfluxDB for {sender_mac}: voltage={voltage}, temperature={temperature}, tds_voltage={tds_voltage}")
+
+            if expected_silence_s is not None:
+                point.field("expected_silence_s", int(expected_silence_s))
+
+            # false/true を常に明示することで「エラー無し」と「データ自体が来ていない」を区別できるようにする
+            point.field("sensor_error_temp", bool(sensor_error_temp))
+
+            if (
+                voltage is not None
+                or temperature is not None
+                or tds_voltage is not None
+                or expected_silence_s is not None
+                or sensor_error_temp
+            ):
+                logger.info(
+                    f"Writing data to InfluxDB for {sender_mac}: voltage={voltage}, temperature={temperature}, "
+                    f"tds_voltage={tds_voltage}, expected_silence_s={expected_silence_s}, sensor_error_temp={sensor_error_temp}"
+                )
                 # タイムアウトを設定して書き込み実行
                 await asyncio.wait_for(
                     asyncio.to_thread(
