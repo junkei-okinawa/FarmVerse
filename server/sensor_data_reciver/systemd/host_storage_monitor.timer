@@ -1,0 +1,11 @@
+[Unit]
+Description=Run host_storage_monitor every 10 minutes
+
+[Timer]
+# 毎時 0, 10, 20, ... 分に実行
+OnCalendar=*:00/10
+Persistent=false
+Unit=host_storage_monitor.service
+
+[Install]
+WantedBy=timers.target
