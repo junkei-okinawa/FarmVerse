@@ -48,3 +48,28 @@ uv sync # 依存関係のインストール
 
 - サービスのログは `journalctl -u sensor_data_reciver` で確認できます。
 - サービスの停止は `sudo systemctl stop sensor_data_reciver` で行えます。
+
+## ホストのストレージ監視 (host_storage_monitor)
+
+`monitoring/host_storage_monitor.py` を 10 分ごとに実行し、ルート FS の使用量・`images/` のサイズ・
+`~/.xsession-errors*` のサイズを InfluxDB の measurement `host_storage` に書き込みます
+(tag: `host`, `mount` / field: `total_bytes`, `used_bytes`, `free_bytes`, `used_percent`,
+`images_bytes`, `images_files`, `xsession_errors_bytes`)。Grafana から参照できます。
+
+```bash
+# <user_name> を実際のユーザー名に置換してから配置する
+sudo cp systemd/host_storage_monitor.service systemd/host_storage_monitor.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now host_storage_monitor.timer
+```
+
+> `/etc/systemd/system/` の unit はリポジトリと自動同期されません。unit を更新したら再度コピーして
+> `daemon-reload` してください。
+
+Grafana (Flux) のクエリ例:
+
+```flux
+from(bucket: "balcony")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => r._measurement == "host_storage" and r._field == "used_percent")
+```
