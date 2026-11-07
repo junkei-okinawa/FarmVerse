@@ -1,0 +1,11 @@
+[Unit]
+Description=Write host storage usage to InfluxDB
+After=influxdb.service
+Wants=influxdb.service
+
+[Service]
+Type=oneshot
+# Replace <user_name> with your actual username.
+User=<user_name>
+WorkingDirectory=/home/<user_name>/sensor_data_reciver
+ExecStart=/home/<user_name>/sensor_data_reciver/.venv/bin/python monitoring/host_storage_monitor.py
