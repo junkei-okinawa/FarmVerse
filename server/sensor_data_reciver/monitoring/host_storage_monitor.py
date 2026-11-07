@@ -39,7 +39,7 @@ def dir_size(path: Path) -> tuple[int, int]:
     return total, count
 
 
-def collect(mount: str, images_dir: Path, home: Path) -> dict[str, float]:
+def collect(mount: str, images_dir: Path, home: Path) -> dict[str, int | float]:
     """InfluxDB に書き込むフィールドを収集する。"""
     usage = shutil.disk_usage(mount)
     images_bytes, images_files = dir_size(images_dir)
@@ -60,7 +60,7 @@ def collect(mount: str, images_dir: Path, home: Path) -> dict[str, float]:
     }
 
 
-def write(fields: dict[str, float], mount: str) -> None:
+def write(fields: dict[str, int | float], mount: str) -> None:
     from influxdb_client import InfluxDBClient, Point
     from influxdb_client.client.write_api import SYNCHRONOUS
 

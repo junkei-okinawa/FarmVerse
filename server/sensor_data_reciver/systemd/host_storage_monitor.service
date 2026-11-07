@@ -1,7 +1,7 @@
 [Unit]
 Description=Write host storage usage to InfluxDB
-After=influxdb.service
-Wants=influxdb.service
+After=network-online.target influxdb.service
+Wants=network-online.target influxdb.service
 
 [Service]
 Type=oneshot
