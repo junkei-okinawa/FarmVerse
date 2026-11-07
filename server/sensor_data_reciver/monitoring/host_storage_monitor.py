@@ -53,7 +53,7 @@ def collect(mount: str, images_dir: Path, home: Path) -> dict[str, int | float]:
         "total_bytes": usage.total,
         "used_bytes": usage.used,
         "free_bytes": usage.free,
-        "used_percent": round(usage.used / usage.total * 100, 2),
+        "used_percent": round(usage.used / usage.total * 100, 2) if usage.total else 0.0,
         "images_bytes": images_bytes,
         "images_files": images_files,
         "xsession_errors_bytes": xsession_bytes,
@@ -68,7 +68,7 @@ def write(fields: dict[str, int | float], mount: str) -> None:
     bucket = os.environ.get("INFLUXDB_BUCKET", "balcony")
     point = Point(MEASUREMENT).tag("host", socket.gethostname()).tag("mount", mount)
     for key, value in fields.items():
-        point.field(key, float(value))
+        point.field(key, value)
 
     with InfluxDBClient(
         url=os.environ.get("INFLUXDB_URL", "http://localhost:8086"),
@@ -85,13 +85,13 @@ def main() -> int:
 
     mount = os.environ.get("STORAGE_MONITOR_MOUNT", "/")
     images_dir = Path(os.environ.get("STORAGE_MONITOR_IMAGES_DIR", BASE_DIR / "images"))
-    fields = collect(mount, images_dir, Path.home())
-    logger.info("Collected: %s", fields)
 
     try:
+        fields = collect(mount, images_dir, Path.home())
+        logger.info("Collected: %s", fields)
         write(fields, mount)
-    except Exception as e:
-        logger.error("Failed to write to InfluxDB: %s", e)
+    except Exception:
+        logger.exception("Failed to collect/write %s", MEASUREMENT)
         return 1
     logger.info("Wrote %s to InfluxDB", MEASUREMENT)
     return 0
