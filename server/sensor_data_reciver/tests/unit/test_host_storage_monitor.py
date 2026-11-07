@@ -47,4 +47,5 @@ def test_systemd_units_are_wired_together() -> None:
     assert "Unit=host_storage_monitor.service" in timer
     assert "OnCalendar=" in timer
     assert "Type=oneshot" in service
+    assert "network-online.target" in service
     assert "monitoring/host_storage_monitor.py" in service
