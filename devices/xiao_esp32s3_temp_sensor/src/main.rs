@@ -39,6 +39,18 @@ struct Config {
 const POWER_PIN: i32 = 2;
 const DATA_PIN: i32 = 4;
 
+/// 温度読み取り失敗時に送信するセンチネル値
+///
+/// サーバー側 (sensor_data_reciver/utils/data_parser.py の
+/// extract_temperature_with_validation) は "-999" を含む TEMP 値を無効値として
+/// None 扱いする規約になっている (TDS_VOLT:-999.0 と同じ規約)。
+/// これを利用し、センサー読み取りが全リトライ失敗した場合も HASH フレームだけは
+/// 送信することで、受信機ログ / InfluxDB に「デバイスは生存しているがセンサーエラー」
+/// という記録を残す (死活監視)。従来はセンサー失敗時に送信自体をスキップしており、
+/// デバイス停止と区別がつかなかった。
+#[cfg(feature = "wifi")]
+const SENSOR_ERROR_TEMP: f32 = -999.0;
+
 // =============================================================================
 // RTC メモリ: Deep Sleep をまたいで保持される変数
 // =============================================================================
@@ -87,7 +99,8 @@ fn main() -> Result<()> {
     let modem = peripherals.modem;
 
     // FreeRTOS モード: WiFi をループ前に一度だけ初期化してループ全体で再利用する。
-    // Deep Sleep モード: ループ内で温度計測後に初期化する (計測失敗時は WiFi をスキップして省電力)。
+    // Deep Sleep モード: ループ内で温度計測後に毎サイクル初期化する
+    // (計測失敗時も死活監視のため SENSOR_ERROR_TEMP センチネルを送信する)。
     // enable_wifi = false の場合: WiFi を一切初期化せず温度計測のみ実行する。
     #[cfg(feature = "wifi")]
     let (freertos_wifi, mut sleep_modem): (
@@ -108,7 +121,6 @@ fn main() -> Result<()> {
     loop {
         // --- Step 1: 温度計測 (WiFi 起動前・低電力フェーズ) ---
         // WiFi RF が 1-Wire タイミングに干渉しないよう計測を先に完了させる。
-        // 計測失敗時は WiFi 初期化をスキップすることで Deep Sleep 時の省電力になる。
         let temp_result = sensor.read_temperature();
         match &temp_result {
             Ok(temp) => info!("Temperature: {:.2}°C", temp),
@@ -116,31 +128,36 @@ fn main() -> Result<()> {
         }
 
         // --- Step 2: WiFi 初期化 + ESP-NOW 送信 ---
+        // 計測に失敗した場合も SENSOR_ERROR_TEMP センチネルを送信する (死活監視)。
+        // WiFi 初期化自体をスキップすると、ゲートウェイ側からは
+        // 「センサー故障」と「デバイス停止」が区別できなくなるため、
+        // 電力コストを払ってでも毎サイクル送信を行う。
         #[cfg(feature = "wifi")]
         {
-            if let Ok(temp) = &temp_result {
-                if CONFIG.use_deep_sleep {
-                    // Deep Sleep モード: 計測成功時のみ WiFi を初期化する
-                    if let Some(modem) = sleep_modem.take() {
-                        match init_esp_now(modem) {
-                            Ok((esp_now, peer_mac)) => {
-                                if let Err(e) = send_temperature(&esp_now, peer_mac, *temp) {
-                                    log::warn!("ESP-NOW send failed: {:?}", e);
-                                }
+            let temp_to_send = match &temp_result {
+                Ok(temp) => *temp,
+                Err(_) => SENSOR_ERROR_TEMP,
+            };
+
+            if CONFIG.use_deep_sleep {
+                // Deep Sleep モード: 毎サイクル WiFi を初期化する
+                if let Some(modem) = sleep_modem.take() {
+                    match init_esp_now(modem) {
+                        Ok((esp_now, peer_mac)) => {
+                            if let Err(e) = send_temperature(&esp_now, peer_mac, temp_to_send) {
+                                log::warn!("ESP-NOW send failed: {:?}", e);
                             }
-                            Err(e) => log::warn!("WiFi init failed: {:?}", e),
                         }
-                    }
-                } else {
-                    // FreeRTOS モード: 起動前に初期化済みの WiFi で送信
-                    if let Some((esp_now, peer_mac)) = &freertos_wifi {
-                        if let Err(e) = send_temperature(esp_now, *peer_mac, *temp) {
-                            log::warn!("ESP-NOW send failed: {:?}", e);
-                        }
+                        Err(e) => log::warn!("WiFi init failed: {:?}", e),
                     }
                 }
-            } else if CONFIG.use_deep_sleep {
-                info!("Sensor read failed, skipping WiFi init (power saving)");
+            } else {
+                // FreeRTOS モード: 起動前に初期化済みの WiFi で送信
+                if let Some((esp_now, peer_mac)) = &freertos_wifi {
+                    if let Err(e) = send_temperature(esp_now, *peer_mac, temp_to_send) {
+                        log::warn!("ESP-NOW send failed: {:?}", e);
+                    }
+                }
             }
         }
 
@@ -260,15 +277,21 @@ fn init_esp_now(
     };
 
     // Deep Sleep モード: 周期的 PHY 再キャリブレーション
-    if CONFIG.use_deep_sleep && should_force_recalibrate() {
-        erase_phy_calibration();
-    }
+    // should_force_recalibrate() は RTC メモリのみアクセスするため NVS 初期化前でも安全。
+    // ただし erase_phy_calibration() は NVS に書き込むため、take() 後まで遅延させる。
+    let should_recal = CONFIG.use_deep_sleep && should_force_recalibrate();
 
     let peer_mac = parse_mac(CONFIG.receiver_mac)
         .ok_or_else(|| anyhow::anyhow!("cfg.toml の receiver_mac が不正 (形式: XX:XX:XX:XX:XX:XX)"))?;
 
     let sysloop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
+
+    // NVS 初期化後に PHY キャリブレーションデータを消去する。
+    // (以前は take() 前に呼んでいたため ESP_ERR_NVS_PART_NOT_FOUND で常に失敗していた)
+    if should_recal {
+        erase_phy_calibration();
+    }
 
     // EspWifi 初期化: 失敗時は PHY キャリブレーションデータを消去して次回起動でリカバリ
     let esp_wifi = match EspWifi::new(modem, sysloop.clone(), Some(nvs)) {
@@ -326,6 +349,15 @@ fn init_esp_now(
     Box::leak(Box::new(wifi));
 
     let esp_now = EspNow::take()?;
+
+    // 送信結果コールバック: 受信側が MAC ACK を返したか確認する診断ログ
+    // FAIL が出る場合は受信機がチャンネル不一致・電源 OFF または範囲外
+    esp_now.register_send_cb(|mac, status| {
+        info!(
+            "ESP-NOW TX: {:?} → {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+            status, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        );
+    })?;
 
     let peer_info = esp_idf_svc::espnow::PeerInfo {
         peer_addr: peer_mac,
